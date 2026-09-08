@@ -26,7 +26,7 @@ remain open alongside the new window; they share arrangements and shells.
 
 ## Tabs and splits
 
-These follow Ghostty's usual keys, with the actions applied to saved workspaces:
+The shipped map follows Ghostty's usual keys, with the actions applied to saved workspaces:
 
 - **Command-T**: new tab with an ordinary shell.
 - **Command-D**: split right, with a vertical divider.
@@ -80,8 +80,8 @@ plain. The navigation panel button,
 
 ## Other terminals and the existing launcher
 
-`./run` stays independent of Ghostty. Its portable **Ctrl-g, then a key** controls
-remain available in every profile:
+`./run` stays independent of Ghostty. Its shipped **Ctrl-g, then a key** controls
+remain available in every profile unless overridden by a user keymap:
 
 - **t** new tab; **v / h** split right / below; **a** attach; **r** rename tab.
 - **n / p** next / previous tab; **o / O** next / previous pane; **z** focus/layout.
@@ -97,7 +97,7 @@ bindings; the portable prefix remains the default.
 
 ## Verification and implementation notes
 
-The Command mapping is generated from `controls.DIRECT_SHORTCUTS`. Ghostty's
+The terminal mapping is generated from the effective `keymap.Keymap`. Ghostty's
 [`csi` action](https://ghostty.org/docs/config/keybind/reference#csi) sends a reserved
 sequence, which the viewer's private tmux server consumes and routes over its
 navigation panel action socket. The shortcut never becomes a shell command, and the outer
@@ -160,13 +160,109 @@ Return pane to shell, tab reordering/transferring and empty-workspace deletion a
 menu commands without a keyboard activation path. These gaps belong to the menu
 navigation work; they do not require a shortcut for every individual command.
 
-Direct actions use stable CSI codes in `tmux_workspaces/controls.py`.
-You can map a different terminal key to those sequences in your terminal profile.
-The portable Ctrl-g prefix and its bindings are currently fixed in code; there is
-no application user-keymap file or CLI option yet. The TPM launch key is separately
-configurable with `@tmux-workspaces-key`.
+## User keymaps
 
-User-defined bindings and keyboard menu navigation are separate improvements.
-Until both are verified, the README must not promise full keyboard parity,
-user-customizable controls or mouse-optional workflows. Having the existing
-shortcuts does not establish those claims.
+An optional TOML file changes existing action bindings without editing source.
+Configuration is selected in this order (one file, not several merged files):
+
+1. `--no-keymap` uses the shipped map and skips configuration files.
+2. `--keymap PATH` selects an explicit file.
+3. `$TMUX_WORKSPACES_KEYMAP` selects a file when no CLI path is given.
+4. `$XDG_CONFIG_HOME/tmux-workspaces/keymap.toml`, otherwise
+   `~/.config/tmux-workspaces/keymap.toml`.
+
+A missing implicit default is fine. An explicit missing file, unreadable file,
+malformed TOML, unknown action or unsupported/duplicate key is a startup error
+before terminals are created. Files are limited to 64 KiB. Relative file paths
+resolve against the invoking directory; `~/` uses the invoking home directory.
+`--keymap` and `--no-keymap` cannot be combined.
+
+For example, save this as `keys.toml`:
+
+```toml
+prefix = "C-a"
+
+[bindings]
+new-tab = ["u"]
+rename-tab = ["e"]
+close-pane = []
+
+[direct]
+new-tab = ["super+alt+t"]
+close-pane = []
+```
+
+Then launch or inspect it:
+
+```sh
+./run --keymap keys.toml
+./ghostty --keymap keys.toml
+./run --keymap keys.toml --print-keymap help
+./run --keymap keys.toml --print-keymap ghostty
+./run --no-keymap --print-keymap toml
+```
+
+Each specified action list replaces that action's defaults in that section;
+`[]` disables it there. Omitted actions retain their defaults. In this example,
+Ctrl-a then u creates a tab, Ctrl-a then e renames it, and the former t/c and r
+bindings are removed. Command-Option-T creates a tab in the dedicated Ghostty
+instance. Closing a pane is disabled by both keyboard routes; mouse actions are
+unchanged. To move a key already assigned to another action, clear or rebind that
+other action too. Duplicates, including aliases such as C-i and Tab, are errors.
+
+The complete shipped configuration is [integrations/keymap.toml](../integrations/keymap.toml).
+Its action names are stable identifiers. Both sections accept every listed action,
+including numbered selection, `workspaces` and `quit`; each action accepts up to
+32 keys per section. Configured keys are data, never shell commands.
+
+`bindings` uses a bounded subset of tmux notation: printable ASCII keys (except
+semicolon and backslash), named keys `Space`, `Enter`, `Tab`, `BSpace`, `Escape`,
+`Up`, `Down`, `Left`, `Right`, `Home`, `End`, `PageUp`, `PageDown`, `Insert`, `Delete`,
+`BTab`, `F1`–`F12`, and `C-`/`M-` modifiers. Use uppercase letters for shifted
+letters; `C-a` means Control-a and `M-Left` means Alt-Left. Indistinguishable
+control aliases are canonicalized. Escape is reserved for cancellation, and
+pressing the configured prefix twice sends the literal prefix to the terminal.
+Those two keys cannot also be assigned to an action in the prefix table.
+Choose a prefix the hosting tmux and terminal do not consume first.
+
+`direct` describes terminal triggers, not tmux prefix keys. It accepts lowercase
+letters/digits, `f1`–`f25`, named punctuation (`bracket_left`, `bracket_right`,
+`apostrophe`, `backslash`, `comma`, `equal`, `grave_accent`, `minus`, `period`,
+`semicolon`, `slash`), and named navigation keys (`space`, `enter`, `tab`,
+`backspace`, `escape`, `insert`, `delete`, `left`, `right`, `up`, `down`, `page_up`,
+`page_down`, `home`, `end`). Combine with `super`, `ctrl`, `alt`, `shift`, including
+at least one of super/ctrl/alt. Global bindings, key sequences and arbitrary
+Ghostty actions are outside this format. Known direct Ctrl/Alt combinations that
+shadow the configured prefix, cancellation or prefix-table keys are rejected.
+Validation cannot discover every OS, window-manager or hosting-tmux conflict.
+
+The dedicated Ghostty launcher applies generated bindings through per-launch CLI
+options, after the normal appearance configuration. It consumes former shipped
+triggers with Ghostty's `ignore` action when they are disabled or moved, preventing
+an old Command-T/W from unexpectedly creating or closing native surfaces. A
+trigger reassigned to another action uses its new mapping. Unrelated bindings
+remain unchanged. The launcher does not edit or reload normal Ghostty windows.
+See [Ghostty's keybinding actions](https://ghostty.org/docs/config/keybind/reference).
+
+`./run` does not configure a terminal emulator. In another terminal, translate the
+output of `--print-keymap ghostty` into that terminal's own trigger-to-CSI settings.
+A terminal consumes the physical key and sends the stable CSI action sequence;
+only the private viewer server interprets that sequence. An action with an empty
+`direct` list no longer registers its sequence, so remove stale mappings in other
+terminals too. Prefix bindings change only the viewer's private tmux server; the
+TPM launch key remains independently configurable through `@tmux-workspaces-key`.
+
+The effective map is validated once and snapshotted per viewer. On-screen
+Shortcuts and CLI help are generated from it, including aliases and numbered
+selection; long help rows wrap and scroll. `--print-keymap toml` emits the complete
+effective map, and `--print-keymap ghostty` emits exact triggers and CSI codes.
+Diagnostic printing requires no terminal or tmux server and creates no library.
+After editing configuration, launch a fresh viewer. New surfaces in an existing
+Ghostty instance retain that instance's map so their help matches its terminal
+profile; start a fresh `./ghostty` instance to apply a new map. No hot reload is
+performed. Existing shells and saved arrangements remain independent of keymaps.
+
+User keymaps and keyboard menu navigation are separate features. Menu choices
+listed above still require the mouse. This change does not establish full
+keyboard parity or mouse-optional workflows; those claims remain gated on the
+menu navigation work being verified.

@@ -3,6 +3,7 @@ import curses
 import unittest
 from unittest.mock import Mock, patch
 
+from tmux_workspaces.keymap import DEFAULT_KEYMAP, Keymap
 from tmux_workspaces.model import LayoutConflict, Model, leaves
 from tmux_workspaces.sidebar import Sidebar
 
@@ -15,7 +16,7 @@ class SidebarTests(unittest.TestCase):
         self.store = Mock()
         self.source = Mock(socket="/unused/source.sock", persistent_socket=True)
         self.source.snapshot.return_value = ({}, "")
-        self.display = Mock(sidebar="%0", small=False)
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
         self.display.focused_leaf.return_value = self.model.tab["focus"]
 
         def render(tab, focus):
@@ -32,6 +33,17 @@ class SidebarTests(unittest.TestCase):
     def mouse(self, x, y, buttons):
         with patch("tmux_workspaces.sidebar.curses.getmouse", return_value=(0, x, y, 0, buttons)):
             self.sidebar.input(curses.KEY_MOUSE)
+
+    def test_help_wraps_effective_keys_and_omits_disabled_actions(self):
+        self.sidebar.keymap = Keymap.from_dict(
+            {"bindings": {"new-tab": ["M-C-F2", "M-C-F3"], "close-pane": []}}
+        )
+        self.screen.getmaxyx.return_value = (38, 18)
+        options = self.sidebar.shortcut_options(command=False)
+        text = " ".join(label for label, _ in options)
+        self.assertIn("Alt-Ctrl-F2 / Alt-Ctrl-F3 New tab", text)
+        self.assertNotIn("Close pane", text)
+        self.assertTrue(all(len(label) <= 16 for label, _ in options))
 
     def test_layout_conflict_keeps_following_keyboard_input_in_sidebar(self):
         self.store.save.side_effect = LayoutConflict("Changed in another window")

@@ -5,12 +5,14 @@ from __future__ import annotations
 import contextlib
 import curses
 import os
+import textwrap
 import time
 from collections.abc import Callable
 
-from .controls import DIRECT_SHORTCUTS, Actions, mouse_action
+from .controls import Actions, mouse_action
 from .display import Display
 from .events import InputEvents
+from .keymap import ACTION_LABELS, tmux_key_label
 from .model import LayoutConflict, Model, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
@@ -36,6 +38,7 @@ class Sidebar:
         self.source, self.display = source, display
         self.actions = actions
         self.shortcut_hints = shortcut_hints
+        self.keymap = display.keymap
         self.hits: list[tuple[int, int, int, Callable]] = []
         self.context_hits: list[tuple[int, int, int, Callable]] = []
         self.menu: str | None = None
@@ -434,54 +437,32 @@ class Sidebar:
         if context:
             self.context_hits.append((y, x, x + width, context))
 
+    def shortcut_options(self, *, command: bool) -> list[tuple[str, Callable]]:
+        mapping = self.keymap.direct if command else self.keymap.bindings
+        options = []
+        for action, keys in mapping.items():
+            if not keys:
+                continue
+            text = f"{self.keymap.label(action, command=command)} {ACTION_LABELS[action]}"
+            # Custom combinations and aliases may exceed navigation width. Wrap
+            # them into scrollable rows instead of hiding the action or a key.
+            for line in textwrap.wrap(text, width=max(1, self.screen.getmaxyx()[1] - 2)):
+                options.append((line, lambda action=action: self.action(action)))
+        return options
+
     def _options(self, agents: dict) -> list[tuple[str, Callable]]:
         command_shortcuts = self.menu == "command-shortcuts" or (
             self.menu == "shortcuts" and self.shortcut_hints == "command"
         )
         if command_shortcuts:
-            labels = {
-                "new-tab": "New tab",
-                "split-right": "Split right",
-                "split-below": "Split below",
-                "previous-pane": "Previous pane",
-                "next-pane": "Next pane",
-                "previous-tab": "Previous tab",
-                "next-tab": "Next tab",
-                "previous-workspace": "Prev workspace",
-                "next-workspace": "Next workspace",
-                "new-workspace": "New workspace",
-                "rename-tab": "Rename tab",
-                "rename-workspace": "Rename workspace",
-                "focus": "Focus / layout",
-                "attach": "Attach session",
-                "sidebar": "Focus navigation",
-                "close-pane": "Close pane",
-                "close-tab": "Close tab",
-            }
             return [
-                (
-                    f"{DIRECT_SHORTCUTS[action][1]:<8} {label}",
-                    lambda action=action: self.action(action),
-                )
-                for action, label in labels.items()
-            ] + [("Ctrl-g shortcuts…", lambda: self.open_menu("prefix-shortcuts"))]
+                *self.shortcut_options(command=True),
+                ("Prefix shortcuts…", lambda: self.open_menu("prefix-shortcuts")),
+            ]
         if self.menu in {"shortcuts", "prefix-shortcuts"}:
             return [
-                ("t   New tab", self.new_tab),
-                ("v / %   Split right", lambda: self.split("right")),
-                ('h / "   Split below', lambda: self.split("below")),
-                ("a   Attach session", lambda: self.open_menu("agents")),
-                ("r   Rename tab", lambda: self.rename("rename-tab")),
-                ("n / p   Next / prev tab", lambda: self.next_tab(1)),
-                ("o   Next pane", self.next_pane),
-                ("z   Focus / layout", self.toggle_focus),
-                ("w   Workspaces", lambda: self.open_menu("spaces")),
-                ("W   New workspace", lambda: self.rename("new-workspace")),
-                ("[ / ]   Prev / next space", lambda: self.next_workspace(1)),
-                ("R   Rename workspace", lambda: self.rename("rename-workspace")),
-                ("s   Focus navigation", self.focus_sidebar),
-                ("d   Detach viewer", self.quit),
-                ("Command profile keys…", lambda: self.open_menu("command-shortcuts")),
+                *self.shortcut_options(command=False),
+                ("Terminal profile keys…", lambda: self.open_menu("command-shortcuts")),
             ]
         if self.menu == "agents":
             return [
@@ -596,10 +577,12 @@ class Sidebar:
                 "workspace": "Workspace options",
                 "name": "Type a name",
                 "shortcuts": (
-                    "Command shortcuts" if self.shortcut_hints == "command" else "Ctrl-g, then…"
+                    "Terminal profile keys"
+                    if self.shortcut_hints == "command"
+                    else f"{tmux_key_label(self.keymap.prefix)}, then…"
                 ),
-                "prefix-shortcuts": "Ctrl-g, then…",
-                "command-shortcuts": "Command profile keys",
+                "prefix-shortcuts": f"{tmux_key_label(self.keymap.prefix)}, then…",
+                "command-shortcuts": "Terminal profile keys",
             }
             self.put(2, 1, titles[self.menu], curses.A_BOLD)
             if self.menu == "command-shortcuts" or (
@@ -608,9 +591,7 @@ class Sidebar:
                 self.put(
                     3,
                     1,
-                    "⌘1–9 tabs · ⌘⌥1–9 spaces"
-                    if self.shortcut_hints == "command"
-                    else "Enable with ./ghostty",
+                    "Requires terminal profile",
                     curses.color_pair(3),
                 )
             if self.menu in {"name", "agents"}:

@@ -6,8 +6,8 @@ import re
 import shlex
 from dataclasses import dataclass
 
-from .controls import DIRECT_SHORTCUTS, SHORTCUTS, direct_sequence
 from .entrypoints import script_command
+from .keymap import DEFAULT_KEYMAP, Keymap, direct_sequence
 from .model import leaves, minimum_size
 from .shells import Shells
 from .tmux import Tmux
@@ -40,6 +40,7 @@ class Display:
         action_socket: str,
         host_socket: str | None = None,
         host_pane: str | None = None,
+        keymap: Keymap | None = None,
     ):
         if len({os.path.realpath(p) for p in (viewer_socket, source_socket, shell_socket)}) != 3:
             raise ValueError("Viewer, terminal and source sockets must differ")
@@ -49,6 +50,7 @@ class Display:
         self.action_socket = action_socket
         self.host_socket, self.host_pane = host_socket, host_pane
         self.sidebar = sidebar
+        self.keymap = keymap or DEFAULT_KEYMAP
         self.panes: dict[str, str] = {}
         self.last_size = (0, 0)
         self.small = False
@@ -63,7 +65,7 @@ class Display:
         for name, value in {
             "mouse": "on",
             "status": "off",
-            "prefix": "C-g",
+            "prefix": self.keymap.prefix,
             "prefix2": "None",
             "escape-time": "10",
             # tmux's timing-based paste guess can bypass bindings for CSI
@@ -137,8 +139,12 @@ class Display:
             f"#{{!=:#{{mouse_pane}},{self.sidebar}}}",
             native_double,
         )
-        self.tmux.run("bind-key", "s", "select-pane", "-t", self.sidebar)
-        for key, action in SHORTCUTS.items():
+        # Remove native prefix commands on this private server too: an unbound
+        # viewer new-tab key must not create an unmanaged tmux window instead.
+        self.tmux.run("unbind-key", "-a", "-T", "prefix")
+        self.tmux.run("bind-key", self.keymap.prefix, "send-prefix")
+        self.tmux.run("bind-key", "Escape", "switch-client", "-T", "root")
+        for key, action in self.keymap.prefix_items():
             self.tmux.run(
                 "bind-key",
                 key,
@@ -152,7 +158,9 @@ class Display:
                     "--wait-action",
                 ),
             )
-        for index, action in enumerate(DIRECT_SHORTCUTS):
+        for index, action in enumerate(
+            action for action, keys in self.keymap.direct.items() if keys
+        ):
             self.tmux.run("set-option", "-s", f"user-keys[{index}]", direct_sequence(action))
             self.tmux.run(
                 "bind-key",
@@ -168,20 +176,6 @@ class Display:
                     "--wait-action",
                 ),
             )
-        # c is tmux's usual new-window key; here it creates a saved sidebar tab.
-        self.tmux.run(
-            "bind-key",
-            "c",
-            "run-shell",
-            script_command(
-                "_action",
-                "--action-socket",
-                self.action_socket,
-                "--action",
-                "new-tab",
-                "--wait-action",
-            ),
-        )
 
     @contextlib.contextmanager
     def snapshot_scope(self):

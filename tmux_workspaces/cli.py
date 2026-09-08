@@ -58,6 +58,19 @@ def parser() -> argparse.ArgumentParser:
         default="prefix",
         help="shortcut labels to show (Command keys require the Ghostty launch profile)",
     )
+    keymap = result.add_mutually_exclusive_group()
+    keymap.add_argument(
+        "--keymap", type=Path, help="TOML viewer keymap (overrides environment/default)"
+    )
+    keymap.add_argument("--no-keymap", action="store_true", help="use only the shipped keymap")
+    result.add_argument(
+        "--print-keymap",
+        choices=["toml", "help", "ghostty"],
+        help="print the effective configuration, shortcut help or Ghostty profile and exit",
+    )
+    # Transport the already validated map across tmux/LaunchServices environments.
+    # New surfaces in the same Ghostty instance must match its fixed profile.
+    result.add_argument("--keymap-state", help=argparse.SUPPRESS)
     result.add_argument("--viewer-socket", help=argparse.SUPPRESS)
     result.add_argument("--instance-dir", type=Path, help=argparse.SUPPRESS)
     result.add_argument("--agent", default="", help=argparse.SUPPRESS)
@@ -69,6 +82,38 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--host-socket", help=argparse.SUPPRESS)
     result.add_argument("--host-pane", help=argparse.SUPPRESS)
     return result
+
+
+def effective_keymap(args, *, cwd: Path | None = None):
+    from .keymap import Keymap, load_keymap
+
+    if args.keymap_state is not None:
+        import tomllib
+
+        if len(args.keymap_state.encode()) > 65536:
+            raise ValueError("Keymap snapshot exceeds 64 KiB")
+        return Keymap.from_dict(tomllib.loads(args.keymap_state))
+    return load_keymap(args.keymap, disabled=args.no_keymap, cwd=cwd)
+
+
+def keymap_help(keymap) -> str:
+    lines = [f"Viewer prefix: {keymap.prefix}", "Prefix, then key:"]
+    lines += [f"  {keys:<20} {label}" for keys, label in keymap.prefix_help_rows()]
+    lines += [
+        "  Escape               Cancel prefix",
+        f"  {keymap.prefix:<20} Send literal prefix",
+        "",
+        "Terminal profile triggers (require ./ghostty or terminal configuration):",
+    ]
+    lines += [f"  {keys:<20} {label}" for keys, label in keymap.direct_help_rows()]
+    lines += [
+        "",
+        "The terminal consumes these triggers and sends stable CSI action codes to tmux.",
+        "Keys intercepted by your OS or hosting tmux never reach the viewer.",
+        "Print --print-keymap ghostty for the effective trigger-to-CSI profile.",
+        "Chooser selection and some menu commands still require the mouse; see docs/SHORTCUTS.md.",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 def main() -> int:
@@ -83,6 +128,15 @@ def main() -> int:
             from .attachments import leaf_main
 
             return leaf_main(args)
+        if args.print_keymap:
+            keymap = effective_keymap(args)
+            text = {
+                "toml": keymap.to_toml,
+                "help": lambda: keymap_help(keymap),
+                "ghostty": keymap.ghostty_bindings,
+            }[args.print_keymap]()
+            print(text, end="")
+            return 0
         from .application import launch, sidebar_main
 
         if args.mode == "_sidebar":

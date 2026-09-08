@@ -77,17 +77,15 @@ def valid_action(action: str) -> bool:
 
 
 def direct_sequence(action: str) -> str:
-    return f"\x1b[{DIRECT_SHORTCUTS[action][2]}~"
+    from .keymap import direct_sequence as sequence
+
+    return sequence(action)
 
 
 def ghostty_bindings() -> str:
-    lines = [
-        "# tmux-workspaces Command shortcuts; used only by the dedicated launcher.",
-        "# Generated from tmux_workspaces/controls.py.",
-    ]
-    for action, (trigger, _label, code) in DIRECT_SHORTCUTS.items():
-        lines += [f"# {action}", f"keybind = {trigger}=csi:{code}~"]
-    return "\n".join(lines) + "\n"
+    from .keymap import DEFAULT_KEYMAP
+
+    return DEFAULT_KEYMAP.ghostty_bindings()
 
 
 def send_action(path: str, action: str, *, wait: bool = False) -> None:

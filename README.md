@@ -42,9 +42,9 @@ Core navigation and editing work by shortcut. The dedicated terminal profile has
 
 **Mouse-required paths today:** selecting a session in Attach after filtering,
 returning a pane to its parked shell, reordering tabs, moving a tab between
-workspaces, and deleting an empty workspace. User-defined bindings and keyboard
-menu navigation are separate planned improvements. See the
-[shortcut guide](docs/SHORTCUTS.md).
+workspaces, and deleting an empty workspace. Keyboard menu navigation remains
+planned. See the [shortcut guide](docs/SHORTCUTS.md) for the current configuration
+scope; these mouse paths still apply with a different keymap.
 
 On macOS with Ghostty, `./ghostty` opens a dedicated shortcut profile:
 **Command-T** creates a tab, **Command-D / Command-Shift-D** split,

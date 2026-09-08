@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .cli import default_source_socket
+from .cli import default_source_socket, effective_keymap
 from .cli import parser as viewer_parser
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +26,7 @@ def launch_command(
     """Build a reviewable launch command without opening apps or changing files."""
     cwd = (cwd or Path.cwd()).resolve()
     options = viewer_parser().parse_args(arguments)
+    keymap = effective_keymap(options, cwd=cwd)
     data_dir = options.data_dir.expanduser()
     if not data_dir.is_absolute():
         data_dir = cwd / data_dir
@@ -42,6 +43,8 @@ def launch_command(
         "--source-socket",
         str(source.resolve()),
         "--shortcut-hints=command",
+        "--keymap-state",
+        keymap.to_toml(),
     ]
     if options.backbone:
         backbone_dir = (
@@ -64,7 +67,11 @@ def launch_command(
         "--env",
         "PATH=" + os.environ.get("PATH", os.defpath),
         "--args",
-        "--config-file=" + str(root / "integrations/ghostty.conf"),
+        *[
+            "--keybind=" + line.removeprefix("keybind = ")
+            for line in keymap.ghostty_bindings().splitlines()
+            if line.startswith("keybind = ")
+        ],
         "--working-directory=" + str(cwd),
         "--mouse-reporting=true",
         "--shell-integration=none",
@@ -96,7 +103,10 @@ def main(arguments: list[str] | None = None) -> int:
     options, viewer_args = parser.parse_known_args(arguments)
     if viewer_args[:1] == ["--"]:
         viewer_args = viewer_args[1:]
-    command = launch_command(viewer_args, options.ghostty_app)
+    try:
+        command = launch_command(viewer_args, options.ghostty_app)
+    except (ValueError, OSError) as error:
+        parser.error(str(error))
     if options.dry_run:
         print(shlex.join(command))
         return 0

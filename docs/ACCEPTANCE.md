@@ -231,12 +231,30 @@ CPU use. Coarse CPU accounting and host activity can affect the figures. A
 repeatable benchmark with longer samples, separate mouse/shortcut measurements
 and explicit readiness criteria remains work to complete before public release.
 
+## User keymap verification
+
+`make smoke` includes `tests.integration.smoke_keymaps`. On isolated PTYs it
+checks a custom prefix and action map, same-write action plus immediate typing,
+a burst of tab switches with unique intended-shell output, rename cancellation,
+literal double-prefix delivery, prefix Escape, and removed prefix/direct keys.
+Negative checks observe processed input and inspect the private binding table.
+Editing a file preserves existing viewer keys/help; a new viewer takes the new
+map, and `--no-keymap` restores defaults despite an invalid discovered file.
+An ordinary hosting tmux keeps its keys, options and original process identities.
+
+Unit tests cover precedence, bounded validation, aliases/collisions, disabled
+bindings, generated help and profiles, snapshot round trips, startup errors before
+library creation, and shell-safe Ghostty argument transport. Ghostty 1.3.1's CLI
+validator accepts a generated custom profile and rejects an intentionally invalid
+action. These checks do not automate native physical-key interception, operating
+system conflicts, actual SSH transport or the menu-navigation work.
+
 ## Remaining limits
 
 - Selecting an attachment, returning a pane to its shell, tab reordering/transfer,
   and empty-workspace deletion still require a mouse. The attachment search field
   is keyboard-accessible, but Enter does not activate a session.
-  Core shortcuts exist; complete menu parity and user-defined keymaps do not yet.
+  Core shortcuts and user-defined maps exist; complete menu parity does not yet.
 - Nested tmux affects terminal sizing, clipboard/copy mode, scrolling and repaint.
   Shared writable clients can affect the same session's size in another window.
 - Layout changes rebuild content attachment clients. The main viewer process is
