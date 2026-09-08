@@ -13,7 +13,7 @@ class SidebarTests(unittest.TestCase):
         self.screen = Mock()
         self.screen.getmaxyx.return_value = (38, 28)
         self.store = Mock()
-        self.source = Mock(socket="/unused/source.sock", demo=None)
+        self.source = Mock(socket="/unused/source.sock", persistent_socket=True)
         self.source.snapshot.return_value = ({}, "")
         self.display = Mock(sidebar="%0", small=False)
         self.display.focused_leaf.return_value = self.model.tab["focus"]

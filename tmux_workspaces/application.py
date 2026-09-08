@@ -25,6 +25,28 @@ from .source import Source
 from .tmux import Tmux, clean_env
 
 
+def make_source(
+    socket: str,
+    *,
+    backbone_data_dir: Path | None = None,
+    url: str | None = None,
+    demo: Path | None = None,
+) -> Source:
+    """The sole integration selection boundary; normal startup imports no Backbone."""
+    if demo is not None:
+        from .adapters.demo import DemoProvider
+
+        return Source(socket, DemoProvider(demo), persistent_socket=False)
+    from .adapters.tmux import TmuxProvider
+
+    overlays = ()
+    if backbone_data_dir is not None:
+        from .adapters.backbone import BackboneProvider
+
+        overlays = (BackboneProvider(backbone_data_dir, url),)
+    return Source(socket, TmuxProvider(socket), overlays)
+
+
 def sidebar_main(args) -> int:
     # Wait for the launcher's attachment before enabling exit-unattached.
     tmux = Tmux(args.viewer_socket)
@@ -33,7 +55,7 @@ def sidebar_main(args) -> int:
         if time.monotonic() > deadline:
             return 1
         time.sleep(0.05)
-    source = Source(
+    source = make_source(
         args.source_socket,
         backbone_data_dir=args.backbone_data_dir if args.backbone else None,
         url=args.url,

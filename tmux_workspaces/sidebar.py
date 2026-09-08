@@ -255,7 +255,7 @@ class Sidebar:
             tab["focus"] = pane["id"]
         # Demo fixture servers are recreated per window; other references retain
         # their server even if the next launch uses a different chooser socket.
-        self.model.attach(name, None if self.source.demo else self.source.socket)
+        self.model.attach(name, self.source.socket if self.source.persistent_socket else None)
         self.show()
 
     def split(self, direction: str) -> None:

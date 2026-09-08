@@ -38,7 +38,7 @@ class AttachTargetTests(unittest.TestCase):
             screen,
             self.model,
             self.store,
-            Mock(socket="/unused/source.sock", demo=None),
+            Mock(socket="/unused/source.sock", persistent_socket=True),
             self.display,
             Mock(),
         )

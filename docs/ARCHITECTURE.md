@@ -27,9 +27,16 @@ or edit tmux configuration.
 - `cli.py`: argument defaults, validation surface and dispatch. `application.py`
   composes dependencies and owns launch, demo and viewer cleanup. Action dispatch
   imports neither the application nor the attachment client.
-- `source.py`: optional session metadata polling plus generic discovery. The
-  existing opt-in Backbone implementation remains here pending its separate
-  adapter extraction; this refactor does not claim that separation is complete.
+- `discovery.py`: the read-only `Provider.read() -> Snapshot` contract, with explicit
+  stale/error/last-successful-observation fields and shared item parsing.
+- `source.py`: provider polling and snapshot composition, with no integration
+  imports, configuration reads or provider-specific branches. The UI receives
+  independent copies of the current observation.
+- `adapters/tmux.py`: generic session discovery on one explicit socket.
+  `adapters/backbone.py`: opt-in loopback HTTP/config metadata and stale cache.
+  `adapters/demo.py`: isolated fixture reads and stale cache. `application.make_source`
+  selects these providers with lazy imports; ordinary launch never imports the
+  Backbone or demo provider.
 - `entrypoints.py`: quoted helper commands that work after tmux clears launcher
   environment variables. `ghostty_launcher.py`, `tmux_plugin.py` and `ui_preview.py`
   are optional entry-point integrations.
@@ -81,3 +88,34 @@ contains spaces, without `.git` or development memory, then run `make check` and
 `make smoke` there. All fixtures create their own libraries and private tmux sockets.
 The module, source symlink and compatibility helpers must work from an unrelated
 working directory. Package installation does not substitute for these PTY checks.
+
+## Read-only provider contract
+
+A provider exposes only `read() -> Snapshot`: it discovers sessions or enriches
+metadata, and has no start/stop/rename/message operation for external sessions.
+The source owns polling; application composition supplies a primary discovery
+provider and zero or more metadata overlays. Adding a provider does not require a
+branch in Source or the model, persistence, display or input modules.
+
+Primary discovery determines online attachment availability. Overlay names may
+remain as offline references; an API's agent-state or online field cannot make a
+missing tmux session attachable. A failed Backbone/demo read returns its last good
+metadata with `stale=True` and a fixed error message, preserving its last successful
+`observed_at` Unix timestamp. No successful observation means `observed_at=None`.
+Generic tmux discovery failures report unavailable sessions instead of retaining
+potentially false online claims. A missing external server is a successful empty
+observation, so a fresh installation needs no external sessions.
+
+The combined observation is stale if any provider is stale. Its timestamp is the
+oldest constituent observation, or None if any provider has never succeeded.
+Errors are joined without including credentials, response bodies or transport
+exception text. Source never merges overlay availability claims, and another
+provider's stale result cannot remove live generic sessions.
+
+Backbone construction reads nothing. Only an explicitly selected provider's `read`
+resolves the named API secret and existing SQLite settings, using a read-only
+connection. It performs loopback HTTP GET requests with no proxies or redirects.
+Demo construction similarly does not read its fixture until requested. Demo
+composition uses a nonpersistent source socket reference so recreated fixtures can
+reconnect; ordinary attachments retain their exact source socket. Neither path
+changes the historical saved `agent` field or version-2 layout schema.

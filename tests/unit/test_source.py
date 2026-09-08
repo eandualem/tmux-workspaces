@@ -12,8 +12,9 @@ import urllib.error
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from tmux_workspaces.adapters.backbone import NoRedirect, connection, valid_agent
+from tmux_workspaces.application import make_source
 from tmux_workspaces.display import Display
-from tmux_workspaces.source import NoRedirect, Source, connection, valid_agent
 from tmux_workspaces.targets import session_target, valid_session
 from tmux_workspaces.tmux import clean_env
 
@@ -45,7 +46,7 @@ class SourceTests(unittest.TestCase):
                     ]
                 )
             )
-            source = Source("/unused/demo.sock", demo=path)
+            source = make_source("/unused/demo.sock", demo=path)
             source.refresh()
             self.assertEqual(list(source.snapshot()[0]), ["worker"])
             path.write_text("invalid")
@@ -59,23 +60,23 @@ class SourceTests(unittest.TestCase):
             [], 0, stdout="ordinary shell\n=leading\ncafé\nunsafe:window\n", stderr=""
         )
         with (
-            patch("tmux_workspaces.source.subprocess.run", return_value=process) as run,
+            patch("tmux_workspaces.adapters.tmux.subprocess.run", return_value=process) as run,
             patch(
-                "tmux_workspaces.source.connection",
+                "tmux_workspaces.adapters.backbone.connection",
                 side_effect=AssertionError("Backbone config read"),
             ),
             patch(
-                "tmux_workspaces.source.urllib.request.build_opener",
+                "tmux_workspaces.adapters.backbone.urllib.request.build_opener",
                 side_effect=AssertionError("HTTP used"),
             ),
             patch(
-                "tmux_workspaces.source.sqlite3.connect",
+                "tmux_workspaces.adapters.backbone.sqlite3.connect",
                 side_effect=AssertionError("Database read"),
             ),
             patch.object(Path, "read_text", side_effect=AssertionError("Config file read")),
             patch.dict(os.environ, {"BACKBONE_API_KEY": "not-for-session-discovery"}),
         ):
-            source = Source("/explicit/private.sock")
+            source = make_source("/explicit/private.sock")
             source.refresh()
         sessions, error = source.snapshot()
         self.assertEqual(source.socket, "/explicit/private.sock")
@@ -95,19 +96,19 @@ class SourceTests(unittest.TestCase):
             path.write_text(json.dumps([{"name": "ordinary shell", "online": False}]))
             with (
                 patch(
-                    "tmux_workspaces.source.connection",
+                    "tmux_workspaces.adapters.backbone.connection",
                     side_effect=AssertionError("Backbone config read"),
                 ),
                 patch(
-                    "tmux_workspaces.source.subprocess.run",
+                    "tmux_workspaces.adapters.tmux.subprocess.run",
                     side_effect=AssertionError("tmux queried"),
                 ),
                 patch(
-                    "tmux_workspaces.source.urllib.request.build_opener",
+                    "tmux_workspaces.adapters.backbone.urllib.request.build_opener",
                     side_effect=AssertionError("HTTP"),
                 ),
             ):
-                source = Source("/unused", backbone_data_dir=Path(directory), demo=path)
+                source = make_source("/unused", backbone_data_dir=Path(directory), demo=path)
                 source.refresh()
             sessions, error = source.snapshot()
             self.assertEqual(list(sessions), ["ordinary shell"])
@@ -116,15 +117,15 @@ class SourceTests(unittest.TestCase):
 
     def test_absent_server_and_query_failures_are_nonfatal(self):
         with tempfile.TemporaryDirectory() as directory:
-            source = Source(str(Path(directory) / "missing.sock"))
+            source = make_source(str(Path(directory) / "missing.sock"))
             with patch(
-                "tmux_workspaces.source.subprocess.run",
+                "tmux_workspaces.adapters.tmux.subprocess.run",
                 return_value=subprocess.CompletedProcess([], 1, stdout="", stderr="missing"),
             ):
                 source.refresh()
             self.assertEqual(source.snapshot(), ({}, ""))
             for failure in (OSError("missing executable"), subprocess.TimeoutExpired("tmux", 3)):
-                with patch("tmux_workspaces.source.subprocess.run", side_effect=failure):
+                with patch("tmux_workspaces.adapters.tmux.subprocess.run", side_effect=failure):
                     source.refresh()
                 self.assertEqual(source.snapshot(), ({}, "Session list unavailable"))
 
@@ -133,15 +134,15 @@ class SourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             (path / ".env").write_text('BACKBONE_API_KEY="unterminated\n')
-            source = Source("/private.sock", backbone_data_dir=path)
-            with patch("tmux_workspaces.source.subprocess.run", return_value=process):
+            source = make_source("/private.sock", backbone_data_dir=path)
+            with patch("tmux_workspaces.adapters.tmux.subprocess.run", return_value=process):
                 source.refresh()
             sessions, error = source.snapshot()
             self.assertEqual(list(sessions), ["ordinary shell"])
             self.assertIn("Backbone unavailable", error)
             (path / ".env").unlink()
             (path / "backbone.db").write_bytes(b"invalid SQLite database")
-            with patch("tmux_workspaces.source.subprocess.run", return_value=process):
+            with patch("tmux_workspaces.adapters.tmux.subprocess.run", return_value=process):
                 source.refresh()
             self.assertEqual(list(source.snapshot()[0]), ["ordinary shell"])
             self.assertIn("Backbone unavailable", source.snapshot()[1])
@@ -164,13 +165,13 @@ class SourceTests(unittest.TestCase):
         ]
         with (
             tempfile.TemporaryDirectory() as directory,
-            patch("tmux_workspaces.source.subprocess.run", return_value=process),
+            patch("tmux_workspaces.adapters.tmux.subprocess.run", return_value=process),
             patch(
-                "tmux_workspaces.source.urllib.request.build_opener", return_value=opener
+                "tmux_workspaces.adapters.backbone.urllib.request.build_opener", return_value=opener
             ) as build_opener,
             patch.dict(os.environ, {"BACKBONE_API_KEY": "test-only-key"}),
         ):
-            source = Source("/private.sock", backbone_data_dir=Path(directory))
+            source = make_source("/private.sock", backbone_data_dir=Path(directory))
             source.refresh()
             sessions, error = source.snapshot()
             self.assertEqual(set(sessions), {"ordinary shell", "worker", "parked", "bad-state"})
@@ -198,14 +199,17 @@ class SourceTests(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as directory,
             patch(
-                "tmux_workspaces.source.subprocess.run",
+                "tmux_workspaces.adapters.tmux.subprocess.run",
                 return_value=subprocess.CompletedProcess([], 0, "", ""),
             ),
-            patch("tmux_workspaces.source.urllib.request.build_opener") as build_opener,
+            patch("tmux_workspaces.adapters.backbone.urllib.request.build_opener") as build_opener,
         ):
-            source = Source("/private.sock", backbone_data_dir=Path(directory))
+            source = make_source("/private.sock", backbone_data_dir=Path(directory))
             for payload in ({"items": {"wrong": "shape"}}, {}, [], None):
-                source.roster = {"parked": {"name": "parked", "state": "offline"}}
+                build_opener.return_value.open.return_value = io.BytesIO(
+                    b'{"items": [{"name": "parked", "state": "offline"}]}'
+                )
+                source.refresh()
                 build_opener.return_value.open.return_value = io.BytesIO(
                     json.dumps(payload).encode()
                 )
@@ -219,10 +223,10 @@ class SourceTests(unittest.TestCase):
         truncated_response.read.side_effect = http.client.IncompleteRead(b'{"items":', 12)
         with (
             tempfile.TemporaryDirectory() as directory,
-            patch("tmux_workspaces.source.subprocess.run", return_value=process),
-            patch("tmux_workspaces.source.urllib.request.build_opener") as build_opener,
+            patch("tmux_workspaces.adapters.tmux.subprocess.run", return_value=process),
+            patch("tmux_workspaces.adapters.backbone.urllib.request.build_opener") as build_opener,
         ):
-            source = Source("/private.sock", backbone_data_dir=Path(directory))
+            source = make_source("/private.sock", backbone_data_dir=Path(directory))
             opener = build_opener.return_value
             opener.open.side_effect = [
                 io.BytesIO(b'{"items": [{"name": "parked", "state": "offline"}]}'),
@@ -289,7 +293,7 @@ class SourceTests(unittest.TestCase):
                 for name in names:
                     result = tmux("-f", "/dev/null", "new-session", "-d", "-s", name, "/bin/sh")
                     self.assertEqual(result.returncode, 0, result.stderr)
-                source = Source(socket)
+                source = make_source(socket)
                 source.refresh()
                 self.assertEqual(set(source.snapshot()[0]), set(names))
                 for name in names:
