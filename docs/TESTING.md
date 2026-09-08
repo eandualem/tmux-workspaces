@@ -70,7 +70,7 @@ and source socket. No existing keys, credentials or SSH service are used.
 The encrypted connection carries mouse reports, prefix/direct shortcuts, returned
 terminal output and window-size changes. The scenario drops the SSH client,
 reconnects, verifies saved workspaces and four-pane arrangements, and resumes the
-same foreground process. It checks cwd and shell PIDs, parked-shell restoration,
+same foreground process. It checks cwd and shell PIDs, parked-shell preservation,
 offline attachment recovery, and external-session survival across disconnect and
 normal viewer exit. It verifies real loopback SSH transport; it does not simulate
 WAN latency, prove a native terminal's painting, or test SSH-agent credentials.
@@ -94,8 +94,10 @@ PTY setup failures, timeouts, interruptions and hostile manifest paths.
 
 ## Coverage and limits
 
-The fixture refactor was checked locally on macOS with Python 3.14.7 and tmux 3.7c.
-Actual loopback SSH passed in a Debian 13 aarch64 container with Python 3.12.14,
+The combined fixture/keymap branch passed `make check` with 164 application tests
+and 12 benchmark tests on macOS and Linux. All ten PTY scenarios passed on Linux;
+nine passed on macOS with an explicit SSH skip. macOS used Python 3.14.7 and tmux
+3.7c. The Debian 13 aarch64 container used Python 3.12.14,
 tmux 3.5a and OpenSSH 10.0p2. Both use `LANG=en_US.UTF-8` and
 `TERM=xterm-256color`; resize exercises narrow and four-pane dimensions.
 

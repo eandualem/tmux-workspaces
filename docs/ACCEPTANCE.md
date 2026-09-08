@@ -5,7 +5,11 @@
 The shared PTY layer now owns fresh libraries, servers and clients through setup
 errors, assertions, timeouts and interruptions. Cleanup ignores socket paths in
 runtime manifests and reports failures without masking the original assertion.
-The existing eight scenarios retain their behavioral assertions.
+The existing scenarios retain their behavioral assertions, including the keymap
+suite integrated from its preceding PR. The combined branch passed 164 application
+and 12 benchmark tests on macOS/Python 3.14.7 and Linux/Python 3.12.14, plus all
+ten PTY scenarios on Linux and nine on macOS with an explicit SSH skip. The updated
+hosted matrix remains pending account availability; these are local results.
 
 A nonroot Debian 13 container with Python 3.12.14, tmux 3.5a and OpenSSH 10.0p2
 passed a real authenticated loopback SSH scenario: mouse and keyboard input,

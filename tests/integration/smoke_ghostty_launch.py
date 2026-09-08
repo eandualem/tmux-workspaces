@@ -27,7 +27,7 @@ from tmux_workspaces.tmux import Tmux, clean_env
 class GhosttyShellClient(Client):
     def __init__(self, library: Path, source_socket: str):
         command = launch_command(
-            ["--data-dir", str(library), "--source-socket", source_socket],
+            ["--data-dir", str(library), "--source-socket", source_socket, "--no-keymap"],
             cwd=library.parent,
         )
         shell_command = next(value for value in command if value.startswith("--command="))
