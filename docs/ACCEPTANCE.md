@@ -1,5 +1,18 @@
 # Verification and known limits
 
+## Hosted terminal coverage — 2026-09-08
+
+The merged package version passed `make check` (89 tests) and all seven real-PTY
+suites on Ubuntu with Python 3.11 and 3.14, and on macOS with Python 3.14.
+The Linux jobs exercise tmux 3.4; compatibility coverage includes literal dollar
+signs in TPM option values. CI configuration and the review/merge procedure live
+in [DEVELOPMENT.md](DEVELOPMENT.md).
+
+These jobs use disposable local sockets and ordinary shells. They establish Linux
+and macOS terminal integration coverage, not actual SSH transport, WSL or native
+Ghostty GUI behavior. The Ghostty command harness uses the macOS login-shell
+wrapper on macOS and ordinary shell execution on Linux.
+
 ## Read-only provider isolation — 2026-09-08
 
 The adapter extraction passed **100 tests** and all seven real PTY suites on macOS,
@@ -68,9 +81,9 @@ The focused inline suite also passed using `xterm-ghostty` with Ghostty's termin
 both before and after integration. Tests use their own libraries, private sockets
 and ordinary disposable shells. No real agents or user libraries are fixtures.
 
-The exercised environment was macOS, Python 3.14 and tmux 3.7c. Python 3.11 and
-tmux 3.3 are documented floors, not separately verified combinations. Linux/WSL,
-an actual SSH connection and native Ghostty GUI automation remain unverified.
+That original baseline was exercised on macOS, Python 3.14 and tmux 3.7c.
+Current Linux/Python 3.11 coverage is recorded above. The exact tmux 3.3 floor,
+WSL, an actual SSH connection and native Ghostty GUI automation remain unverified.
 PTY verification with Ghostty terminfo and its command wrapper is distinct from
 native application rendering, restored-window behavior or GUI performance.
 

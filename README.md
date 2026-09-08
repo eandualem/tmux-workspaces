@@ -90,8 +90,9 @@ SSH-accessible environments are the intended setting alongside local terminals.
 This is an on-host application, not an SSH connection manager: `--source-socket`
 selects a socket on that host, and does not connect to another machine.
 
-macOS has been exercised end to end. Linux/WSL and an actual SSH path still need
-end-to-end verification; see [coverage and limits](docs/ACCEPTANCE.md). The viewer
+Linux and macOS pass the real-terminal integration suites in CI. WSL and an
+actual SSH connection still need verification; see [coverage and limits](docs/ACCEPTANCE.md).
+The viewer
 adapts to available terminal dimensions by temporarily focusing a pane when a
 layout will not fit. It does not save a different arrangement per physical display.
 
