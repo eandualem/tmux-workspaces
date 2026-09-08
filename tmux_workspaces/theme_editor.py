@@ -210,7 +210,7 @@ class ThemeEditor:
         self.saved = self.closed = True
 
     def key(self, key) -> None:
-        if key in ("\n", "\r"):
+        if key in ("\n", "\r", curses.KEY_ENTER):
             self.commit() if self.field else self.edit()
         elif key == "\x1b":
             # One Escape leaves the whole editor, matching the overlay this will

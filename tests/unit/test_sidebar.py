@@ -940,6 +940,21 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertIsNone(self.sidebar.theme_editor)
         self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
 
+    def test_quit_exits_even_when_the_preview_cannot_be_restored(self):
+        original = DEFAULT_THEME.to_toml()
+        self.path.write_text(original)
+        self.sidebar.open_theme()
+        self.sidebar.theme_editor.preview(DEFAULT_THEME.with_role("normal", background=["blue"]))
+        self.init_pair.side_effect = curses.error("cannot restore palette")
+        self.sidebar.input("\x1b")
+        self.assertTrue(self.sidebar.running)
+        self.assertIsNotNone(self.sidebar.theme_editor)
+        self.sidebar.action("quit")
+        self.assertFalse(self.sidebar.running)
+        self.store.save.assert_called_with(self.model)
+        self.display.shells.close.assert_not_called()
+        self.assertEqual(self.path.read_text(), original)
+
     def test_leaving_the_editor_leaves_its_screen_with_it(self):
         for leave in (
             lambda: self.sidebar.action("sidebar"),
@@ -1049,6 +1064,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.sidebar.input("\x1b")
         self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
 
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file permissions")
     def test_read_only_file_is_announced_and_never_loses_the_colors(self):
         self.path.write_text(DEFAULT_THEME.to_toml())
         os.chmod(self.path, 0o444)

@@ -84,6 +84,16 @@ class ThemeEditorTests(unittest.TestCase):
         self.assertEqual(self.saved, [])
         self.assertEqual(self.installed, [])
 
+    def test_keypad_enter_opens_and_commits_the_color_field(self):
+        self.editor.key(curses.KEY_ENTER)
+        self.assertIsNotNone(self.editor.field)
+        self.type("blue")
+        self.editor.key(curses.KEY_ENTER)
+        self.assertIsNone(self.editor.field)
+        self.assertEqual(self.editor.draft.roles["normal"].foreground, ("blue",))
+        self.assertEqual(self.installed, [self.editor.draft])
+        self.assertEqual(self.saved, [])
+
     def test_rows_cover_every_role_and_field_with_one_selection(self):
         rows = self.editor.rows()
         self.assertEqual(len(rows), len(ROLES) * len(FIELDS))

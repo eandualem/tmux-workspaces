@@ -472,6 +472,9 @@ class Sidebar:
                 self.mouse(x, y, curses.BUTTON1_PRESSED)
             return
         self.clear_inline()
+        if name == "quit":
+            self.quit()
+            return
         if not self.leave_theme():
             return
         if name.startswith("attach-pane:"):
@@ -509,7 +512,6 @@ class Sidebar:
             "previous-workspace": lambda: self.next_workspace(-1),
             "rename-workspace": lambda: self.rename("rename-workspace"),
             "sidebar": self.focus_sidebar,
-            "quit": self.quit,
             "close-pane": self.close_pane,
             "close-tab": self.close_tab,
         }
