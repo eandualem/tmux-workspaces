@@ -152,9 +152,14 @@ symlink, because Python resolves the script's actual location for import lookup.
 
 `make check` runs lint/format checks, TPM shell syntax and the unit suites under
 `tests/unit`. Some focused adapter and input regressions use disposable real tmux
-servers. `make smoke` runs the eight full PTY scenarios as modules under
+servers. `make smoke` runs the full PTY scenarios as modules under
 `tests/integration`. Shared PTY process, mouse, persistence and wait helpers live
-in `tests/integration/support.py`; no test imports from the old experiment directory.
+in `tests/integration/support.py`. Its `FixtureResources` owns freshly allocated
+libraries, explicitly qualified servers and clients through failure and interruption.
+Runtime manifests never grant cleanup authority. `ssh_support.py` owns a disposable
+authenticated loopback daemon and client keys; `smoke_ssh.py` verifies the remote
+PTY lifecycle. No test imports from the old experiment directory. See
+[test setup and platform scope](TESTING.md).
 
 For relocation verification, copy tracked files to a fresh directory whose name
 contains spaces, without `.git` or development memory, then run `make check` and

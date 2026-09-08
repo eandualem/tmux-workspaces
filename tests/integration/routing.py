@@ -9,7 +9,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from tests.integration.support import Client, wait
+from tests.integration.support import Client, FixtureResources, wait
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.model import leaves
@@ -116,7 +116,13 @@ def native_mouse(directory: Path, client: Client, viewer: Tmux) -> None:
 
 
 def exercise(directory: Path, pane_count: int) -> None:
-    library = directory / f"routing-{pane_count}"
+    with FixtureResources(parent=directory) as resources:
+        _exercise(resources, pane_count)
+
+
+def _exercise(resources: FixtureResources, pane_count: int) -> None:
+    directory = resources.root
+    library = resources.library(f"routing-{pane_count}")
     with_store = Store(library)
     try:
         model = with_store.load()
@@ -138,142 +144,114 @@ def exercise(directory: Path, pane_count: int) -> None:
     finally:
         with_store.close()
     shells = Tmux(socket_path(library, "terminals"))
-    client = Client(
+    client = resources.client(
         ["--data-dir", str(library), "--source-socket", str(directory / "absent.sock")],
         terminal_env={"HOME": str(directory)},
     )
-    viewer = None
-    try:
-        wait(client, lambda: client.manifest(library), "routing viewer manifest missing")
-        viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
-        wait(
-            client,
-            lambda: "Layouts saved" in viewer.run("capture-pane", "-p", "-t", "%0"),
-            "routing viewer did not initialize",
+    wait(client, lambda: client.manifest(library), "routing viewer manifest missing")
+    viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
+    wait(
+        client,
+        lambda: "Layouts saved" in viewer.run("capture-pane", "-p", "-t", "%0"),
+        "routing viewer did not initialize",
+    )
+    targets = [
+        "=" + Shells.name(pane) + ":"
+        for space in spaces
+        for tab in space["tabs"]
+        for pane in leaves(tab["tree"])
+    ]
+
+    def terminal(tab):
+        return "=" + Shells.name({"id": tab["focus"]}) + ":"
+
+    def contents():
+        return {
+            target: shells.run("capture-pane", "-S", "-", "-p", "-t", target) for target in targets
+        }
+
+    def packet():
+        token = os.urandom(8).hex()
+        # The full marker is absent from command echo, so only execution
+        # can satisfy the assertion, including when input arrives late.
+        return "printf 'ROUTED_%s\\n' " + token + "\r", "ROUTED_" + token
+
+    # Warm every terminal arrangement and prove the selected shell executes.
+    for space_index, space in enumerate(spaces):
+        for tab_index, tab in enumerate(space["tabs"]):
+            command, marker = packet()
+            client.type(
+                direct_sequence(f"select-workspace-{space_index + 1}")
+                + direct_sequence(f"select-tab-{tab_index + 1}")
+                + command
+            )
+            wait(
+                client,
+                lambda marker=marker, tab=tab: (
+                    marker in shells.run("capture-pane", "-p", "-t", terminal(tab))
+                ),
+                "routing fixture shell did not become ready",
+            )
+        client.type(direct_sequence("select-tab-1"))
+
+    def identities():
+        return set(
+            shells.run(
+                "list-panes", "-a", "-F", "#{session_name}|#{pane_id}|#{pane_pid}"
+            ).splitlines()
         )
-        targets = [
-            "=" + Shells.name(pane) + ":"
-            for space in spaces
-            for tab in space["tabs"]
-            for pane in leaves(tab["tree"])
-        ]
 
-        def terminal(tab):
-            return "=" + Shells.name({"id": tab["focus"]}) + ":"
+    original = identities()
+    assert len(original) == 4 * pane_count
+    expected = []
 
-        def contents():
-            return {
-                target: shells.run("capture-pane", "-S", "-", "-p", "-t", target)
-                for target in targets
-            }
+    def routed():
+        observed = contents()
+        return all(
+            [target for target, text in observed.items() if marker in text] == [destination]
+            for marker, destination in expected
+        )
 
-        def packet():
-            token = os.urandom(8).hex()
-            # The full marker is absent from command echo, so only execution
-            # can satisfy the assertion, including when input arrives late.
-            return "printf 'ROUTED_%s\\n' " + token + "\r", "ROUTED_" + token
-
-        # Warm every terminal arrangement and prove the selected shell executes.
-        for space_index, space in enumerate(spaces):
-            for tab_index, tab in enumerate(space["tabs"]):
-                command, marker = packet()
-                client.type(
-                    direct_sequence(f"select-workspace-{space_index + 1}")
-                    + direct_sequence(f"select-tab-{tab_index + 1}")
-                    + command
-                )
-                wait(
-                    client,
-                    lambda marker=marker, tab=tab: (
-                        marker in shells.run("capture-pane", "-p", "-t", terminal(tab))
-                    ),
-                    "routing fixture shell did not become ready",
-                )
-            client.type(direct_sequence("select-tab-1"))
-
-        def identities():
-            return set(
-                shells.run(
-                    "list-panes", "-a", "-F", "#{session_name}|#{pane_id}|#{pane_pid}"
-                ).splitlines()
-            )
-
-        original = identities()
-        assert len(original) == 4 * pane_count
-        expected = []
-
-        def routed():
-            observed = contents()
-            return all(
-                [target for target, text in observed.items() if marker in text] == [destination]
-                for marker, destination in expected
-            )
-
-        for method in ("click", "shortcut"):
-            for kind in ("tab", "workspace"):
-                for burst in (False, True):
-                    client.type(
-                        direct_sequence("select-workspace-1") + direct_sequence("select-tab-1")
-                    )
-                    lines = viewer.run("capture-pane", "-p", "-t", "%0").splitlines()
-                    packets = []
-                    for index in (1, 0, 1, 0):
-                        tab = spaces[index if kind == "workspace" else 0]["tabs"][
-                            index if kind == "tab" else 0
-                        ]
-                        if method == "shortcut":
-                            navigation = direct_sequence(f"select-{kind}-{index + 1}")
+    for method in ("click", "shortcut"):
+        for kind in ("tab", "workspace"):
+            for burst in (False, True):
+                client.type(direct_sequence("select-workspace-1") + direct_sequence("select-tab-1"))
+                lines = viewer.run("capture-pane", "-p", "-t", "%0").splitlines()
+                packets = []
+                for index in (1, 0, 1, 0):
+                    tab = spaces[index if kind == "workspace" else 0]["tabs"][
+                        index if kind == "tab" else 0
+                    ]
+                    if method == "shortcut":
+                        navigation = direct_sequence(f"select-{kind}-{index + 1}")
+                    else:
+                        if kind == "tab":
+                            row, column = (4 if index else 2), 3
                         else:
-                            if kind == "tab":
-                                row, column = (4 if index else 2), 3
-                            else:
-                                label = f"[ {index + 1} ]"
-                                row = next(i for i, line in enumerate(lines) if label in line)
-                                column = lines[row].index(label) + 2
-                            navigation = f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m"
-                        command, marker = packet()
-                        expected.append((marker, terminal(tab)))
-                        packets.append(navigation + command)
-                        if not burst:
-                            os.write(client.master, packets[-1].encode())
-                            wait(client, routed, f"immediate {method}/{kind} input misrouted")
-                    if burst:
-                        # Multiple navigation events and commands in one write:
-                        # no readiness wait between physical inputs.
-                        os.write(client.master, "".join(packets).encode())
-                        wait(client, routed, f"burst {method}/{kind} input misrouted")
-        client.pump(0.3)
-        assert routed(), "delayed or duplicate delivery reached an unintended shell"
-        assert identities() == original, "navigation changed a shell process"
-        if pane_count == 1:
-            bracketed_paste(client, shells, terminal(spaces[0]["tabs"][0]))
-            native_mouse(directory, client, viewer)
-            assert identities() == original, "native mouse checks changed a shell process"
-        print(
-            f"PASS: {pane_count}-pane tab/workspace immediate and burst click/shortcut routing; "
-            "all 32 commands executed only in their intended shell; original PIDs retained",
-            flush=True,
-        )
-    finally:
-        client.close()
-        if viewer is not None:
-            viewer.run("kill-server", check=False)
-        shell_pids = [
-            int(pid)
-            for pid in shells.run("list-panes", "-a", "-F", "#{pane_pid}", check=False).splitlines()
-        ]
-        shells.run("kill-server", check=False)
-
-        def shells_exited():
-            for pid in shell_pids:
-                try:
-                    os.kill(pid, 0)
-                except ProcessLookupError:
-                    continue
-                return False
-            return True
-
-        # kill-server can return before login shells finish writing history.
-        # Let all owned shells exit before TemporaryDirectory removes their HOME.
-        wait(client, shells_exited, "fixture shells did not finish exiting")
-        Path(shells.socket + ".viewer-lock").unlink(missing_ok=True)
+                            label = f"[ {index + 1} ]"
+                            row = next(i for i, line in enumerate(lines) if label in line)
+                            column = lines[row].index(label) + 2
+                        navigation = f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m"
+                    command, marker = packet()
+                    expected.append((marker, terminal(tab)))
+                    packets.append(navigation + command)
+                    if not burst:
+                        os.write(client.master, packets[-1].encode())
+                        wait(client, routed, f"immediate {method}/{kind} input misrouted")
+                if burst:
+                    # Multiple navigation events and commands in one write:
+                    # no readiness wait between physical inputs.
+                    os.write(client.master, "".join(packets).encode())
+                    wait(client, routed, f"burst {method}/{kind} input misrouted")
+    client.pump(0.3)
+    assert routed(), "delayed or duplicate delivery reached an unintended shell"
+    assert identities() == original, "navigation changed a shell process"
+    if pane_count == 1:
+        bracketed_paste(client, shells, terminal(spaces[0]["tabs"][0]))
+        native_mouse(directory, client, viewer)
+        assert identities() == original, "native mouse checks changed a shell process"
+    print(
+        f"PASS: {pane_count}-pane tab/workspace immediate and burst click/shortcut routing; "
+        "all 32 commands executed only in their intended shell; original PIDs retained",
+        flush=True,
+    )

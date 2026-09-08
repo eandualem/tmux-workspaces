@@ -1,5 +1,21 @@
 # Verification and known limits
 
+## Owned fixtures and real SSH — 2026-09-08
+
+The shared PTY layer now owns fresh libraries, servers and clients through setup
+errors, assertions, timeouts and interruptions. Cleanup ignores socket paths in
+runtime manifests and reports failures without masking the original assertion.
+The existing eight scenarios retain their behavioral assertions.
+
+A nonroot Debian 13 container with Python 3.12.14, tmux 3.5a and OpenSSH 10.0p2
+passed a real authenticated loopback SSH scenario: mouse and keyboard input,
+returned output, resize, abrupt disconnect/reconnect, saved workspace/four-pane
+arrangements, the same foreground process resuming, cwd/shell identities and
+external attachment ownership. No host service, user library or credentials were
+used. This supersedes the historical lack of SSH transport coverage below; it
+does not establish WAN, WSL or native GUI behavior. Exact setup and current
+platform scope are in [TESTING.md](TESTING.md).
+
 ## Combined navigation and input verification — 2026-09-08
 
 The integrated package, provider, recovery, shell-context and navigation changes
