@@ -20,6 +20,9 @@ def main() -> None:
     def git(*arguments: str) -> bytes:
         return subprocess.check_output(["git", "-C", str(root), *arguments])
 
+    checkout = Path(git("rev-parse", "--show-toplevel").decode().removesuffix("\n")).resolve()
+    if checkout != root:
+        raise SystemExit("Run package_source.py from its own Git checkout, not an extracted copy")
     commit = git("rev-parse", "--verify", "--end-of-options", args.revision + "^{commit}")
     commit = commit.decode().strip()
     # Read the formula from the same commit as the source; working edits must

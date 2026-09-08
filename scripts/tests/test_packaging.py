@@ -107,6 +107,18 @@ class PackagingTests(unittest.TestCase):
                 "fixture",
             )
             commit = git("rev-parse", "HEAD")
+            nested_script = root / "extracted/scripts/package_source.py"
+            nested_script.parent.mkdir(parents=True)
+            shutil.copy2(root / "scripts/package_source.py", nested_script)
+            refused_output = Path(directory) / "refused"
+            result = subprocess.run(
+                [sys.executable, str(nested_script), "--output", str(refused_output)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("own Git checkout", result.stderr)
+            self.assertFalse(refused_output.exists())
             (root / "payload").write_text("uncommitted")
             template.write_text("uncommitted formula")
             (root / ".backbone").mkdir()
