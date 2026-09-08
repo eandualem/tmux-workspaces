@@ -183,6 +183,16 @@ This is same-version relocation/reinstall coverage, not evidence for arbitrary
 schema changes, dependency upgrades or live updates. Ghostty launch is inspected
 with `--dry-run`; no native GUI is opened.
 
+On 2026-09-08, the archive of prototype commit
+`af131b334033027d3f2acaa25e66a904a3e017a4` passed this installed PTY suite on
+macOS with Python 3.14.7/tmux 3.7c and Debian 13 with Python 3.12.14/tmux 3.5a.
+The Linux container ran as an unprivileged user, with no network and a read-only
+source mount. Both platforms passed `make check`: 132 application tests,
+12 benchmark tests and five packaging tests. All eight existing macOS PTY
+suites also passed; the full existing Linux suite was not repeated in this issue.
+The generated local formula passed Ruby syntax validation. This is local evidence;
+hosted CI is still held by the account payment/spending-limit restriction.
+
 The formula calls the tested installer and includes noninteractive smoke checks.
 Full Homebrew installation, audit, bottles, upgrade/cleanup behavior and supported
 macOS/Linux packaging matrices still need isolated package-manager validation

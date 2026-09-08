@@ -376,6 +376,9 @@ def exercise(source: Path, root: Path) -> None:
         assert outer.run("show-options", "-g") == host_options
         assert client.process.poll() is None
         assert identity() == expected_identity
+        assert external_identity == source_server.run(
+            "list-panes", "-a", "-F", "#{pane_id}|#{pane_pid}|#{pane_current_path}"
+        )
         assert json.loads(state.read_text()) == foreground
         for runtime, membership in installed_trees.items():
             assert {
