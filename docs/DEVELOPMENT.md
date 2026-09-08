@@ -40,7 +40,9 @@ branches when no active worktree or running helper still depends on them.
 GitHub CI runs checks and all terminal integration suites on Linux with Python
 3.11 and 3.14, and macOS with Python 3.14. Jobs use read-only repository permissions
 and no user credentials. Passing PTY tests does not establish native GUI rendering
-or end-to-end SSH coverage. Performance budgets belong in opt-in benchmarks,
+or end-to-end SSH coverage. The Ghostty command fixture uses its macOS login
+wrapper on macOS and ordinary exec on Linux; it never opens the native app.
+Performance budgets belong in opt-in benchmarks,
 rather than timing assertions in ordinary unit tests.
 
 Public visibility and package-registry publication remain separate owner decisions.

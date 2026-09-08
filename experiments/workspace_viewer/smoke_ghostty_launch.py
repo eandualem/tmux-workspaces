@@ -1,6 +1,7 @@
-"""Exercise Ghostty's generated macOS shell command on a real isolated PTY.
+"""Exercise Ghostty's generated shell command on a real isolated PTY.
 
-This executes Ghostty's bash exec wrapper, not its GUI or /usr/bin/login.
+macOS executes Ghostty's bash wrapper; Linux checks portable shell quoting and
+lifecycle. Neither path runs the native GUI or /usr/bin/login.
 """
 
 from __future__ import annotations
@@ -44,8 +45,16 @@ class GhosttyShellClient(Client):
         self.master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 38, 160, 0, 0))
         try:
+            # Ghostty uses login argv[0] only on macOS. Imposing that wrapper on
+            # Linux can prevent CPython from resolving its own executable.
+            wrapper = (
+                ["/bin/bash", "--noprofile", "--norc", "-c", "exec -l " + value]
+                if sys.platform == "darwin"
+                else ["/bin/sh", "-c", "exec " + value]
+            )
+            # The Linux exec keeps PID tracking simple in this test harness.
             self.process = subprocess.Popen(
-                ["/bin/bash", "--noprofile", "--norc", "-c", "exec -l " + value],
+                wrapper,
                 stdin=slave,
                 stdout=slave,
                 stderr=slave,
