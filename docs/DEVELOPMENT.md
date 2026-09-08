@@ -44,3 +44,12 @@ or end-to-end SSH coverage. Performance budgets belong in opt-in benchmarks,
 rather than timing assertions in ordinary unit tests.
 
 Public visibility and package-registry publication remain separate owner decisions.
+
+## tmux option compatibility
+
+The TPM launcher probes whether the server adds a backslash before dollar-variable
+spellings when printing option values, a behavior present in tmux 3.4. It removes
+only that added escape and never evaluates shell syntax or unescapes other text.
+The integration test verifies literal paths, quotes, dollars and backslashes.
+Do not generalize this to decoding control characters: tmux's textual output can
+make a backspace indistinguishable from the literal characters `\b`.

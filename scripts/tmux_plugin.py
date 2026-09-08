@@ -3,15 +3,34 @@
 
 import argparse
 import os
+import re
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 
-def tmux(socket: str, *args: str) -> str:
+def _tmux(socket: str, *args: str) -> str:
     return subprocess.run(
         ["tmux", "-S", socket, *args], check=True, capture_output=True, text=True
     ).stdout.removesuffix("\n")
+
+
+@lru_cache(maxsize=32)
+def _escapes_dollars(socket: str) -> bool:
+    # Some tmux versions escape dollars in cmdq_print even without quoting.
+    # Probe behavior instead of guessing versions (distributions carry patches).
+    marker = "$tmux_workspaces_probe"
+    return _tmux(socket, "display-message", "-p", "-l", marker) == "\\" + marker
+
+
+def tmux(socket: str, *args: str) -> str:
+    value = _tmux(socket, *args)
+    if r"\$" in value and _escapes_dollars(socket):
+        # Remove only the extra slash added by historical utf8_strvis. Literal
+        # slashes, shell syntax and control-character spellings stay untouched.
+        value = re.sub(r"\\\$(?=[A-Za-z_{])", "$", value)
+    return value
 
 
 def option(socket: str, name: str) -> str:
