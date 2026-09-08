@@ -7,8 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .controls import send_action
-
 
 def default_data_dir() -> Path:
     configured = os.environ.get("TMUX_WORKSPACES_DATA_DIR")
@@ -77,6 +75,8 @@ def main() -> int:
     args = parser().parse_args()
     try:
         if args.mode == "_action":
+            from .controls import send_action
+
             send_action(args.action_socket, args.action, wait=args.wait_action)
             return 0
         if args.mode == "_leaf":

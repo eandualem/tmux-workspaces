@@ -94,6 +94,23 @@ class EntrypointTests(unittest.TestCase):
             finally:
                 receiver.close()
 
+    def test_leaf_entry_import_does_not_load_action_transport(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; import tmux_workspaces.cli; import tmux_workspaces.attachments; "
+                "assert 'tmux_workspaces.controls' not in sys.modules; "
+                "assert 'tmux_workspaces.application' not in sys.modules; "
+                "assert 'curses' not in sys.modules",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_package_import_has_no_optional_adapter_or_application_side_effects(self):
         result = subprocess.run(
             [

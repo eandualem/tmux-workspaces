@@ -4,12 +4,30 @@ import contextlib
 import os
 import re
 import shlex
+from dataclasses import dataclass
 
 from .controls import DIRECT_SHORTCUTS, SHORTCUTS, direct_sequence
 from .entrypoints import script_command
 from .model import leaves, minimum_size
 from .shells import Shells
 from .tmux import Tmux
+
+
+@dataclass(frozen=True)
+class PaneState:
+    active: int
+    last: int
+    dead: int
+    left: int
+    top: int
+    width: int
+    height: int
+
+
+@dataclass(frozen=True)
+class DisplayState:
+    size: tuple[int, int]
+    panes: dict[str, PaneState]
 
 
 class Display:
@@ -36,6 +54,8 @@ class Display:
         self.small = False
         self._shell_names: dict[str, str] = {}
         self._rendered_key = None
+        self._snapshot_enabled = False
+        self._snapshot: DisplayState | None = None
 
     def setup(self) -> None:
         for name, value in {
@@ -161,30 +181,60 @@ class Display:
             ),
         )
 
+    @contextlib.contextmanager
+    def snapshot_scope(self):
+        """Share fresh reads within one controller event, never across events."""
+        previous = self._snapshot_enabled
+        self._snapshot_enabled = True
+        self.invalidate_snapshot()
+        try:
+            yield
+        finally:
+            self.invalidate_snapshot()
+            self._snapshot_enabled = previous
+
+    def invalidate_snapshot(self) -> None:
+        self._snapshot = None
+
+    def state(self) -> DisplayState:
+        if self._snapshot_enabled and self._snapshot is not None:
+            return self._snapshot
+        panes = {}
+        size = None
+        for line in self.tmux.run(
+            "list-panes",
+            "-t",
+            "=viewer:",
+            "-F",
+            "#{pane_id} #{pane_active} #{pane_last} #{pane_dead} "
+            "#{pane_left} #{pane_top} #{pane_width} #{pane_height} "
+            "#{window_width} #{window_height}",
+        ).splitlines():
+            pane, *fields = line.split()
+            values = [int(field) for field in fields]
+            if len(values) != 9:
+                raise ValueError("Incomplete viewer pane state")
+            panes[pane] = PaneState(*values[:7])
+            size = tuple(values[7:])
+        if size is None or self.sidebar not in panes:
+            raise RuntimeError("Viewer navigation pane disappeared")
+        snapshot = DisplayState(size, panes)
+        if self._snapshot_enabled:
+            self._snapshot = snapshot
+        return snapshot
+
     def size(self) -> tuple[int, int]:
-        return tuple(
-            map(
-                int,
-                self.tmux.run(
-                    "display-message", "-p", "-t", self.sidebar, "#{window_width} #{window_height}"
-                ).split(),
-            )
-        )
+        return self.state().size
 
     def focused_leaf(self) -> str | None:
-        states = [
-            line.split()
-            for line in self.tmux.run(
-                "list-panes", "-t", "viewer:", "-F", "#{pane_active} #{pane_last} #{pane_id}"
-            ).splitlines()
-        ]
+        panes = self.state().panes
         # A sidebar click follows the selected content pane immediately, without
         # depending on the polling interval catching the earlier terminal click.
-        for flag in (0, 1):
-            for state in states:
-                if state[flag] == "1":
+        for flag in ("active", "last"):
+            for pane, state in panes.items():
+                if getattr(state, flag):
                     leaf_id = next(
-                        (key for key, pane in self.panes.items() if pane == state[2]), None
+                        (key for key, value in self.panes.items() if value == pane), None
                     )
                     if leaf_id:
                         return leaf_id
@@ -192,7 +242,12 @@ class Display:
 
     def select(self, leaf_id: str) -> None:
         if leaf_id in self.panes:
+            self.invalidate_snapshot()
             self.tmux.run("select-pane", "-t", self.panes[leaf_id])
+
+    def select_sidebar(self) -> None:
+        self.invalidate_snapshot()
+        self.tmux.run("select-pane", "-t", self.sidebar)
 
     def _leaf_command(self, pane: dict | None) -> str:
         if not pane:
@@ -220,7 +275,10 @@ class Display:
     def _pane_identity(self, tab: dict | None) -> None:
         if not tab:
             return
-        commands = []
+        focused = self.panes.get(tab["focus"])
+        # A stale focus may be absent from the displayed fallback tree. Preserve
+        # the existing safe no-op selection while still applying pane metadata.
+        commands = [["select-pane", "-t", focused]] if focused else []
         for leaf in leaves(tab["tree"]):
             pane = self.panes.get(leaf["id"])
             if not pane:
@@ -231,6 +289,7 @@ class Display:
                 "@viewer_agent": re.sub(r"[^\w .-]", "", leaf["agent"] or "Terminal"),
             }.items():
                 commands.append(["set-option", "-p", "-t", pane, name, value])
+        self.invalidate_snapshot()
         self.tmux.batch(commands)
 
     @staticmethod
@@ -251,14 +310,10 @@ class Display:
 
     def render(self, tab: dict | None, focus: bool) -> None:
         # Only pane IDs on this dedicated server may be destroyed or rearranged.
-        owned = dict(
-            line.split()
-            for line in self.tmux.run(
-                "list-panes", "-t", "viewer:", "-F", "#{pane_id} #{pane_dead}"
-            ).splitlines()
-        )
+        state = self.state()
+        owned = state.panes
         content = [pane for pane in owned if pane != self.sidebar]
-        cols, rows = self.size()
+        cols, rows = state.size
         sidebar_width = min(28, max(24, cols // 4))
         tree = tab["tree"] if tab else None
         # Narrow displays use temporary focus. The saved tree is never replaced.
@@ -274,11 +329,12 @@ class Display:
             and key == self._rendered_key
             and self.last_size == (cols, rows)
             and set(content) == set(self.panes.values())
-            and all(owned[pane] == "0" for pane in content)
+            and all(not owned[pane].dead for pane in content)
         ):
             # Name-only edits, including peer renames, do not replace terminals.
             self.select(tab["focus"])
             return
+        self.invalidate_snapshot()
         self._rendered_key = None
         self.last_size = (cols, rows)
         self.panes.clear()
@@ -318,10 +374,9 @@ class Display:
             self.tmux.run("resize-pane", "-t", self.sidebar, "-x", str(sidebar_width))
         if tree:
             self._tree(tree, pane)
-            self.select(tab["focus"])
         else:
             self._label(pane, "Create a tab")
-            self.tmux.run("select-pane", "-t", self.sidebar)
+            self.select_sidebar()
         self._pane_identity(tab)
         self._rendered_key = key
 
@@ -349,16 +404,10 @@ class Display:
     def remember_ratios(self, tree: dict | None) -> None:
         if not tree or "agent" in tree or len(self.panes) != len(leaves(tree)):
             return
-        geometry = {}
-        for line in self.tmux.run(
-            "list-panes",
-            "-t",
-            "viewer:",
-            "-F",
-            "#{pane_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height}",
-        ).splitlines():
-            pane, *values = line.split()
-            geometry[pane] = list(map(int, values))
+        geometry = {
+            pane: [state.left, state.top, state.width, state.height]
+            for pane, state in self.state().panes.items()
+        }
 
         def measure(node):
             if "agent" in node:

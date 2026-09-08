@@ -58,7 +58,7 @@ class Sidebar:
             self.store.save(self.model)
         except LayoutConflict:
             self.display.render(self.model.tab, self.model.state["focus"])
-            self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+            self.display.select_sidebar()
             raise
 
     def remember(self) -> None:
@@ -134,7 +134,7 @@ class Sidebar:
         if not item or identity != target:
             self.clear_inline()
             self.display.render(self.model.tab, self.model.state["focus"])
-            self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+            self.display.select_sidebar()
             self.message = f"{label} changed; rename again"
             return
         item["name"] = name
@@ -206,7 +206,7 @@ class Sidebar:
             if name == "agents" and tab and pane
             else None
         )
-        self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+        self.display.select_sidebar()
 
     def attach_pane(self, tab_id: str, leaf_id: str) -> None:
         tab = self.model.tab
@@ -247,7 +247,7 @@ class Sidebar:
             )
             if not pane or (pane["agent"], pane.get("source_socket")) != target[2:]:
                 self.show()
-                self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+                self.display.select_sidebar()
                 self.message = "Pane changed; choose Attach again"
                 return
             # A click in another pane while the chooser is open must not change
@@ -276,7 +276,7 @@ class Sidebar:
     def focus_sidebar(self) -> None:
         self.remember()
         self.save()
-        self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+        self.display.select_sidebar()
 
     def action(self, name: str) -> None:
         mouse = mouse_action(name)
@@ -849,49 +849,52 @@ class Sidebar:
         while self.running:
             try:
                 for action in self.actions.pending():
-                    self.action(action)
-                    self.draw()
+                    with self.display.snapshot_scope():
+                        self.action(action)
+                        self.draw()
                 now = time.monotonic()
                 if now >= next_poll:
-                    next_poll = now + 0.6
-                    if (
-                        self.inline_editor
-                        and self.display.tmux.run(
-                            "display-message", "-p", "-t", "viewer:", "#{pane_id}"
-                        )
-                        != self.display.sidebar
-                    ):
-                        self.clear_inline()
-                    if not self.menu:
-                        before = repr(self.model.tab)
-                        before_tree = repr(self.model.tab["tree"]) if self.model.tab else None
-                        try:
-                            self.store.refresh(self.model)
-                        except LayoutConflict as exc:
-                            self.message = str(exc)
-                        if before != repr(self.model.tab):
+                    with self.display.snapshot_scope():
+                        next_poll = now + 0.6
+                        if (
+                            self.inline_editor
+                            and self.display.tmux.run(
+                                "display-message", "-p", "-t", "viewer:", "#{pane_id}"
+                            )
+                            != self.display.sidebar
+                        ):
+                            self.clear_inline()
+                        if not self.menu:
+                            before = repr(self.model.tab)
+                            before_tree = repr(self.model.tab["tree"]) if self.model.tab else None
+                            try:
+                                self.store.refresh(self.model)
+                            except LayoutConflict as exc:
+                                self.message = str(exc)
+                            if before != repr(self.model.tab):
+                                self.display.render(self.model.tab, self.model.state["focus"])
+                                if before_tree != (
+                                    repr(self.model.tab["tree"]) if self.model.tab else None
+                                ):
+                                    # A peer changed the pane or attachment. Do not redirect typing.
+                                    self.display.select_sidebar()
+                                    self.message = "Tab changed; choose a pane"
+                        focused = self.display.focused_leaf()
+                        if focused and self.model.tab and focused != self.model.tab["focus"]:
+                            self.model.tab["focus"] = focused
+                            self.save()
+                        size = self.display.size()
+                        if size != self.display.last_size:
+                            # tmux resized the panes; this is not a user ratio edit.
                             self.display.render(self.model.tab, self.model.state["focus"])
-                            if before_tree != (
-                                repr(self.model.tab["tree"]) if self.model.tab else None
-                            ):
-                                # A peer changed the pane or attachment. Do not redirect typing.
-                                self.display.tmux.run("select-pane", "-t", self.display.sidebar)
-                                self.message = "Tab changed; choose a pane"
-                    focused = self.display.focused_leaf()
-                    if focused and self.model.tab and focused != self.model.tab["focus"]:
-                        self.model.tab["focus"] = focused
-                        self.save()
-                    size = self.display.size()
-                    if size != self.display.last_size:
-                        # tmux already resized the panes; don't mistake this for a user ratio edit.
-                        self.display.render(self.model.tab, self.model.state["focus"])
-                        self.last_name_click = None
-                        if self.inline_editor:
-                            self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+                            self.last_name_click = None
+                            if self.inline_editor:
+                                self.display.select_sidebar()
                 self.draw()
                 key = events.read_or_wait(next_poll)
                 if key is not None:
-                    self.input(key)
+                    with self.display.snapshot_scope():
+                        self.input(key)
                     if key == curses.KEY_RESIZE:
                         next_poll = 0.0
             except (RuntimeError, OSError, ValueError) as exc:

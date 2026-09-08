@@ -76,7 +76,7 @@ class AttachTargetTests(unittest.TestCase):
         self.assertIsNone(self.model.pane["agent"])
         self.assertIsNone(self.sidebar.menu)
         self.assertIn("Pane changed", self.sidebar.message)
-        self.display.tmux.run.assert_called_with("select-pane", "-t", "%0")
+        self.display.select_sidebar.assert_called_with()
         self.display.shells.close.assert_not_called()
 
     def test_peer_attachment_change_is_not_overwritten_by_old_chooser(self):
