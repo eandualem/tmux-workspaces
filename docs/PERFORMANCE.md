@@ -22,7 +22,9 @@ per layout, and 20 events in each navigation group. Expect several minutes. All
 servers, layouts, source sessions and shells are disposable, with unique sockets
 and temporary directories. The shell HOME is temporary, so personal shell startup
 files are not loaded. The benchmark never uses the default tmux socket or an
-existing workspace library. Fixture cleanup closes only its own servers.
+existing workspace library. Fixture cleanup closes only its own servers. It attempts every owned client,
+server and lock even if an earlier cleanup fails, then reports aggregated errors;
+PTY descriptors close even if process termination fails.
 
 For a quick harness check, not an acceptance measurement:
 
@@ -48,7 +50,10 @@ they are diagnostic single samples, not p95 estimates. No agent model is involve
 - **Routed acknowledgement:** after that check, write a unique `printf` probe
   through the same terminal input path, then observe its result in the selected
   underlying shell. Echo of the typed command cannot satisfy the marker check.
-  This includes probe execution and observer cost; it does not prove that typing
+  After the timed interval and settling, every other fixture shell is checked
+  for the same marker. Duplicate delivery fails the run even if the intended
+  shell received it too. This verification is outside the reported latency.
+  The timing includes probe execution and observer cost; it does not prove that typing
   immediately alongside a click is safe. The manual check below covers that case.
 - **First PTY output:** the first output bytes drained after the event, plus the
   byte count. These may be partial or unrelated terminal updates. This is **not**
@@ -71,7 +76,12 @@ the owned tree are not accounted for. macOS sandboxes may deny process-table
 access; use a normal local terminal rather than disabling a sandbox globally.
 Linux accounting is implemented but needs a measured Linux baseline.
 
-The raw JSON records OS release, architecture, logical CPU count, versions,
+The raw JSON records the Git revision, tracked dirty state, changed tracked paths
+and a SHA-256 fingerprint of the tracked diff. Dirty-checkout and traced results
+are explicitly marked `acceptance_eligible: false`; a HEAD hash alone is not
+provenance for modified runtime code. Eligibility is not a passing result or a
+substitute for repeated runs and human acceptance. It also records
+OS release, architecture, logical CPU count, versions,
 dimensions, workload, warmup, configuration, every sample, median and nearest-rank
 p95. It does not record the host name, operator paths, credentials or shell history.
 For acceptance, retain at least three independent runs under comparable machine

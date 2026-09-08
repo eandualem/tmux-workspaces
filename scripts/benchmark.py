@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import importlib
 import json
 import math
@@ -28,6 +29,38 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUDGET = {"p50_ms": 150, "p95_ms": 250}
+
+
+def repository_provenance(root=ROOT):
+    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, cwd=root).strip()
+    tracked = subprocess.check_output(
+        ["git", "status", "--porcelain=v1", "--untracked-files=no"], text=True, cwd=root
+    ).splitlines()
+    difference = subprocess.check_output(["git", "diff", "--binary", "HEAD", "--"], cwd=root)
+    return {
+        "revision": revision,
+        "tracked_dirty": bool(tracked),
+        "tracked_changes": tracked,
+        "tracked_diff_sha256": hashlib.sha256(difference).hexdigest() if tracked else None,
+    }
+
+
+def cleanup_all(callbacks):
+    """Attempt every owned-resource cleanup, then surface all failures together."""
+    errors = []
+    for callback in callbacks:
+        try:
+            callback()
+        except BaseException as exc:
+            errors.append(exc)
+    if errors:
+        raise BaseExceptionGroup("Benchmark fixture cleanup failed", errors)
+
+
+def assert_unique_ack(capture, target, marker, targets):
+    for other in targets:
+        if other != target and marker in capture(other):
+            raise RuntimeError("Input acknowledgement also reached another fixture shell")
 
 
 def summary(values):
@@ -179,15 +212,22 @@ class Terminal:
         os.killpg(self.process.pid, signal.SIGWINCH)
 
     def close(self):
-        if self.process.poll() is None:
-            self.process.terminate()
-            deadline = time.monotonic() + 10
-            while self.process.poll() is None and time.monotonic() < deadline:
-                self.pump(0.02)
+        def stop_process():
             if self.process.poll() is None:
-                self.process.kill()
-            self.process.wait()
-        os.close(self.master)
+                self.process.terminate()
+                deadline = time.monotonic() + 10
+                while self.process.poll() is None and time.monotonic() < deadline:
+                    self.pump(0.02)
+                if self.process.poll() is None:
+                    self.process.kill()
+                self.process.wait()
+
+        def close_pty():
+            if self.master is not None:
+                descriptor, self.master = self.master, None
+                os.close(descriptor)
+
+        cleanup_all([stop_process, close_pty])
 
 
 class Fixture:
@@ -404,6 +444,17 @@ class Fixture:
                 stream.seek(trace_offset)
                 result["application_tmux_invocations"] = len(stream.readlines())
         self.drain(self.options.settle)
+        targets = [
+            "=" + name + ":"
+            for name in self.tmux(self.shell, "list-sessions", "-F", "#{session_name}").splitlines()
+        ]
+        assert_unique_ack(
+            lambda other: self.tmux(self.shell, "capture-pane", "-p", "-t", other),
+            target,
+            marker,
+            targets,
+        )
+        result["routed_ack_unique"] = True
         return result
 
     def helper_import_baseline(self):
@@ -558,24 +609,31 @@ class Fixture:
         }
 
     def close(self):
-        for client in self.clients:
-            client.close()
+        callbacks = [client.close for client in self.clients]
         for socket in [*self.views, self.shell, str(self.source)]:
-            self.tmux(socket, "kill-server", check=False)
-            Path(str(socket) + ".viewer-lock").unlink(missing_ok=True)
+            callbacks.extend(
+                [
+                    lambda socket=socket: self.tmux(socket, "kill-server", check=False),
+                    lambda socket=socket: Path(str(socket) + ".viewer-lock").unlink(
+                        missing_ok=True
+                    ),
+                ]
+            )
+        cleanup_all(callbacks)
 
 
 def run(options):
+    provenance = repository_provenance()
     report = {
+        "provenance": provenance,
+        "acceptance_eligible": not provenance["tracked_dirty"] and not options.trace_commands,
         "schema": 1,
         "environment": {
             "system": platform.system(),
             "release": platform.release(),
             "machine_class": platform.machine(),
             "logical_cpus": os.cpu_count(),
-            "revision": subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], text=True, cwd=ROOT
-            ).strip(),
+            "revision": provenance["revision"],
             "python": platform.python_version(),
             "tmux": subprocess.check_output(["tmux", "-V"], text=True).strip(),
             "terminal": "xterm-256color",

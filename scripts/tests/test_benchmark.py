@@ -1,9 +1,13 @@
 """Accounting and percentile contracts for the opt-in benchmark."""
 
 import importlib.util
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 spec = importlib.util.spec_from_file_location(
     "benchmark", Path(__file__).resolve().parents[1] / "benchmark.py"
@@ -67,6 +71,92 @@ class BenchmarkTests(unittest.TestCase):
         self.assertFalse(fixture.ready({"id": "tab"}))
         rows["shells"] = "terminal-leaf|/dev/ttys1"
         self.assertTrue(fixture.ready({"id": "tab"}))
+
+    def test_provenance_marks_dirty_tracked_source_without_relabeling_head(self):
+        with tempfile.TemporaryDirectory(prefix="tw-provenance-") as temporary:
+            root = Path(temporary)
+
+            def git(*args):
+                subprocess.run(
+                    ["git", *args],
+                    cwd=root,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                )
+
+            git("init", "-q")
+            source = root / "runtime.py"
+            source.write_text("original\n")
+            git("add", "runtime.py")
+            git(
+                "-c",
+                "user.name=Benchmark fixture",
+                "-c",
+                "user.email=benchmark@example.invalid",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-qm",
+                "fixture",
+            )
+            clean = benchmark.repository_provenance(root)
+            self.assertFalse(clean["tracked_dirty"])
+            self.assertIsNone(clean["tracked_diff_sha256"])
+            source.write_text("changed\n")
+            dirty = benchmark.repository_provenance(root)
+            self.assertEqual(dirty["revision"], clean["revision"])
+            self.assertTrue(dirty["tracked_dirty"])
+            self.assertIn("runtime.py", dirty["tracked_changes"][0])
+            self.assertIsNotNone(dirty["tracked_diff_sha256"])
+            git("add", "runtime.py")
+            self.assertEqual(
+                benchmark.repository_provenance(root)["tracked_diff_sha256"],
+                dirty["tracked_diff_sha256"],
+            )
+
+    def test_routing_check_rejects_duplicate_delivery_even_when_target_received_it(self):
+        panes = {"target": "BENCH_token", "other": "BENCH_token", "third": "ordinary prompt"}
+        with self.assertRaisesRegex(RuntimeError, "another fixture shell"):
+            benchmark.assert_unique_ack(panes.__getitem__, "target", "BENCH_token", panes)
+        panes["other"] = "ordinary prompt"
+        benchmark.assert_unique_ack(panes.__getitem__, "target", "BENCH_token", panes)
+
+    def test_terminal_cleanup_closes_pty_even_when_process_termination_fails(self):
+        reader, writer = os.pipe()
+        self.addCleanup(os.close, writer)
+        client = benchmark.Terminal.__new__(benchmark.Terminal)
+        client.master = reader
+        client.process = Mock()
+        client.process.poll.return_value = None
+        client.process.terminate.side_effect = OSError("injected terminate failure")
+        with self.assertRaises(ExceptionGroup):
+            client.close()
+        self.assertIsNone(client.master)
+        with self.assertRaises(OSError):
+            os.fstat(reader)
+
+    def test_cleanup_attempts_every_client_server_and_lock_after_failures(self):
+        with tempfile.TemporaryDirectory(prefix="tw-cleanup-") as temporary:
+            fixture = benchmark.Fixture.__new__(benchmark.Fixture)
+            fixture.clients = [Mock(), Mock()]
+            fixture.clients[0].close.side_effect = RuntimeError("first client failed")
+            fixture.views = [str(Path(temporary) / "one.sock"), str(Path(temporary) / "two.sock")]
+            fixture.shell = str(Path(temporary) / "shells.sock")
+            fixture.source = Path(temporary) / "source.sock"
+            sockets = [*fixture.views, fixture.shell, str(fixture.source)]
+            for socket in sockets:
+                Path(socket + ".viewer-lock").touch()
+            fixture.tmux = Mock(side_effect=[RuntimeError("first server failed"), "", "", ""])
+            with self.assertRaises(ExceptionGroup) as caught:
+                fixture.close()
+            self.assertEqual(len(caught.exception.exceptions), 2)
+            for client in fixture.clients:
+                client.close.assert_called_once()
+            self.assertEqual([call.args[0] for call in fixture.tmux.call_args_list], sockets)
+            self.assertFalse(any(Path(socket + ".viewer-lock").exists() for socket in sockets))
 
     def test_churn_missing_roots_or_counter_regression_invalidate_cpu(self):
         start = {1: (0, 2), 2: (1, 3)}
