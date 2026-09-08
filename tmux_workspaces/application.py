@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import curses
 import hashlib
 import json
@@ -177,6 +178,10 @@ def launch(args) -> int:
             .expanduser()
             .resolve()
         )
+    # Validate before creating display/demo servers or ordinary shells. A corrupt
+    # arrangement must not start a partial viewer or overwrite recovery data.
+    with contextlib.closing(Store(args.data_dir)) as store:
+        store.load()
     args.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     instance = uuid.uuid4().hex[:12]
     args.instance_dir = args.data_dir / "windows" / instance

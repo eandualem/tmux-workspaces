@@ -11,6 +11,8 @@ or edit tmux configuration.
 
 - `model.py`: workspace/tab/split state and pure layout reconciliation. No database,
   tmux or integration imports. New leaves capture the caller's current directory.
+- `layout_validation.py`: bounded validation of durable records before model
+  recursion or terminal creation, including identifiers and attachment references.
 - `persistence.py`: version-2 SQLite storage, migration and transactions. `Store`
   combines shared arrangements with each viewer's independent navigation state.
 - `tmux.py`: explicit-socket subprocess calls and the child environment policy.
@@ -132,3 +134,10 @@ Fallbacks retain that provider's last good observation with a fixed, sanitized
 error; unexpected discovery failure makes cached names explicitly offline.
 A subsequent successful read clears the stale error. Cancellation exceptions derived
 from BaseException are deliberately allowed to propagate.
+
+## Layout validation
+
+Layout loading validates existing records before schema writes. Launch preflights
+the library before creating any private tmux server. Existing-current-record errors
+also block refresh/save, rather than falling back to older tables or overwriting
+the original bytes. See [recovery](RECOVERY.md) for explicit backup/copy workflows.

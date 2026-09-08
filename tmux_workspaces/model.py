@@ -6,6 +6,8 @@ import copy
 import uuid
 from pathlib import Path
 
+from .layout_validation import InvalidLayout, validate_state
+
 
 def identity() -> str:
     return uuid.uuid4().hex[:12]
@@ -240,3 +242,7 @@ def validate_library(state: dict) -> None:
     ids.extend(tab["id"] for space in spaces for tab in space["tabs"])
     if len(set(ids)) != len(ids):
         raise LayoutConflict("Tab moved in another window; refreshed. Please try again.")
+    try:
+        validate_state(state, navigation=False)
+    except InvalidLayout as error:
+        raise LayoutConflict("Merged layout is invalid; refreshed. Please try again.") from error

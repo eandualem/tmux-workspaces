@@ -12,6 +12,22 @@ These jobs use disposable local sockets and ordinary shells. They establish Linu
 and macOS terminal integration coverage, not actual SSH transport, WSL or native
 Ghostty GUI behavior. The Ghostty command harness uses the macOS login-shell
 wrapper on macOS and ordinary shell execution on Linux.
+## Layout validation and recovery — 2026-09-08
+
+`make check` passed **97 tests**, Ruff and TPM shell checks; all seven real PTY
+suites in `make smoke` passed on macOS with Python 3.14 and tmux 3.7c. New tests
+reject malformed JSON, duplicate fields/identities, missing fields, invalid
+navigation, split geometry, source references, unsupported versions and excessive
+nesting. Rejected loads leave the database byte-for-byte unchanged; invalid legacy
+records create no tables. Valid legacy migration retains the exact earlier record,
+including offline attachment references.
+
+An invalid library blocks launch before any tmux process starts, including demo
+launch. Corruption introduced by another writer blocks refresh and save while
+retaining the in-memory arrangement and the original database bytes. Existing
+concurrent-edit and conflict regressions still pass. Recovery remains an explicit
+backup-and-inspect workflow described in [RECOVERY.md](RECOVERY.md); there is no
+automatic repair command. Linux and a real damaged user library were not fixtures.
 
 ## Read-only provider isolation — 2026-09-08
 
