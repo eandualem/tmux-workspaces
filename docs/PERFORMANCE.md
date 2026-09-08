@@ -181,3 +181,45 @@ input loss on the baseline: readiness probes alone do not establish immediate
 typing correctness. This is tracked separately in issue #17 and must be fixed
 and included in the optimized comparison. Keep the raw baseline runs and final
 comparison with the engineering review; timing eligibility is not acceptance.
+
+## Reviewed navigation implementation
+
+Actions wake the persistent controller directly instead of waiting for its
+150 ms fallback poll. Pane state is shared only within one event and invalidated
+before focus or layout mutations. Shell discovery, cwd capture and pane metadata
+use bounded tmux batches. Name-only updates reuse healthy attachment clients;
+changed layouts and dead clients still rebuild. Newline-containing cwd values,
+fragmented Unicode input and small-screen layouts retain their regression coverage.
+
+Sidebar mouse gestures now use the same applied-action acknowledgement as direct
+shortcuts. Subsequent terminal input waits for navigation and focus to finish.
+The separate same-write/burst PTY tests cover tabs and workspaces with one and four
+panes, along with double-click editing, native content mouse input and bracketed
+paste. This corrects the baseline lost-input finding described above.
+
+A controlled comparison used the same benchmark code and settings at packaged
+baseline `6abcad8` and isolated optimized revision `56cc8fb`, with three serial
+runs and 30 events per path per run. All 720 optimized post-readiness input probes
+were unique, and shell identities survived. All 18 optimized idle samples were
+valid: weighted idle CPU was 0.629% of one core for one pane and 0.706% for four,
+compared with 0.797% and 0.843% on the baseline. The host and scope are as above.
+
+Separate diagnostic traces reduced application tmux invocations per navigation
+from 12–14 to 6–7 for one pane, and from 39 to 12–13 for four panes. A batch counts
+as one invocation, not as one internal tmux operation. Traced execution is never
+used as acceptance timing.
+
+The comparison improved shortcut and four-pane click latency; one-pane clicks
+became slower while still meeting the targets. All one-pane paths met both
+budgets in every optimized run, but four-pane results did not. The two builds
+include multiple changes, so this comparison does not isolate the cause of the
+one-pane click tradeoff. Raw per-run latency and remaining gaps are recorded on
+[the performance gate](https://github.com/eandualem/tmux-workspaces/issues/3).
+Background host workload and power settings were uncontrolled; no observer cost
+was subtracted and no slow sample was discarded.
+
+The comparison isolates the performance changes and predates integration with
+layout validation, provider isolation, shell context and final lifecycle fixes.
+It must not be presented as a measurement of final main. A small integrated probe
+checks the combined revision separately; it cannot replace the repeated budgets
+or native terminal visual acceptance. The public-release gate remains open.
