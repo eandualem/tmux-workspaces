@@ -20,6 +20,21 @@ SPEC.loader.exec_module(plugin)
 
 
 class PluginTests(unittest.TestCase):
+    def test_old_tmux_dollar_printing_preserves_literal_backslashes(self):
+        printed = r"\$name \${name} \$_name \\$literal $(command) $1 \n"
+        expected = r"$name ${name} $_name \$literal $(command) $1 \n"
+        plugin._escapes_dollars.cache_clear()
+        with patch.object(plugin, "_tmux", side_effect=[printed, r"\$tmux_workspaces_probe"]):
+            self.assertEqual(plugin.tmux("fixture.sock", "show-options"), expected)
+        plugin._escapes_dollars.cache_clear()
+
+    def test_modern_tmux_literal_dollar_backslashes_are_not_removed(self):
+        printed = r"\$name ${name} $_name \\$literal $(command) $1 \n"
+        plugin._escapes_dollars.cache_clear()
+        with patch.object(plugin, "_tmux", side_effect=[printed, "$tmux_workspaces_probe"]):
+            self.assertEqual(plugin.tmux("fixture.sock", "show-options"), printed)
+        plugin._escapes_dollars.cache_clear()
+
     def test_install_outside_tmux_refuses_implicit_server(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(plugin, "tmux") as tmux:
             with self.assertRaisesRegex(ValueError, "run-shell or TPM"):
@@ -96,7 +111,10 @@ class PluginTests(unittest.TestCase):
                     "data-dir": str(scratch / "data 'literal' ; $(touch SHOULD_NOT_EXIST) #{}"),
                     "backbone": "on",
                     "backbone-data-dir": str(scratch / "adapter config"),
-                    "url": "http://127.0.0.1:9999/path?literal=$value&other='quote'",
+                    "url": (
+                        "http://127.0.0.1:9999/path?literal=$value&other='quote'"
+                        r"&braced=${name}&underscore=$_name&slash=\$name&digits=$1"
+                    ),
                 }
                 for name, value in settings.items():
                     tmux("set-option", "-g", "@tmux-workspaces-" + name, value)
