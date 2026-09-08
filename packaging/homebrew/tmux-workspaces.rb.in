@@ -1,0 +1,41 @@
+# Local prototype. Render with scripts/package_source.py; do not publish this template.
+class TmuxWorkspaces < Formula
+  desc "A workspace layer for tmux"
+  homepage "https://github.com/eandualem/tmux-workspaces"
+  url @SOURCE_URL@
+  version @SOURCE_VERSION@
+  sha256 @SOURCE_SHA256@
+  license "MIT"
+
+  depends_on "python@3.14"
+  depends_on "tmux"
+
+  def install
+    # Homebrew creates prefix before install. Stage a fresh child, then move only
+    # the files this installer owns into the keg. Runtime data is never installed.
+    staging = buildpath/"staged"
+    python = Formula["python@3.14"].opt_bin/"python3.14"
+    system python, "scripts/install_bundle.py", "--prefix", staging,
+           "--runtime-prefix", prefix, "--python", python,
+           "--tmux", Formula["tmux"].opt_bin/"tmux"
+    prefix.install staging.children
+  end
+
+  def caveats
+    <<~EOS
+      Prototype: no published tap or anonymous private-source installation.
+      Exit all viewers before upgrading/removing this application or Python.
+      Keep existing libraries and tmux servers; do not close their tabs or panes.
+      Restart dedicated Ghostty and reload the installed TPM entry after upgrade:
+        #{opt_share}/tmux-workspaces/tmux-workspaces.tmux
+      tmux dependency upgrades need separate client/server compatibility checks.
+    EOS
+  end
+
+  test do
+    assert_match "--data-dir", shell_output("#{bin}/tmux-workspaces --help")
+    assert_match "--source-socket", shell_output("#{bin}/tmux-workspaces --help")
+    assert_path_exists share/"tmux-workspaces/tmux-workspaces.tmux"
+    assert_path_exists libexec/"tmux-workspaces/integrations/ghostty.conf"
+  end
+end

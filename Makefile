@@ -1,7 +1,7 @@
 PYTHON ?= python3
 RUFF ?= env UV_TOOL_DIR="$(CURDIR)/.backbone/tools" uvx ruff
 
-.PHONY: check test smoke smoke-ssh benchmark
+.PHONY: check test smoke smoke-ssh package-smoke benchmark
 check:
 	$(RUFF) check tmux_workspaces tests experiments/workspace_viewer scripts run ghostty preview
 	$(RUFF) format --check tmux_workspaces tests experiments/workspace_viewer scripts run ghostty preview
@@ -30,3 +30,7 @@ smoke-ssh:
 
 benchmark:
 	@$(PYTHON) -m scripts.benchmark $(BENCHMARK_ARGS)
+
+# Tests the committed HEAD archive, so commit the packaging prototype first.
+package-smoke:
+	$(PYTHON) -m scripts.check_package
