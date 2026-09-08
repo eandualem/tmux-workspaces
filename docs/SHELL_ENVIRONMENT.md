@@ -70,6 +70,9 @@ redirect sockets, or reconnect an SSH agent on the user's behalf.
 
 `python3 -m tests.integration.smoke_environment` uses a private library, ordinary
 shells, a temporary HOME, two disposable mock Unix sockets and synthetic secrets.
+Its shell wrapper verifies the requested login/interactive flags, then starts
+Bash without profiles so system startup files cannot change the values under
+test. The other terminal suites continue to exercise ordinary login shells.
 Ordinary Python commands connect to the mock socket and read a file through
 `XDG_CONFIG_HOME`. The test checks launch, reopen with changed/expired context,
 new tabs, simultaneous viewers with absent context, unchanged original PID/cwd,

@@ -18,6 +18,15 @@ def run(directory: Path) -> None:
     library = directory / "library"
     home = directory / "home"
     home.mkdir()
+    # An empty HOME still permits /etc/profile in a login shell. Isolate the
+    # handoff from distro profile overrides while checking the requested flags.
+    shell = directory / "controlled-shell"
+    shell.write_text(
+        '#!/bin/sh\nif [ "$1" = -c ]; then exec /bin/sh "$@"; fi\n'
+        '[ "$#" = 2 ] && [ "$1" = -l ] && [ "$2" = -i ] || exit 64\n'
+        "exec /bin/bash --noprofile --norc -i\n"
+    )
+    shell.chmod(0o700)
     source = Tmux(str(directory / "external.sock"))
     shells = Tmux(str(Path(socket_path(library, "terminals")).resolve()))
     clients = []
@@ -43,6 +52,7 @@ def run(directory: Path) -> None:
             ["--data-dir", str(library), "--source-socket", source.socket],
             terminal_env={
                 "HOME": str(home),
+                "SHELL": str(shell),
                 **dict.fromkeys(forbidden, "synthetic-secret"),
                 **values,
             },
@@ -86,9 +96,10 @@ def run(directory: Path) -> None:
         observed = json.loads(result.read_text())
         for key in forbidden:
             assert key not in observed["env"], key + " leaked into an ordinary shell"
-        assert {
+        observed_context = {
             k: observed["env"][k] for k in SHELL_CONTEXT_NAMES if k in observed["env"]
-        } == expected
+        }
+        assert observed_context == expected, {"expected": expected, "observed": observed_context}
         assert observed["connected"] is connected
         assert observed["config"] == (
             Path(expected["XDG_CONFIG_HOME"], "probe").read_text() if expected else None
