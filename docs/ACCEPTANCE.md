@@ -14,13 +14,18 @@ Ghostty GUI behavior. The Ghostty command harness uses the macOS login-shell
 wrapper on macOS and ordinary shell execution on Linux.
 ## Layout validation and recovery — 2026-09-08
 
-`make check` passed **97 tests**, Ruff and TPM shell checks; all seven real PTY
+`make check` passed **99 tests**, Ruff and TPM shell checks; all seven real PTY
 suites in `make smoke` passed on macOS with Python 3.14 and tmux 3.7c. New tests
 reject malformed JSON, duplicate fields/identities, missing fields, invalid
 navigation, split geometry, source references, unsupported versions and excessive
 nesting. Rejected loads leave the database byte-for-byte unchanged; invalid legacy
 records create no tables. Valid legacy migration retains the exact earlier record,
 including offline attachment references.
+
+Follow-up regressions retain the existing default for omitted split ratios and
+reject oversized serialized writes before either saving or migrating, preserving
+the original database bytes. The full check suite was rerun after these changes;
+the seven PTY suites passed immediately before this persistence-only follow-up.
 
 An invalid library blocks launch before any tmux process starts, including demo
 launch. Corruption introduced by another writer blocks refresh and save while

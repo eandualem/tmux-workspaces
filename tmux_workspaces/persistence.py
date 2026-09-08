@@ -62,6 +62,14 @@ class Store:
             )
             raise self.failure(detail) from error
 
+    def _encode(self, state: dict) -> str:
+        value = json.dumps(state, allow_nan=False)
+        if len(value.encode()) > MAX_RECORD_BYTES:
+            raise self.failure(
+                "layout record exceeds the 16 MiB limit; reduce its size before saving"
+            )
+        return value
+
     def _current(self) -> dict:
         row = self.db.execute("SELECT value FROM terminal_layout WHERE id = 1").fetchone()
         if row is None:
@@ -90,14 +98,13 @@ class Store:
                     # Only validated legacy/new data reaches schema creation. Keep
                     # every earlier table and its exact stored record unchanged.
                     state["version"] = 2
+                    value = self._encode(state)
                     for table in TABLES:
                         self.db.execute(
                             f"CREATE TABLE IF NOT EXISTS {table} "
                             "(id INTEGER PRIMARY KEY, value TEXT)"
                         )
-                    self.db.execute(
-                        "INSERT INTO terminal_layout VALUES (1, ?)", (json.dumps(state),)
-                    )
+                    self.db.execute("INSERT INTO terminal_layout VALUES (1, ?)", (value,))
             self.base = shared_layout(state)
             return Model(state)
         except sqlite3.Error as error:
@@ -119,7 +126,7 @@ class Store:
                 validate_library(merged)
                 state = local_navigation(merged, model.state)
                 validate_state(state)
-                value = json.dumps(state, allow_nan=False)
+                value = self._encode(state)
                 self.db.execute("INSERT OR REPLACE INTO terminal_layout VALUES (1, ?)", (value,))
             self.base, model.state = shared_layout(state), state
         except LayoutConflict:

@@ -64,9 +64,12 @@ older migrated leaves. Paths may contain spaces or newlines; NUL and paths that
 cannot be represented by the filesystem are rejected. A socket reference requires
 an attachment and does not prove that its session is currently online.
 
-Splits require both children, `right`/`below` direction and a finite ratio between
+Splits require both children and `right`/`below` direction. An omitted ratio retains
+the existing equal-split default; an explicit ratio must be finite and between
 0.01 and 0.99. Tree depth is limited to 64, overall data depth to 128, and the library
-to 10000 containers/identified objects, 100000 data values, and 16 MiB of JSON text. These limits keep
+to 10000 containers/identified objects, 100000 data values, and 16 MiB of JSON text.
+The JSON size limit also applies before saving or migrating a record, so a write
+cannot create an oversized record that the next read refuses. These limits keep
 recursive model/render operations bounded. Duplicate JSON keys, non-finite numbers,
 invalid JSON and malformed SQLite schemas are rejected without rewriting records.
 Unknown extension fields are preserved when their data remains within those limits.

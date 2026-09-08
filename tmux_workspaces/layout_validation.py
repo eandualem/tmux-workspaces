@@ -141,7 +141,8 @@ def validate_state(state: object, *, navigation: bool = True, legacy: bool = Fal
                         branch + ".direction",
                         "expected right or below",
                     )
-                    ratio = node.get("ratio")
+                    # Earlier renderers explicitly supported an omitted ratio.
+                    ratio = node.get("ratio", 0.5)
                     require(
                         type(ratio) in (int, float)
                         and 0.01 <= ratio <= 0.99

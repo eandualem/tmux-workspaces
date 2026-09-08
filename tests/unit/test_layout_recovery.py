@@ -41,6 +41,7 @@ class LayoutRecoveryTests(unittest.TestCase):
             lambda s: s["workspaces"][0]["tabs"][0].update(tree=None),
             lambda s: s["workspaces"][0]["tabs"][0]["tree"].update(direction="diagonal"),
             lambda s: s["workspaces"][0]["tabs"][0]["tree"].update(ratio=True),
+            lambda s: s["workspaces"][0]["tabs"][0]["tree"].update(ratio=None),
             lambda s: s["workspaces"][0]["tabs"][0]["tree"].update(ratio=float("nan")),
             lambda s: s["workspaces"][0]["tabs"][0]["tree"].update(ratio=10**1000),
             lambda s: s["workspaces"][0]["tabs"][0]["tree"].pop("first"),
@@ -199,3 +200,52 @@ class LayoutRecoveryTests(unittest.TestCase):
         state["extension"] = state
         with self.assertRaises(InvalidLayout):
             validate_state(state)
+
+    def test_omitted_ratio_preserves_the_supported_half_split_default(self):
+        for table in ("terminal_layout", "layout"):
+            with self.subTest(table=table), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                model = Model.initial()
+                model.split("right")
+                model.tab["tree"].pop("ratio")
+                database(root, json.dumps(model.state), table)
+                with closing(Store(root)) as store:
+                    restored = store.load()
+                    self.assertEqual(restored.state, model.state)
+                    store.save(restored)
+                    self.assertEqual(store.load().state, model.state)
+
+    def test_write_size_limit_preserves_original_bytes_on_save_and_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with closing(Store(root)) as store:
+                model = store.load()
+                before = store.path.read_bytes()
+                base = copy.deepcopy(store.base)
+                limit = len(json.dumps(model.state).encode()) + 4
+                model.state["extension"] = "x" * 100
+                proposed = copy.deepcopy(model.state)
+                with (
+                    patch("tmux_workspaces.persistence.MAX_RECORD_BYTES", limit),
+                    self.assertRaises(LibraryError),
+                ):
+                    store.save(model)
+                self.assertEqual(store.path.read_bytes(), before)
+                self.assertEqual(store.base, base)
+                self.assertEqual(model.state, proposed)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = Model.initial().state | {"version": 1}
+            compact = json.dumps(state, separators=(",", ":"))
+            path = database(root, compact, "layout")
+            before = path.read_bytes()
+            # Reading fits, but normal serialization would add whitespace beyond
+            # the same limit. Migration must fail before changing any table.
+            with (
+                patch("tmux_workspaces.persistence.MAX_RECORD_BYTES", len(compact.encode())),
+                closing(Store(root)) as store,
+                self.assertRaises(LibraryError),
+            ):
+                store.load()
+            self.assertEqual(path.read_bytes(), before)
