@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Standalone entry point; resolving this file also supports a symlink on PATH."""
+"""Source launcher; Python resolves symlinks before locating this package."""
 
-import os
-import sys
-from pathlib import Path
+from tmux_workspaces.cli import main
 
-viewer = Path(__file__).resolve().parent / "experiments/workspace_viewer/viewer.py"
-os.execv(sys.executable, [sys.executable, str(viewer), *sys.argv[1:]])
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -60,7 +60,7 @@ inline suite also supports Ghostty's installed terminal definition:
 
 ```sh
 TERMINFO=/Applications/Ghostty.app/Contents/Resources/terminfo \
-  python3 experiments/workspace_viewer/smoke_inline_rename.py
+  python3 -m tests.integration.smoke_inline_rename
 ```
 
 The tests exercise input, layout geometry, resize, persistence and concurrent

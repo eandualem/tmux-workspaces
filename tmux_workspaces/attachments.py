@@ -1,0 +1,69 @@
+"""Read-only external session attachment clients and recursive-host protection."""
+
+import os
+import subprocess
+import time
+
+from .targets import session_target
+from .tmux import Tmux, clean_env
+
+
+def attachment_hosts_viewer(args, target: str) -> bool:
+    if not args.host_socket or not args.host_pane:
+        return False
+    if os.path.realpath(args.host_socket) != os.path.realpath(args.source_socket):
+        return False
+    tmux = Tmux(args.source_socket)
+    # Linked windows and grouped sessions can share a pane across session IDs.
+    # Pane IDs are server-wide, so inspect every window in the target session.
+    panes = tmux.run("list-panes", "-s", "-t", target, "-F", "#{pane_id}", check=False)
+    return args.host_pane in panes.splitlines()
+
+
+def leaf_main(args) -> int:
+    name = args.agent or args.terminal
+    if not name:
+        print(
+            "\033[2J\033[HCreate a terminal with the top +, or Ctrl-g then t.",
+            flush=True,
+        )
+        while True:
+            time.sleep(60)
+    target = session_target(name)
+    command = ["tmux", "-S", args.source_socket, "attach-session", "-t", target]
+    notice = ""
+    while True:
+        exists = (
+            subprocess.run(
+                ["tmux", "-S", args.source_socket, "has-session", "-t", target],
+                env=clean_env(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            ).returncode
+            == 0
+        )
+        if exists and attachment_hosts_viewer(args, target):
+            current = "host"
+            detail = (
+                "This session hosts the viewer.\r\n\r\n"
+                "Choose another session, or use Tab… → Return pane to shell."
+            )
+        elif exists:
+            notice = ""
+            subprocess.run(command, env=clean_env(), check=False)
+            time.sleep(1)
+            continue
+        else:
+            current = "offline"
+            detail = (
+                "session offline.\r\n\r\n"
+                "This pane is saved. It reconnects when the session returns."
+            )
+        if current != notice:
+            print(
+                "\033[2J\033[H" + name + " — " + detail,
+                flush=True,
+            )
+            notice = current
+        time.sleep(1)

@@ -154,7 +154,7 @@ Return pane to shell, tab reordering/transferring and empty-workspace deletion a
 menu commands without a keyboard activation path. These gaps belong to the menu
 navigation work; they do not require a shortcut for every individual command.
 
-Direct actions use stable CSI codes in `experiments/workspace_viewer/controls.py`.
+Direct actions use stable CSI codes in `tmux_workspaces/controls.py`.
 You can map a different terminal key to those sequences in your terminal profile.
 The portable Ctrl-g prefix and its bindings are currently fixed in code; there is
 no application user-keymap file or CLI option yet. The TPM launch key is separately
