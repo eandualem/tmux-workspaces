@@ -8,6 +8,7 @@ reach a shell. Existing mouse coverage stays in smoke.py and smoke_shortcuts.py.
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
 
 DOWN, UP, ENTER, ESCAPE = "\x1b[B", "\x1b[A", "\r", "\x1b"
+ESCAPE_SEQUENCE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def exercise(root: Path) -> None:
@@ -40,8 +42,24 @@ def _exercise(resources: FixtureResources) -> None:
         # Colours survive this capture, so the active row can be told apart.
         return viewer.run("capture-pane", "-p", "-e", "-t", "%0").splitlines()
 
+    def marked() -> tuple[str, ...]:
+        """Text of the rows carrying the active-row background, escapes removed.
+
+        Only the selection is compared, never the rest of the frame: an unrelated
+        repaint must not be mistaken for the highlight having moved. The chooser's
+        filter prompt shares that background and is excluded.
+        """
+        rows = []
+        for line in styled():
+            if "48;5;238" not in line:
+                continue
+            text = ESCAPE_SEQUENCE.sub("", line).strip()
+            if text and not text.startswith(">"):
+                rows.append(text)
+        return tuple(rows)
+
     def highlighted(label: str) -> bool:
-        return any(label in line and "48;5;238" in line for line in styled())
+        return any(label in row for row in marked())
 
     def focused() -> str:
         return viewer.run("display-message", "-p", "-t", "viewer:", "#{pane_id}")
@@ -58,11 +76,23 @@ def _exercise(resources: FixtureResources) -> None:
         assert focused() == "%0", "opening a menu left the keyboard in a shell"
 
     def select(label: str) -> None:
-        """Walk the highlight onto a row with Down alone, scrolling it into view."""
+        """Walk the highlight onto a row with Down alone, scrolling it into view.
+
+        Every Down is observed moving the highlight before the next one is sent,
+        so a slow frame cannot let one keystroke stand in for several. The walk
+        stays bounded: each step waits with the shared timeout, and a list that
+        never reaches the label runs out of rows.
+        """
         for _ in range(40):
-            if highlighted(label):
+            before = marked()
+            if any(label in row for row in before):
                 return
             press(DOWN)
+            wait(
+                client,
+                lambda before=before: marked() != before,
+                "Down did not move the menu selection towards: " + label,
+            )
         raise AssertionError("could not select by keyboard: " + label + "\n" + panel())
 
     def activate(label: str) -> None:

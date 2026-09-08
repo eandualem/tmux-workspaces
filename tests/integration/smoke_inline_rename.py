@@ -47,8 +47,15 @@ def _exercise(resources: FixtureResources) -> None:
     def key(action):
         client.type(direct_sequence(action))
 
-    def tap(row, column):
-        top = int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
+    def pane_top():
+        return int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
+
+    def tap(row, column, top=None):
+        # The offset is sampled per gesture, never between the taps of one: a tmux
+        # query there can delay the second tap past the viewer's 450ms double-click
+        # window and turn a double click into two single clicks.
+        if top is None:
+            top = pane_top()
         os.write(client.master, f"\x1b[<0;{column + 1};{row + top + 1}M".encode())
         client.pump(0.035)
         os.write(client.master, f"\x1b[<0;{column + 1};{row + top + 1}m".encode())
@@ -57,8 +64,11 @@ def _exercise(resources: FixtureResources) -> None:
     def double(name):
         row = tab_row(viewer, name)
         column = sidebar(viewer).splitlines()[row].index(name) + 1
-        tap(row, column)
-        tap(row, column)
+        # Freshly sampled for this gesture, after the row and column lookups, so
+        # both taps travel with no tmux round trip between them.
+        top = pane_top()
+        tap(row, column, top)
+        tap(row, column, top)
 
     def editing():
         return "Esc cancel" in sidebar(viewer)
@@ -72,8 +82,9 @@ def _exercise(resources: FixtureResources) -> None:
 
     def begin_workspace():
         client.pump(0.5)
-        tap(0, 6)
-        tap(0, 6)
+        top = pane_top()
+        tap(0, 6, top)
+        tap(0, 6, top)
         wait(client, editing, "workspace header double-click did not open inline editor")
         assert "Type a name" not in sidebar(viewer)
         assert viewer.run("display-message", "-p", "-t", "viewer:", "#{pane_id}") == "%0"
@@ -203,7 +214,7 @@ def _exercise(resources: FixtureResources) -> None:
         name = "Immediate workspace" if workspace else "Immediate tab"
         row = 0 if workspace else tab_row(viewer, "after-resize-ok")
         column = 7 if workspace else sidebar(viewer).splitlines()[row].index("after-resize-ok") + 2
-        top = int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
+        top = pane_top()
         click = f"\x1b[<0;{column};{row + top + 1}M\x1b[<0;{column};{row + top + 1}m"
         os.write(client.master, (click + click + name + "\r").encode())
         wait(

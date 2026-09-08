@@ -379,6 +379,32 @@ class KeyboardMenuTests(SidebarTests):
             self.sidebar.input(curses.KEY_DOWN)
         self.assertEqual(self.sidebar.options[self.sidebar.selected][0], label)
 
+    def active(self):
+        return self.sidebar.options[self.sidebar.selected][0]
+
+    def painted_rows(self, start=4):
+        """Menu row labels the next frame actually paints, ignoring earlier frames."""
+        self.screen.addnstr.reset_mock()
+        self.sidebar.last_frame = None
+        self.sidebar.draw()
+        height = self.screen.getmaxyx()[0]
+        return [
+            call.args[2].strip()
+            for call in self.screen.addnstr.call_args_list
+            if call.args[1] == 1 and start <= call.args[0] < height - 3
+        ]
+
+    def overflowing_workspaces(self, count=20):
+        """Open the workspace chooser on a list taller than its window."""
+        self.screen.getmaxyx.return_value = (20, 28)
+        for index in range(count - 1):
+            self.model.add_workspace(f"Space {index + 2}")
+        self.model.state["selected"] = self.model.state["workspaces"][0]["id"]
+        self.sidebar.action("workspaces")
+        names = [space["name"] for space in self.model.state["workspaces"]]
+        self.assertEqual(self.labels(), names)
+        return names
+
     def test_filter_then_arrow_and_enter_attaches_the_selected_session(self):
         self.sessions("builder", "bureau", "manager")
         pane = self.model.pane["id"]
@@ -657,6 +683,54 @@ class KeyboardMenuTests(SidebarTests):
         self.assertEqual(self.sidebar.options, [])
         self.display.render.assert_not_called()
         self.display.select_sidebar.assert_called_once_with()
+
+    def test_end_and_home_reach_both_edges_of_an_overflowing_chooser(self):
+        names = self.overflowing_workspaces()
+        rows = self.painted_rows()
+        self.assertEqual(len(rows), 13)
+        self.assertNotIn(names[-1], rows)
+
+        self.sidebar.input(curses.KEY_END)
+        rows = self.painted_rows()
+        self.assertEqual(self.active(), names[-1])
+        self.assertIn(names[-1], rows)
+
+        self.sidebar.input(curses.KEY_HOME)
+        rows = self.painted_rows()
+        self.assertEqual((self.active(), self.sidebar.offset), (names[0], 0))
+        self.assertIn(names[0], rows)
+
+    def test_page_keys_move_a_whole_window_and_keep_the_selection_visible(self):
+        names = self.overflowing_workspaces()
+        page = self.screen.getmaxyx()[0] - 9
+
+        self.sidebar.input(curses.KEY_NPAGE)
+        rows = self.painted_rows()
+        self.assertEqual(self.active(), names[page])
+        self.assertIn(names[page], rows)
+
+        self.sidebar.input(curses.KEY_NPAGE)
+        rows = self.painted_rows()
+        self.assertEqual(self.active(), names[-1])
+        self.assertIn(names[-1], rows)
+
+        self.sidebar.input(curses.KEY_PPAGE)
+        rows = self.painted_rows()
+        self.assertEqual(self.active(), names[len(names) - 1 - page])
+        self.assertIn(self.active(), rows)
+
+        self.sidebar.input(curses.KEY_PPAGE)
+        rows = self.painted_rows()
+        self.assertEqual((self.active(), self.sidebar.offset), (names[0], 0))
+        self.assertIn(names[0], rows)
+
+    def test_a_row_reached_by_page_or_end_is_the_one_enter_activates(self):
+        names = self.overflowing_workspaces()
+        self.sidebar.input(curses.KEY_END)
+        self.assertIn(names[-1], self.painted_rows())
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.space["name"], names[-1])
+        self.assertIsNone(self.sidebar.menu)
 
     def test_shortcut_help_activates_the_selected_action(self):
         self.sidebar.open_menu("shortcuts")
