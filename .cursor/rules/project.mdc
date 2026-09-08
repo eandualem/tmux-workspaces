@@ -1,0 +1,7 @@
+---
+description: Workspace product contract, isolation and validation
+alwaysApply: true
+---
+
+Read and follow AGENTS.md and docs/INITIAL_TASK.md in this repository.
+Protect existing user libraries, external sessions and other checkouts.

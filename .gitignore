@@ -1,0 +1,16 @@
+# Local terminals, agent memory, credentials and test artifacts
+.backbone/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.DS_Store
