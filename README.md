@@ -178,7 +178,8 @@ set -g @tmux-workspaces-url 'http://127.0.0.1:7120'
 
 Choose an unused launch key. Reload the plugin after changing that key;
 data and adapter options are read on each launch. Source checkout and TPM are
-the current installation paths. A Homebrew tap is under consideration.
+the current installation paths. The [packaging decision and local prototype](docs/PACKAGING.md)
+cover staged source bundles and a proposed personal Homebrew tap; no tap is published.
 
 ## Optional Backbone adapter
 
