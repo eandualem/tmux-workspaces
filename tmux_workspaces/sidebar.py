@@ -54,6 +54,7 @@ class Sidebar:
         self.relaunch = relaunch
         self.refresh_problem: str | None = None
         self.refresh_command: str | None = None
+        self.command_offset = 0
         # Shown inside a menu, where the ordinary status line is not drawn.
         self.menu_message = ""
         self.keymap = display.keymap
@@ -550,6 +551,7 @@ class Sidebar:
         else:
             self.refresh_problem = self.relaunch.check() if self.relaunch.manual_reopen else None
             self.refresh_command = self.relaunch.manual_command()
+        self.command_offset = 0
         self.open_menu("refresh")
 
     def refresh_navigation(self) -> dict:
@@ -739,15 +741,7 @@ class Sidebar:
         if self.menu == "refresh":
             if not self.refresh_problem:
                 return [("Refresh viewer now", self.confirm_refresh)]
-            # Show the exact command to type instead of a confirmation that
-            # would close a window nothing could reopen.
-            width = max(1, self.screen.getmaxyx()[1] - 2)
-            return [
-                (line, lambda: None)
-                for line in textwrap.wrap(
-                    self.refresh_command or "", width=width, break_on_hyphens=False
-                )
-            ]
+            return []
         if self.menu == "agents":
             return [
                 (name, lambda name=name: self.attach(name))
@@ -855,6 +849,22 @@ class Sidebar:
             # on. Either way its neighbour is a different target: ask again.
             self.message = "Entries changed; choose again"
 
+    def command_lines(self) -> list[str]:
+        """Read-only reopening text, separate from selectable menu actions."""
+        if self.menu != "refresh" or not self.refresh_problem:
+            return []
+        return textwrap.wrap(
+            self.refresh_command or "",
+            width=max(1, self.screen.getmaxyx()[1] - 2),
+            break_on_hyphens=False,
+        )
+
+    def command_rows(self, start: int) -> list[str]:
+        lines = self.command_lines()
+        available = max(1, self.screen.getmaxyx()[0] - start - 3)
+        self.command_offset = min(max(0, self.command_offset), max(0, len(lines) - available))
+        return lines[self.command_offset : self.command_offset + available]
+
     def notes(self, width: int) -> tuple[str, ...]:
         """Menu limits shown above the options; description only, never clickable."""
         if self.menu == "command-shortcuts" or (
@@ -920,6 +930,7 @@ class Sidebar:
                 rows, start = self.menu_rows(agents)
             else:
                 self.selection.hide()
+        command_rows = self.command_rows(start)
         # Skip identical frames: idle sidebar does not repaint the terminal.
         frame = (
             repr(self.model.state),
@@ -938,6 +949,7 @@ class Sidebar:
             self.tab_offset,
             self.message,
             self.menu_message,
+            command_rows,
             self.display.small,
             repr(self.theme_editor),
         )
@@ -992,6 +1004,8 @@ class Sidebar:
             elif self.menu == "theme":
                 cursor = self.draw_theme(height, width)
             else:
+                for row, line in enumerate(command_rows, start):
+                    self.put(row, 1, line, self.style("normal"))
                 for row, entry in enumerate(rows, start):
                     self.button(
                         row,
@@ -1009,7 +1023,8 @@ class Sidebar:
                 self.button(height - 2, "↑", lambda: self.scroll(-1), width=5)
                 self.button(height - 2, "↓", lambda: self.scroll(1), x=8, width=5)
                 if width >= 24:
-                    self.put(height - 2, 15, "↵ open · Esc", self.style("accent"))
+                    hint = "read · Esc" if command_rows else "↵ open · Esc"
+                    self.put(height - 2, 15, hint, self.style("accent"))
             if self.menu_message:
                 self.put(height - 1, 1, self.menu_message, self.style("accent"))
         else:
@@ -1131,6 +1146,8 @@ class Sidebar:
         self.clear_inline()
         if self.theme_editor:
             self.theme_action(self.theme_editor.move, amount)
+        elif self.command_lines():
+            self.command_offset = max(0, self.command_offset + amount)
         elif self.menu:
             self.selection.scroll(amount)
         else:
@@ -1213,6 +1230,20 @@ class Sidebar:
     def menu_input(self, key) -> None:
         """Keyboard handling for an open menu: navigate, activate, then filter."""
         if key == curses.KEY_RESIZE:
+            return
+        if self.command_lines():
+            steps = {
+                curses.KEY_UP: -1,
+                curses.KEY_DOWN: 1,
+                "\x10": -1,
+                "\x0e": 1,
+                curses.KEY_PPAGE: -max(1, self.screen.getmaxyx()[0] - 9),
+                curses.KEY_NPAGE: max(1, self.screen.getmaxyx()[0] - 9),
+                curses.KEY_HOME: -len(self.command_lines()),
+                curses.KEY_END: len(self.command_lines()),
+            }
+            if key in steps and self.roomy():
+                self.scroll(steps[key])
             return
         step = self.navigation(key)
         if step is not None:

@@ -510,7 +510,8 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.action("refresh-viewer")
         options = list(dict(self.sidebar._options({})))
         self.assertNotIn("Refresh viewer now", options)
-        self.assertEqual(" ".join(options), self.relaunch.command)
+        self.assertEqual(options, [])
+        self.assertEqual(" ".join(self.sidebar.command_lines()), self.relaunch.command)
         self.sidebar.draw()
         rows = [text for _row, _x, text in self.drawn()]
         self.assertIn("This window's keys were", rows)
@@ -520,6 +521,31 @@ class SidebarTests(unittest.TestCase):
             action()
         self.assertTrue(self.sidebar.running)
         self.assertEqual(self.relaunch.submitted, [])
+
+    def test_reopen_command_is_read_only_and_scrolls_without_selecting_fragments(self):
+        self.relaunch.manual_reopen = True
+        self.relaunch.problem = "Reopen this terminal"
+        self.relaunch.command = "run " + " ".join(f"segment{i:02d}" for i in range(80))
+        self.sidebar.action("refresh-viewer")
+        self.screen.getmaxyx.return_value = (20, 28)
+        self.sidebar.draw()
+        first = self.sidebar.command_rows(self.sidebar.menu_rows()[1])
+        self.assertIn("segment00", " ".join(first))
+        self.assertIsNone(self.sidebar.selection.entry())
+        self.assertEqual(self.sidebar._options({}), [])
+        self.sidebar.input(curses.KEY_END)
+        self.sidebar.draw()
+        last = self.sidebar.command_rows(self.sidebar.menu_rows()[1])
+        self.assertIn("segment79", " ".join(last))
+        self.assertNotEqual(first, last)
+        self.sidebar.input("\n")
+        self.assertTrue(self.sidebar.running)
+        self.assertEqual(self.relaunch.submitted, [])
+        self.sidebar.input(curses.KEY_HOME)
+        self.sidebar.draw()
+        self.assertEqual(self.sidebar.command_rows(self.sidebar.menu_rows()[1]), first)
+        # No text row is a button; only Back and the scroll controls are hit-tested.
+        self.assertEqual(len(self.sidebar.hits), 3)
 
     def test_refresh_defers_to_an_open_name_edit_and_to_an_unlaunched_viewer(self):
         self.sidebar.draw()
