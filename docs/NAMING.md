@@ -53,10 +53,15 @@ already presents an AI terminal product, and
 ### What the checks establish
 
 Authenticated GitHub repository searches used `<name> in:name` and reported
-`incomplete_results=false`. Exact account lookups used `/users/<name>`.
+`incomplete_results=false`. Exact account lookups used `/users/<name>`;
+a follow-up on the same date also checked `/orgs/<name>` for all three candidates.
+Both endpoints returned 200 with `type: Organization` for Termstead, and 404
+for Panehold and Muxstead. The observed `/users/termstead` response therefore
+already included that organization; the separate organization probes confirm it.
 The reproducible primary endpoints for the selected candidate are
-[repository search](https://api.github.com/search/repositories?q=muxstead+in:name)
-and [account lookup](https://api.github.com/users/muxstead).
+[repository search](https://api.github.com/search/repositories?q=muxstead+in:name),
+[account lookup](https://api.github.com/users/muxstead) and
+[organization lookup](https://api.github.com/orgs/muxstead).
 General web queries used each quoted name alone, with software/terminal/CLI
 terms, and restricted to GitHub. They missed the Termstead organization, which
 illustrates why an empty web search is insufficient evidence of availability.
