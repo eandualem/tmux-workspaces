@@ -104,6 +104,10 @@ programs also survive viewer exit while their tmux server remains alive.
 After a host reboot or shell-server loss, the arrangement remains and shells
 restart in saved directories; the previous processes cannot be recovered.
 
+If a saved arrangement cannot be read, keep its database and follow the
+[recovery guide](docs/RECOVERY.md). Validation never replaces a bad record with
+an empty arrangement.
+
 The library directory is `--data-dir`, otherwise `$TMUX_WORKSPACES_DATA_DIR`,
 otherwise `$XDG_DATA_HOME/tmux-workspaces`, otherwise
 `~/.local/share/tmux-workspaces`. Open the same library in multiple terminal

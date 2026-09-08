@@ -4,6 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from .layout_validation import InvalidLayout, validate_state
 from .model import (
     LayoutConflict,
     Model,
@@ -13,46 +14,110 @@ from .model import (
     validate_library,
 )
 
+TABLES = ("terminal_layout", "shared_layout", "layout")
+MAX_RECORD_BYTES = 16 * 1024 * 1024
+
+
+def _json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise InvalidLayout("JSON object contains a duplicate field")
+        result[key] = value
+    return result
+
+
+class LibraryError(ValueError):
+    """Actionable failure that never asks the caller to discard its arrangement."""
+
 
 class Store:
     def __init__(self, directory: Path):
-        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.path = directory / "layouts.db"
-        self.db = sqlite3.connect(self.path, timeout=5)
-        # Older viewers know only agent tabs. Keep their writes out of this library.
-        for table in ("layout", "shared_layout", "terminal_layout"):
-            self.db.execute(
-                f"CREATE TABLE IF NOT EXISTS {table} (id INTEGER PRIMARY KEY, value TEXT)"
-            )
         self.base: dict | None = None
+        try:
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            self._existing = self.path.exists() and self.path.stat().st_size > 0
+            self.db = sqlite3.connect(self.path, timeout=5)
+        except (OSError, sqlite3.Error) as error:
+            raise self.failure("cannot open the database") from error
+
+    def failure(self, detail: str) -> LibraryError:
+        return LibraryError(
+            f"Workspace library {self.path}: {detail}. No automatic repair was attempted. "
+            "Keep this database and its -wal/-shm files; back up the library before repair. "
+            "Use --data-dir with a new directory to work separately. See docs/RECOVERY.md."
+        )
+
+    def _decode(self, value, *, legacy=False) -> dict:
+        try:
+            if not isinstance(value, str) or len(value.encode()) > MAX_RECORD_BYTES:
+                raise InvalidLayout("layout record must be text no larger than 16 MiB")
+            state = json.loads(value, object_pairs_hook=_json_object)
+            validate_state(state, legacy=legacy)
+            return state
+        except (ValueError, TypeError, RecursionError) as error:
+            detail = (
+                str(error) if isinstance(error, InvalidLayout) else "invalid JSON layout record"
+            )
+            raise self.failure(detail) from error
+
+    def _encode(self, state: dict) -> str:
+        value = json.dumps(state, allow_nan=False)
+        if len(value.encode()) > MAX_RECORD_BYTES:
+            raise self.failure(
+                "layout record exceeds the 16 MiB limit; reduce its size before saving"
+            )
+        return value
+
+    def _current(self) -> dict:
+        row = self.db.execute("SELECT value FROM terminal_layout WHERE id = 1").fetchone()
+        if row is None:
+            raise self.failure("current layout row is missing")
+        return self._decode(row[0])
 
     def load(self) -> Model:
-        with self.db:
-            self.db.execute("BEGIN IMMEDIATE")
-            row = self.db.execute("SELECT value FROM terminal_layout WHERE id = 1").fetchone()
-            if not row:
-                old = self.db.execute("SELECT value FROM shared_layout WHERE id = 1").fetchone()
-                old = old or self.db.execute("SELECT value FROM layout WHERE id = 1").fetchone()
-                state = json.loads(old[0]) if old else Model.initial().state
-                if state.get("version") not in (1, 2) or not state.get("workspaces"):
-                    raise ValueError("Unsupported workspace layout. Keep layouts.db for recovery.")
-                # Preserve every existing name, attachment and split. No roster seeding.
-                state["version"] = 2
-                value = json.dumps(state)
-                self.db.execute("INSERT INTO terminal_layout VALUES (1, ?)", (value,))
-                row = (value,)
-        state = json.loads(row[0])
-        if state.get("version") != 2 or not state.get("workspaces"):
-            raise ValueError("Unsupported workspace layout. Keep layouts.db for recovery.")
-        self.base = shared_layout(state)
-        return Model(state)
-
-    def save(self, model: Model) -> None:
         try:
             with self.db:
                 self.db.execute("BEGIN IMMEDIATE")
-                row = self.db.execute("SELECT value FROM terminal_layout WHERE id = 1").fetchone()
-                latest = shared_layout(json.loads(row[0])) if row else shared_layout(model.state)
+                tables = {
+                    row[0]
+                    for row in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                }
+                selected = next((table for table in TABLES if table in tables), None)
+                if selected:
+                    row = self.db.execute(f"SELECT value FROM {selected} WHERE id = 1").fetchone()
+                    if row is None:
+                        raise self.failure(f"{selected} layout row is missing")
+                    state = self._decode(row[0], legacy=selected != "terminal_layout")
+                elif self._existing or tables:
+                    raise self.failure("no recognized workspace layout table")
+                else:
+                    state = Model.initial().state
+                if selected != "terminal_layout":
+                    # Only validated legacy/new data reaches schema creation. Keep
+                    # every earlier table and its exact stored record unchanged.
+                    state["version"] = 2
+                    value = self._encode(state)
+                    for table in TABLES:
+                        self.db.execute(
+                            f"CREATE TABLE IF NOT EXISTS {table} "
+                            "(id INTEGER PRIMARY KEY, value TEXT)"
+                        )
+                    self.db.execute("INSERT INTO terminal_layout VALUES (1, ?)", (value,))
+            self.base = shared_layout(state)
+            return Model(state)
+        except sqlite3.Error as error:
+            raise self.failure(
+                "database is unreadable, locked, or has an incompatible schema"
+            ) from error
+
+    def save(self, model: Model) -> None:
+        try:
+            validate_state(model.state, navigation=False)
+            with self.db:
+                self.db.execute("BEGIN IMMEDIATE")
+                latest = shared_layout(self._current())
                 merged = merge_layout(
                     self.base if self.base is not None else latest,
                     shared_layout(model.state),
@@ -60,30 +125,45 @@ class Store:
                 )
                 validate_library(merged)
                 state = local_navigation(merged, model.state)
-                self.db.execute(
-                    "INSERT OR REPLACE INTO terminal_layout VALUES (1, ?)", (json.dumps(state),)
-                )
+                validate_state(state)
+                value = self._encode(state)
+                self.db.execute("INSERT OR REPLACE INTO terminal_layout VALUES (1, ?)", (value,))
             self.base, model.state = shared_layout(state), state
         except LayoutConflict:
             self.base = latest
             model.state = local_navigation(latest, model.state)
             raise
+        except InvalidLayout as error:
+            raise self.failure(str(error)) from error
+        except LibraryError:
+            raise
+        except (sqlite3.Error, ValueError, TypeError, RecursionError) as error:
+            raise self.failure(
+                "cannot safely save the layout; database or record is invalid"
+            ) from error
 
     def refresh(self, model: Model) -> bool:
-        row = self.db.execute("SELECT value FROM terminal_layout WHERE id = 1").fetchone()
-        latest = shared_layout(json.loads(row[0]))
-        if latest == self.base:
-            return False
         try:
-            merged = merge_layout(self.base, shared_layout(model.state), latest)
-            validate_library(merged)
-        except LayoutConflict:
-            self.base = latest
-            model.state = local_navigation(latest, model.state)
-            raise
-        self.base = latest
-        model.state = local_navigation(merged, model.state)
-        return True
+            latest = shared_layout(self._current())
+            if latest == self.base:
+                return False
+            try:
+                merged = merge_layout(self.base, shared_layout(model.state), latest)
+                validate_library(merged)
+            except LayoutConflict:
+                self.base = latest
+                model.state = local_navigation(latest, model.state)
+                raise
+            state = local_navigation(merged, model.state)
+            validate_state(state)
+            self.base, model.state = latest, state
+            return True
+        except InvalidLayout as error:
+            raise self.failure(str(error)) from error
+        except sqlite3.Error as error:
+            raise self.failure(
+                "cannot refresh the current layout; database or schema is invalid"
+            ) from error
 
     def close(self) -> None:
         self.db.close()
