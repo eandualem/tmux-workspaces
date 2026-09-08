@@ -100,10 +100,19 @@ convention. See [TPM's plugin contract](https://github.com/tmux-plugins/tpm/blob
 ## Immutable artifacts and private access
 
 `scripts/package_source.py` archives a committed revision with `git archive`,
-compresses it with a fixed gzip timestamp, and records the full commit and archive
-SHA-256 in `manifest.json`. It reads the formula template from that same commit;
-working-tree changes and untracked memory/data are not exported. The destination
-must be new. Generate a local candidate only after committing the prototype:
+compresses it with an explicit gzip header (empty filename, timestamp zero, level 9
+and portable OS byte), and records the full commit and archive SHA-256 in
+`manifest.json`. It reads the formula template from that same commit;
+working-tree changes and untracked memory/data are not exported.
+
+The explicit header avoids the version-dependent OS byte in
+[Python 3.11/3.12 gzip.compress](https://docs.python.org/3.11/library/gzip.html#gzip.compress).
+Compressed body bytes can still differ between zlib versions. Reproduce an exact
+checksum with the same Git/archive and compression toolchain, and always verify
+the actual artifact digest. `check_package.py` checks that digest before extraction.
+
+The destination must be new. Generate a local candidate only after committing
+the prototype:
 
 ```sh
 python3 scripts/package_source.py --revision HEAD --output .backbone/package-candidate

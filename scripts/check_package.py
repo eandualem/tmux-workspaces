@@ -1,5 +1,6 @@
 """Verify a committed bundle from a fresh extracted location, without publishing."""
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -17,13 +18,18 @@ def main() -> None:
             check=True,
         )
         manifest = json.loads((artifacts / "manifest.json").read_text())
+        archive = artifacts / manifest["archive"]
+        with archive.open("rb") as stream:
+            checksum = hashlib.file_digest(stream, "sha256").hexdigest()
+        if checksum != manifest["sha256"]:
+            raise SystemExit(
+                f"Archive SHA-256 {checksum} does not match manifest {manifest['sha256']}"
+            )
         source = scratch / "source"
         source.mkdir()
         # This is our own git archive of the explicitly selected local commit,
         # not an archive downloaded from a registry or supplied by a caller.
-        subprocess.run(
-            ["tar", "-xzf", str(artifacts / manifest["archive"]), "-C", str(source)], check=True
-        )
+        subprocess.run(["tar", "-xzf", str(archive), "-C", str(source)], check=True)
         subprocess.run(
             [
                 sys.executable,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
+import io
 import json
 import subprocess
 from pathlib import Path
@@ -29,7 +30,14 @@ def main() -> None:
     # never silently change the recipe for a pinned archive.
     template = git("show", f"{commit}:packaging/homebrew/tmux-workspaces.rb.in").decode()
     archive = git("archive", "--format=tar", f"--prefix=tmux-workspaces-{commit}/", commit)
-    payload = gzip.compress(archive, mtime=0)
+    # gzip.compress(mtime=0) delegates its header to zlib on Python 3.11/3.12.
+    # Fix the filename, timestamp, level and OS byte through the streaming writer.
+    buffer = io.BytesIO()
+    with gzip.GzipFile(
+        fileobj=buffer, mode="wb", filename="", mtime=0, compresslevel=9
+    ) as compressed:
+        compressed.write(archive)
+    payload = buffer.getvalue()
     checksum = hashlib.sha256(payload).hexdigest()
     output = args.output.expanduser().absolute()
     output.mkdir(parents=True)
