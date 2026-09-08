@@ -201,6 +201,23 @@ class ServerCleanupTests(unittest.TestCase):
             _stop_server(server)
         server.run.assert_any_call("kill-server", check=False)
 
+    def test_process_exiting_during_proc_read_completes_cleanup(self):
+        server = Mock()
+        server.run.side_effect = ["123", ""]
+        with (
+            patch("tests.integration.support.os.kill") as probe,
+            patch(
+                "tests.integration.support.Path.read_text",
+                side_effect=ProcessLookupError(errno.ESRCH, "No such process"),
+            ) as read,
+            patch("tests.integration.support.time.sleep") as sleep,
+        ):
+            _stop_server(server)
+        server.run.assert_any_call("kill-server", check=False)
+        probe.assert_called_once_with(123, 0)
+        read.assert_called_once_with()
+        sleep.assert_not_called()
+
     def test_shell_exit_wait_finishes_before_resource_files_are_removed(self):
         with FixtureResources() as fixture:
             server = fixture.server()

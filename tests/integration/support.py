@@ -193,6 +193,10 @@ def _stop_server(server: Tmux) -> None:
             try:
                 if status.read_text().rsplit(") ", 1)[-1].startswith("Z "):
                     continue
+            except ProcessLookupError:
+                # Linux may open the proc entry, then lose its process before
+                # read completes (ESRCH). The owned shell has finished exiting.
+                continue
             except FileNotFoundError:
                 pass
             alive.append(pid)
