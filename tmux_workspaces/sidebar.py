@@ -13,6 +13,7 @@ from .controls import Actions, mouse_action
 from .display import Display
 from .events import InputEvents
 from .keymap import ACTION_LABELS, tmux_key_label
+from .menu import Entry, Selection
 from .model import LayoutConflict, Model, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
@@ -50,11 +51,30 @@ class Sidebar:
         self.query = ""
         self.replace_name = False
         self.attach_target: tuple[str, str, str | None, str | None] | None = None
-        self.offset = 0
+        self.selection = Selection()
         self.tab_offset = 0
         self.message = ""
         self.running = True
         self.last_frame = None
+
+    @property
+    def offset(self) -> int:
+        """Scroll position of the open menu."""
+        return self.selection.offset
+
+    @offset.setter
+    def offset(self, value: int) -> None:
+        self.selection.offset = value
+
+    @property
+    def options(self) -> list[tuple[str, Callable]]:
+        """The menu rows the last frame worked with."""
+        return self.selection.rows
+
+    @property
+    def selected(self) -> int:
+        """Index of the active menu row within those options."""
+        return self.selection.index
 
     def save(self) -> None:
         try:
@@ -152,11 +172,16 @@ class Sidebar:
         self.put(row, x, text + " " * (width - cells(text)), style, width)
         return row, x + column
 
-    def show(self) -> None:
-        self.clear_inline()
-        self.menu, self.query, self.offset = None, "", 0
+    def close_menu(self) -> None:
+        """Drop an open menu without moving the keyboard away from its pane."""
+        self.menu, self.query = None, ""
+        self.selection.reset()
         self.replace_name = False
         self.attach_target = None
+
+    def show(self) -> None:
+        self.clear_inline()
+        self.close_menu()
         self.save()
         self.display.render(self.model.tab, self.model.state["focus"])
 
@@ -201,12 +226,15 @@ class Sidebar:
     def open_menu(self, name: str, pending: str = "") -> None:
         self.clear_inline()
         self.remember()
-        self.menu, self.pending, self.query, self.offset = name, pending, "", 0
+        self.menu, self.pending, self.query = name, pending, ""
+        self.selection.reset()
         self.replace_name = False
         tab, pane = self.model.tab, self.model.pane
+        # Tab options own Return pane to shell, so they bind the same target as
+        # the chooser: a peer moving the pane must not redirect either command.
         self.attach_target = (
             (tab["id"], pane["id"], pane["agent"], pane.get("source_socket"))
-            if name == "agents" and tab and pane
+            if name in {"agents", "tab"} and tab and pane
             else None
         )
         self.display.select_sidebar()
@@ -236,7 +264,7 @@ class Sidebar:
 
     def attach(self, name: str | None) -> None:
         self.remember()
-        if self.menu == "agents":
+        if self.attach_target:
             target = self.attach_target
             try:
                 self.store.refresh(self.model)
@@ -251,7 +279,11 @@ class Sidebar:
             if not pane or (pane["agent"], pane.get("source_socket")) != target[2:]:
                 self.show()
                 self.display.select_sidebar()
-                self.message = "Pane changed; choose Attach again"
+                self.message = (
+                    "Pane changed; choose Attach again"
+                    if name
+                    else "Pane changed; return the pane again"
+                )
                 return
             # A click in another pane while the chooser is open must not change
             # the destination selected when opening the chooser.
@@ -318,6 +350,8 @@ class Sidebar:
             "previous-pane": lambda: self.next_pane(-1),
             "focus": self.toggle_focus,
             "workspaces": lambda: self.open_menu("spaces"),
+            "tab-options": lambda: self.open_menu("tab"),
+            "workspace-options": lambda: self.open_menu("workspace"),
             "new-workspace": lambda: self.rename("new-workspace"),
             "next-workspace": lambda: self.next_workspace(1),
             "previous-workspace": lambda: self.next_workspace(-1),
@@ -451,6 +485,7 @@ class Sidebar:
         return options
 
     def _options(self, agents: dict) -> list[tuple[str, Callable]]:
+        """Rows of the open menu as labels and callbacks. The menu content lives here."""
         command_shortcuts = self.menu == "command-shortcuts" or (
             self.menu == "shortcuts" and self.shortcut_hints == "command"
         )
@@ -480,8 +515,7 @@ class Sidebar:
                         else self.choose_workspace(space)
                     ),
                 )
-                for space in self.model.state["workspaces"]
-                if self.menu != "move" or space != self.model.space
+                for space in self.workspace_options()
             ]
         if self.menu == "tab":
             return [
@@ -502,6 +536,70 @@ class Sidebar:
                 ("Delete empty workspace", self.delete_workspace),
             ]
         return []
+
+    def workspace_options(self) -> list[dict]:
+        """Workspaces the open list offers, in the order _options() draws them."""
+        return [
+            space
+            for space in self.model.state["workspaces"]
+            if self.menu != "move" or space != self.model.space
+        ]
+
+    def menu_entries(self, agents: dict) -> list[Entry]:
+        """The rows of _options(), each given an identity the keyboard can follow.
+
+        Keys outlive a rebuild: a session name, a workspace id, or the position of
+        a fixed row. Labels alone are ambiguous, since names repeat. A menu whose
+        rows no longer line up with its source falls back to positional keys, so
+        added rows stay selectable rather than disappearing.
+        """
+        options = self._options(agents)
+        spaces = self.workspace_options() if self.menu in {"spaces", "move"} else []
+        if len(spaces) == len(options) and spaces:
+            keys = ["workspace:" + space["id"] for space in spaces]
+        elif self.menu == "agents":
+            keys = ["session:" + label for label, _ in options]
+        else:
+            keys = [f"row:{index}:{label}" for index, (label, _) in enumerate(options)]
+        rows = zip(keys, options, strict=True)
+        return [Entry(key, label, action) for key, (label, action) in rows]
+
+    def menu_rows(
+        self, agents: dict | None = None, *, drawn: bool = True
+    ) -> tuple[list[Entry], int]:
+        """Reconcile the open menu's entries and return the visible rows and their top.
+
+        Both drawing and keyboard activation go through this, so Enter always runs
+        the entry shown on the active row of the frame the user is looking at.
+        Only a drawn rebuild may adopt a row the user has not chosen yet.
+        """
+        if agents is None:
+            agents = self.source.snapshot()[0]
+        start = 5 if self.menu == "agents" else 4
+        available = max(1, self.screen.getmaxyx()[0] - start - 3)
+        rows = self.selection.show(self.menu_entries(agents), available, drawn=drawn)
+        return rows, start
+
+    def roomy(self) -> bool:
+        """Whether the panel is large enough to draw a menu instead of its warning."""
+        height, width = self.screen.getmaxyx()
+        return height >= 16 and width >= 18
+
+    def move_selection(self, step: int) -> None:
+        self.selection.move(step)
+
+    def activate(self) -> None:
+        """Run the active menu row. Nothing is activated by guesswork."""
+        if not self.menu or self.menu in {"name", "inline-name"} or not self.roomy():
+            return
+        self.menu_rows(drawn=False)
+        entry = self.selection.entry()
+        if entry:
+            entry.action()
+        elif self.selection.entries:
+            # The chosen entry is gone, or arrived after the frame the user acted
+            # on. Either way its neighbour is a different target: ask again.
+            self.message = "Entries changed; choose again"
 
     def tab_capacity(self) -> int:
         # One row per tab, plus one detail row for the active tab.
@@ -536,6 +634,16 @@ class Sidebar:
     def draw(self) -> None:
         agents, error = self.source.snapshot()
         height, width = self.screen.getmaxyx()
+        # Reconcile the open menu before the frame is compared: a skipped repaint
+        # must still leave the active row and its options current for the keyboard.
+        # A frame too small for the menu paints a warning instead, so it displays
+        # no row and must not leave one armed for Enter.
+        rows, start = ([], 0)
+        if self.menu and self.menu != "inline-name":
+            if self.roomy():
+                rows, start = self.menu_rows(agents)
+            else:
+                self.selection.hide()
         # Skip identical frames: idle sidebar does not repaint the terminal.
         frame = (
             repr(self.model.state),
@@ -548,6 +656,9 @@ class Sidebar:
             self.query,
             self.replace_name,
             self.offset,
+            # The active row must repaint even when nothing else in the frame moved.
+            self.selected,
+            [entry.key for entry in rows],
             self.tab_offset,
             self.message,
             self.display.small,
@@ -562,7 +673,7 @@ class Sidebar:
         cursor = None
         self.hits.clear()
         self.context_hits.clear()
-        if height < 16 or width < 18:
+        if not self.roomy():
             self.put(0, 0, "Enlarge terminal")
             self.button(2, "Exit viewer", self.quit)
             self.screen.refresh()
@@ -601,20 +712,21 @@ class Sidebar:
             if self.menu == "name":
                 self.button(5, "Save name", self.accept_name)
             else:
-                options = self._options(agents)
-                start = 5 if self.menu == "agents" else 4
-                available = max(1, height - start - 3)
-                self.offset = min(self.offset, max(0, len(options) - available))
-                for row, (label, action) in enumerate(
-                    options[self.offset : self.offset + available], start
-                ):
-                    self.button(row, label, action)
-                if not options:
+                for row, entry in enumerate(rows, start):
+                    self.button(
+                        row,
+                        entry.label,
+                        entry.action,
+                        active=self.offset + row - start == self.selected,
+                    )
+                if not rows:
                     self.put(
                         start, 1, "No matching sessions" if self.menu == "agents" else "No entries"
                     )
                 self.button(height - 2, "↑", lambda: self.scroll(-1), width=5)
                 self.button(height - 2, "↓", lambda: self.scroll(1), x=8, width=5)
+                if width >= 24:
+                    self.put(height - 2, 15, "↵ open · Esc", curses.color_pair(3))
         else:
             workspace_edit = self.inline_editor and self.inline_target[1] is None
             self.name_hits.append((0, 1, width - 7, "workspace:" + self.model.space["id"]))
@@ -733,7 +845,7 @@ class Sidebar:
     def scroll(self, amount: int) -> None:
         self.clear_inline()
         if self.menu:
-            self.offset = max(0, self.offset + amount)
+            self.selection.scroll(amount)
         else:
             self.tab_offset = max(0, self.tab_offset + amount)
 
@@ -784,27 +896,64 @@ class Sidebar:
                 self.inline_editor.key(key)
         elif key == "\x1b":
             self.show()
-        elif key == "\n" and self.menu == "name":
-            self.accept_name()
-        elif self.menu in {"name", "agents"}:
-            if key == "\x15":
-                self.query = ""
-                self.replace_name = False
-            elif key in (curses.KEY_BACKSPACE, "\x7f", "\b"):
-                self.query = "" if self.replace_name else self.query[:-1]
-                self.replace_name = False
-            elif (
-                isinstance(key, str)
-                and key.isprintable()
-                and (self.replace_name or len(self.query) < 80)
-            ):
-                self.query = key if self.replace_name else self.query + key
-                self.replace_name = False
-            self.offset = 0
+        elif self.menu:
+            self.menu_input(key)
         elif key == curses.KEY_UP:
             self.scroll(-1)
         elif key == curses.KEY_DOWN:
             self.scroll(1)
+
+    def navigation(self, key) -> int | None:
+        """Selection movement for a key, or None when it is not a navigation key."""
+        # Control aliases stay usable inside the chooser's filter field, where
+        # plain letters are text. Home/End move to the first and last entry.
+        steps = {
+            curses.KEY_UP: -1,
+            curses.KEY_DOWN: 1,
+            "\x10": -1,
+            "\x0e": 1,
+            curses.KEY_PPAGE: -max(1, self.screen.getmaxyx()[0] - 9),
+            curses.KEY_NPAGE: max(1, self.screen.getmaxyx()[0] - 9),
+            curses.KEY_HOME: -len(self.options) or None,
+            curses.KEY_END: len(self.options) or None,
+        }
+        return steps.get(key)
+
+    def menu_input(self, key) -> None:
+        """Keyboard handling for an open menu: navigate, activate, then filter."""
+        if key == curses.KEY_RESIZE:
+            return
+        step = self.navigation(key)
+        if step is not None:
+            # Navigation is read before typing so the chooser's filter field can
+            # never swallow the keys that select and activate its result. A menu
+            # too small to draw shows no row to move between.
+            if not self.roomy():
+                return
+            self.menu_rows(drawn=False)
+            self.move_selection(step)
+            return
+        if key in ("\n", "\r", curses.KEY_ENTER):
+            self.accept_name() if self.menu == "name" else self.activate()
+            return
+        if self.menu not in {"name", "agents"}:
+            return
+        if key == "\x15":
+            self.query = ""
+            self.replace_name = False
+        elif key in (curses.KEY_BACKSPACE, "\x7f", "\b"):
+            self.query = "" if self.replace_name else self.query[:-1]
+            self.replace_name = False
+        elif (
+            isinstance(key, str)
+            and key.isprintable()
+            and (self.replace_name or len(self.query) < 80)
+        ):
+            self.query = key if self.replace_name else self.query + key
+            self.replace_name = False
+        else:
+            return
+        self.selection.first()
 
     def run(self) -> None:
         curses.curs_set(0)
@@ -837,14 +986,14 @@ class Sidebar:
                 if now >= next_poll:
                     with self.display.snapshot_scope():
                         next_poll = now + 0.6
-                        if (
-                            self.inline_editor
-                            and self.display.tmux.run(
-                                "display-message", "-p", "-t", "viewer:", "#{pane_id}"
-                            )
-                            != self.display.sidebar
-                        ):
+                        if (self.inline_editor or self.menu) and self.display.tmux.run(
+                            "display-message", "-p", "-t", "viewer:", "#{pane_id}"
+                        ) != self.display.sidebar:
+                            # The user is typing in a pane they chose. End the
+                            # overlay there rather than pulling focus back to a
+                            # menu they can no longer see themselves using.
                             self.clear_inline()
+                            self.close_menu()
                         if not self.menu:
                             before = repr(self.model.tab)
                             before_tree = repr(self.model.tab["tree"]) if self.model.tab else None
@@ -869,7 +1018,9 @@ class Sidebar:
                             # tmux resized the panes; this is not a user ratio edit.
                             self.display.render(self.model.tab, self.model.state["focus"])
                             self.last_name_click = None
-                            if self.inline_editor:
+                            # Re-rendering selects a pane. An open editor or menu
+                            # keeps the keyboard here; menu keys are not shell input.
+                            if self.inline_editor or self.menu:
                                 self.display.select_sidebar()
                 self.draw()
                 key = events.read_or_wait(next_poll)

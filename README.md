@@ -38,15 +38,18 @@ Use **Ctrl-g**, release it, then:
 - **W**: new workspace; **[ / ]**: previous / next workspace.
 - **r / R**: rename tab / workspace; **z**: focus one pane / restore its layout.
 - **a**: open the attachment chooser; **d**: exit the viewer.
+- **m / M**: tab options / workspace options.
 
 Core navigation and editing work by shortcut. The dedicated terminal profile has
 17 core action bindings plus numbered selection for tabs and workspaces 1–9.
 
-**Mouse-required paths today:** selecting a session in Attach after filtering,
-returning a pane to its parked shell, reordering tabs, moving a tab between
-workspaces, and deleting an empty workspace. Keyboard menu navigation remains
-planned. See the [shortcut guide](docs/SHORTCUTS.md) for the current configuration
-scope; these mouse paths still apply with a different keymap.
+In choosers and option menus, **Up / Down** (or **Ctrl-p / Ctrl-n**) moves the
+highlight and **Enter** activates it. Type to filter Attach; **Escape** closes the
+menu and returns to the pane. **Ctrl-g m** opens tab actions, including return to
+the parked shell, reorder and move to workspace. **Ctrl-g M** opens workspace
+options, including deletion of an empty workspace. See the
+[shortcut guide](docs/SHORTCUTS.md) for configurable action bindings and the exact
+keyboard coverage.
 
 On macOS with Ghostty, `./ghostty` opens a dedicated shortcut profile:
 **Command-T** creates a tab, **Command-D / Command-Shift-D** split,

@@ -21,7 +21,7 @@ MAX_KEYMAP_BYTES = 64 * 1024
 MAX_BINDINGS_PER_ACTION = 32
 ACTION_CODES = MappingProxyType(
     {action: entry[2] for action, entry in DIRECT_SHORTCUTS.items()}
-    | {"workspaces": 9018, "quit": 9019}
+    | {"workspaces": 9018, "quit": 9019, "tab-options": 9051, "workspace-options": 9052}
 )
 ACTION_LABELS = MappingProxyType(
     {
@@ -30,12 +30,14 @@ ACTION_LABELS = MappingProxyType(
         "split-below": "Split below",
         "attach": "Attach session",
         "rename-tab": "Rename tab",
+        "tab-options": "Tab options",
         "next-tab": "Next tab",
         "previous-tab": "Previous tab",
         "next-pane": "Next pane",
         "previous-pane": "Previous pane",
         "focus": "Focus / restore layout",
         "workspaces": "Workspace menu",
+        "workspace-options": "Workspace options",
         "new-workspace": "New workspace",
         "rename-workspace": "Rename workspace",
         "next-workspace": "Next workspace",
@@ -49,6 +51,12 @@ ACTION_LABELS = MappingProxyType(
     | {f"select-workspace-{n}": f"Select workspace {n}" for n in range(1, 10)}
 )
 _ACTION_ORDER = tuple(ACTION_LABELS)
+# Default keys added after user keymaps shipped. A file written against an
+# earlier release may already spend m/M on another action or on its prefix, and
+# it kept working before these menus existed. An unconfigured default here gives
+# that key up rather than refusing to load; anything the user assigned to these
+# actions is theirs and still collides like every other explicit binding.
+YIELDING_DEFAULTS = frozenset({"tab-options", "workspace-options"})
 _NAMED_KEYS = {
     key.lower(): key
     for key in (
@@ -287,6 +295,11 @@ class Keymap:
                     result[action] = [canonicalize(key) for key in keys]
                 except ValueError as error:
                     raise ValueError(f"{section}.{action}: {error}") from error
+            explicit = {key for action in configured for key in result[action]}
+            claimed = explicit | ({prefix, "Escape"} if section == "bindings" else set())
+            for action in YIELDING_DEFAULTS:
+                if action not in configured:
+                    result[action] = [key for key in result[action] if key not in claimed]
             seen = {}
             for action, keys in result.items():
                 for key in keys:
