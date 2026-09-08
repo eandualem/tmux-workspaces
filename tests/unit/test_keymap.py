@@ -175,6 +175,47 @@ class KeymapTests(unittest.TestCase):
         for code in (9051, 9052):
             self.assertNotIn(f"csi:{code}~", profile)
 
+    def test_configurations_written_before_the_menu_defaults_still_load(self):
+        # m/M arrived with the option menus. A file that already spent them keeps
+        # working: the unconfigured new default yields, nothing else moves.
+        for data, yielded, kept in (
+            ({"bindings": {"new-tab": ["m"]}}, "tab-options", "workspace-options"),
+            ({"bindings": {"close-tab": ["M"]}}, "workspace-options", "tab-options"),
+            ({"prefix": "m"}, "tab-options", "workspace-options"),
+            ({"prefix": "M"}, "workspace-options", "tab-options"),
+        ):
+            with self.subTest(data=data):
+                keymap = Keymap.from_dict(data)
+                self.assertEqual(keymap.bindings[yielded], ())
+                self.assertEqual(keymap.bindings[kept], DEFAULT_KEYMAP.bindings[kept])
+                self.assertNotIn(ACTION_LABELS[yielded], [r[1] for r in keymap.prefix_help_rows()])
+                for action in ("split-right", "attach", "workspaces", "quit"):
+                    self.assertEqual(keymap.bindings[action], DEFAULT_KEYMAP.bindings[action])
+                self.assertEqual(keymap.direct, DEFAULT_KEYMAP.direct)
+                self.assertEqual(Keymap.from_dict(tomllib.loads(keymap.to_toml())), keymap)
+        moved = Keymap.from_dict({"bindings": {"new-tab": ["m"]}})
+        self.assertEqual(moved.bindings["new-tab"], ("m",))
+        self.assertEqual(dict(moved.prefix_items())["m"], "new-tab")
+
+    def test_only_an_unconfigured_menu_default_yields_and_real_conflicts_still_fail(self):
+        # Yielding covers the key nobody chose. A key the user assigned, to these
+        # actions or any other, still collides exactly as it did before.
+        for data, message in (
+            ({"bindings": {"tab-options": ["t"]}}, "duplicate key 't'"),
+            ({"bindings": {"workspace-options": ["a"]}}, "duplicate key 'a'"),
+            ({"prefix": "m", "bindings": {"tab-options": ["m"]}}, "reserved for prefix/cancel"),
+            ({"bindings": {"new-tab": ["m"], "close-tab": ["m"]}}, "duplicate key 'm'"),
+            ({"bindings": {"tab-options": ["m"], "close-tab": ["m"]}}, "duplicate key 'm'"),
+            ({"bindings": {"new-tab": ["a"]}}, "duplicate key 'a'"),
+            ({"bindings": {"new-tab": ["M"], "workspace-options": ["M"]}}, "duplicate key 'M'"),
+        ):
+            with self.subTest(data=data), self.assertRaisesRegex(ValueError, message):
+                Keymap.from_dict(data)
+        # An explicit menu binding that collides with nothing is kept as given.
+        keymap = Keymap.from_dict({"bindings": {"tab-options": ["g"], "new-tab": ["m"]}})
+        self.assertEqual(keymap.bindings["tab-options"], ("g",))
+        self.assertEqual(keymap.bindings["workspace-options"], ("M",))
+
     def test_menu_entry_actions_are_rebindable_and_reserve_their_wire_codes(self):
         # An action without a shipped trigger still accepts a configured one, and
         # its reserved code reaches the terminal profile unchanged.
@@ -191,8 +232,13 @@ class KeymapTests(unittest.TestCase):
         self.assertEqual(direct_sequence("tab-options"), "\x1b[9051~")
         self.assertIn("keybind = super+shift+m=csi:9051~\n", keymap.ghostty_bindings())
         self.assertEqual(Keymap.from_dict(tomllib.loads(keymap.to_toml())), keymap)
+        # Taking m for another action is allowed only because the menu default is
+        # unconfigured; two explicit claims on it still collide.
+        self.assertEqual(
+            Keymap.from_dict({"bindings": {"new-tab": ["m"]}}).bindings["new-tab"], ("m",)
+        )
         with self.assertRaisesRegex(ValueError, "duplicate key 'm'"):
-            Keymap.from_dict({"bindings": {"new-tab": ["m"]}})
+            Keymap.from_dict({"bindings": {"new-tab": ["m"], "tab-options": ["m"]}})
 
     def test_effective_help_and_profile_cover_remaps_unbindings_and_new_direct_actions(self):
         keymap = Keymap.from_dict(

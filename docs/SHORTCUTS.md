@@ -220,6 +220,13 @@ instance. Closing a pane is disabled by both keyboard routes; mouse actions are
 unchanged. To move a key already assigned to another action, clear or rebind that
 other action too. Duplicates, including aliases such as C-i and Tab, are errors.
 
+For compatibility with earlier keymaps, the new default **m / M** menu bindings
+yield when an existing file assigns either key to another action or uses it as
+the prefix, provided that menu action is omitted from `[bindings]`. Explicit
+`tab-options` or `workspace-options` entries follow the normal collision rules;
+two explicit assignments to the same key remain an error. User files are never
+rewritten to resolve a conflict.
+
 The complete shipped configuration is [integrations/keymap.toml](../integrations/keymap.toml).
 Its action names are stable identifiers. Both sections accept every listed action,
 including numbered selection, `workspaces`, `tab-options`, `workspace-options`
