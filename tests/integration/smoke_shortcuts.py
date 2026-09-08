@@ -9,6 +9,7 @@ import shlex
 import tempfile
 from pathlib import Path
 
+from tests.integration.routing import exercise as routing
 from tests.integration.smoke_plugin import OuterClient
 from tests.integration.support import Client, click_button, saved, wait
 from tmux_workspaces.application import socket_path
@@ -425,3 +426,5 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="tw-shortcuts-smoke-", dir="/tmp") as directory:
         standalone(Path(directory))
         nested(Path(directory))
+        for pane_count in (1, 4):
+            routing(Path(directory), pane_count)

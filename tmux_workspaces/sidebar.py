@@ -8,7 +8,7 @@ import os
 import time
 from collections.abc import Callable
 
-from .controls import DIRECT_SHORTCUTS, Actions
+from .controls import DIRECT_SHORTCUTS, Actions, mouse_action
 from .display import Display
 from .events import InputEvents
 from .model import LayoutConflict, Model, leaves
@@ -279,6 +279,13 @@ class Sidebar:
         self.display.tmux.run("select-pane", "-t", self.display.sidebar)
 
     def action(self, name: str) -> None:
+        mouse = mouse_action(name)
+        if mouse:
+            x, y = mouse
+            height, width = self.screen.getmaxyx()
+            if x < width and y < height:
+                self.mouse(x, y, curses.BUTTON1_PRESSED)
+            return
         self.clear_inline()
         if name.startswith("attach-pane:"):
             _, tab_id, leaf_id = name.split(":")

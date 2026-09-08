@@ -104,6 +104,12 @@ navigation panel action socket. The shortcut never becomes a shell command, and 
 tmux server's keybindings are not changed. [Ghostty's configuration guide](https://ghostty.org/docs/config)
 explains config files and per-launch overrides.
 
+Navigation-panel clicks also wait for the selected tab or workspace to take focus
+before following text is released. Rapid clicks and double-click renaming use the
+same ordering; content clicks, selection, scrolling and right-clicks retain their
+tmux behavior. The PTY suites check immediate typing and burst navigation in
+one- and four-pane arrangements, including unique delivery to the intended shell.
+
 ```sh
 make check
 make smoke

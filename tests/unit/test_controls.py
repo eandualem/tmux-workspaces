@@ -11,13 +11,35 @@ from pathlib import Path
 
 from tests.integration.support import Client, saved, wait
 from tmux_workspaces.application import socket_path
-from tmux_workspaces.controls import DIRECT_SHORTCUTS, Actions, direct_sequence
+from tmux_workspaces.controls import (
+    DIRECT_SHORTCUTS,
+    Actions,
+    direct_sequence,
+    mouse_action,
+    valid_action,
+)
 from tmux_workspaces.display import Display
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux, clean_env
 
 
 class ControlTests(unittest.TestCase):
+    def test_mouse_actions_reject_unbounded_or_executable_coordinates(self):
+        self.assertEqual(mouse_action("mouse:left:0:65535"), (0, 65535))
+        for action in (
+            "mouse:left:-1:0",
+            "mouse:left:0:65536",
+            "mouse:left:100000:0",
+            "mouse:left:1:2;quit",
+            "mouse:left:$(id):2",
+            "mouse:left:1:2\n",
+            "mouse:right:1:2",
+            "mouse:left:١:2",
+        ):
+            with self.subTest(action=action):
+                self.assertIsNone(mouse_action(action))
+                self.assertFalse(valid_action(action))
+
     @unittest.skipUnless(shutil.which("tmux"), "tmux required for real key ordering test")
     def test_burst_of_direct_keys_reaches_action_receiver_in_input_order(self):
         with tempfile.TemporaryDirectory(prefix="tw-keys-", dir="/tmp") as directory:

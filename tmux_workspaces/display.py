@@ -3,6 +3,7 @@
 import contextlib
 import os
 import re
+import shlex
 
 from .controls import DIRECT_SHORTCUTS, SHORTCUTS, direct_sequence
 from .entrypoints import script_command
@@ -43,6 +44,9 @@ class Display:
             "prefix": "C-g",
             "prefix2": "None",
             "escape-time": "10",
+            # tmux's timing-based paste guess can bypass bindings for CSI
+            # actions after rapid text. Explicit bracketed paste still works.
+            "assume-paste-time": "0",
             "focus-events": "on",
             "set-clipboard": "on",
             # Keep the session/window alive until all detach/control clients
@@ -66,8 +70,51 @@ class Display:
         # Forward wheel events to nested tmux, whose copy-mode owns agent scrollback.
         for key in ("WheelUpPane", "WheelDownPane"):
             self.tmux.run("bind-key", "-n", key, "send-keys", "-M")
-        # The sidebar receives its own mouse events; clicking content also selects it.
-        self.tmux.run("bind-key", "-n", "MouseDown1Pane", "select-pane -t = ; send-keys -M")
+        # Hold this client's command queue until sidebar clicks have applied
+        # their action and focus. Raw forwarding races text from the same read
+        # into the sidebar before it has handled navigation.
+        native_click = "select-pane -t = ; send-keys -M"
+        native_double = (
+            "select-pane -t = ; if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' "
+            "{ send-keys -M } "
+            "{ copy-mode -H ; send-keys -X select-word ; run-shell -d 0.3 ; "
+            "send-keys -X copy-pipe-and-cancel }"
+        )
+        for key, native in (
+            ("MouseDown1Pane", native_click),
+            ("SecondClick1Pane", "send-keys -M"),
+            ("TripleClick1Pane", native_double.replace("select-word", "select-line")),
+        ):
+            command = script_command(
+                "_action",
+                "--action-socket",
+                self.action_socket,
+                "--action",
+                "mouse:left:#{mouse_x}:#{mouse_y}",
+                "--wait-action",
+            )
+            self.tmux.run(
+                "bind-key",
+                "-n",
+                key,
+                "if-shell",
+                "-F",
+                f"#{{==:#{{mouse_pane}},{self.sidebar}}}",
+                "select-pane -t = ; run-shell " + shlex.quote(command),
+                native,
+            )
+        # tmux's DoubleClick is a delayed duplicate of SecondClick. The
+        # sidebar already handles double clicks on the physical downs above;
+        # processing this notification again can reopen a just-accepted editor.
+        self.tmux.run(
+            "bind-key",
+            "-n",
+            "DoubleClick1Pane",
+            "if-shell",
+            "-F",
+            f"#{{!=:#{{mouse_pane}},{self.sidebar}}}",
+            native_double,
+        )
         self.tmux.run("bind-key", "s", "select-pane", "-t", self.sidebar)
         for key, action in SHORTCUTS.items():
             self.tmux.run(

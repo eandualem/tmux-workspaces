@@ -70,6 +70,24 @@ socket naming are unchanged. Updating code does not migrate user libraries or
 restart running terminals. Normal launch never reads Backbone configuration or
 calls its API; importing the package alone loads no application or adapter.
 
+## Input ordering
+
+The private tmux server holds each client's command queue while action helpers
+wait for the controller's acknowledgement. The controller applies the action,
+sets focus and draws before replying. Both shortcut sequences and navigation-panel
+left-button downs use this path, so text from the same terminal read cannot run
+before navigation finishes. Content mouse input keeps tmux's native behavior.
+The private viewer disables `assume-paste-time`: tmux's timing-based paste guess
+can otherwise bypass shortcut bindings after rapid text, notably on tmux 3.4.
+Explicit bracketed paste remains supported and is tested against an ordinary
+interactive shell. External servers and terminal configurations are unchanged.
+
+Every physical left-button down matters: tmux names rapid subsequent downs
+`SecondClick1Pane` and `TripleClick1Pane`. Its later `DoubleClick1Pane` notification
+is a duplicate, so the navigation panel ignores it and uses its existing
+coordinate/time check for inline renaming. Forwarding that delayed notification
+again can reopen an editor after immediate typing has already completed it.
+
 ## Existing terminals and entry paths
 
 Already-running viewers embed absolute commands to
