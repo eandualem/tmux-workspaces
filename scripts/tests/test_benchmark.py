@@ -1,19 +1,13 @@
 """Accounting and percentile contracts for the opt-in benchmark."""
 
-import importlib.util
 import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import Mock
 
-spec = importlib.util.spec_from_file_location(
-    "benchmark", Path(__file__).resolve().parents[1] / "benchmark.py"
-)
-benchmark = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(benchmark)
+from scripts import benchmark
 
 
 class BenchmarkTests(unittest.TestCase):
@@ -59,17 +53,14 @@ class BenchmarkTests(unittest.TestCase):
     def test_readiness_requires_clients_from_this_viewers_pane_ttys(self):
         fixture = benchmark.Fixture.__new__(benchmark.Fixture)
         fixture.views, fixture.shell = ["display"], "shells"
-        fixture.leaves = lambda tab: [{"id": "leaf"}]
-        fixture.terminal_module = SimpleNamespace(
-            Shells=SimpleNamespace(name=lambda pane: "terminal-leaf")
-        )
+        fixture.leaves = lambda tab: [{"id": "abcdef123456"}]
         rows = {
-            "display": "||/dev/ttys0\ntab|leaf|/dev/ttys1",
-            "shells": "terminal-leaf|/dev/other-viewer",
+            "display": "||/dev/ttys0\ntab|abcdef123456|/dev/ttys1",
+            "shells": "terminal-abcdef123456|/dev/other-viewer",
         }
         fixture.tmux = lambda socket, *args: rows[socket]
         self.assertFalse(fixture.ready({"id": "tab"}))
-        rows["shells"] = "terminal-leaf|/dev/ttys1"
+        rows["shells"] = "terminal-abcdef123456|/dev/ttys1"
         self.assertTrue(fixture.ready({"id": "tab"}))
 
     def test_provenance_marks_dirty_tracked_source_without_relabeling_head(self):

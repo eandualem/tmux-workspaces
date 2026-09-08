@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import fcntl
 import hashlib
-import importlib
 import json
 import math
 import os
@@ -26,6 +25,8 @@ import termios
 import time
 from collections import Counter
 from pathlib import Path
+
+from tmux_workspaces import application, controls, model, persistence, shells, tmux
 
 ROOT = Path(__file__).resolve().parents[1]
 BUDGET = {"p50_ms": 150, "p95_ms": 250}
@@ -239,13 +240,7 @@ class Fixture:
         self.real_tmux = shutil.which("tmux")
         self.library, self.source = root / "library", root / "source.sock"
         self.trace = root / "commands.log"
-        self.runtime = ROOT / "experiments" / "workspace_viewer"
-        sys.path.insert(0, str(self.runtime))
-        self.model_module = importlib.import_module("model")
-        self.terminal_module = importlib.import_module("terminal")
-        self.viewer_module = importlib.import_module("viewer")
-        self.controls = importlib.import_module("controls")
-        self.env = self.terminal_module.clean_env() | {
+        self.env = tmux.clean_env() | {
             "TERM": "xterm-256color",
             "LANG": "en_US.UTF-8",
             "SHELL": "/bin/sh",
@@ -262,7 +257,7 @@ class Fixture:
             )
             wrapper.chmod(0o755)
             self.env["PATH"] = str(bindir) + os.pathsep + self.env.get("PATH", "")
-        store = self.model_module.Store(self.library)
+        store = persistence.Store(self.library)
         model = store.load()
         self.spaces = []
         for index in range(2):
@@ -287,10 +282,10 @@ class Fixture:
         model.state["selected"] = self.spaces[0]["id"]
         store.save(model)
         store.close()
-        self.shell = self.viewer_module.socket_path(self.library, "terminals")
+        self.shell = application.socket_path(self.library, "terminals")
 
     def leaves(self, tab):
-        return list(self.model_module.leaves(tab["tree"]))
+        return list(model.leaves(tab["tree"]))
 
     def tmux(self, socket, *arguments, check=True):
         before = time.monotonic()
@@ -390,15 +385,14 @@ class Fixture:
             ).splitlines()
         )
         return all(
-            self.terminal_module.Shells.name(pane) + "|" + actual[(tab["id"], pane["id"])]
-            in clients
+            shells.Shells.name(pane) + "|" + actual[(tab["id"], pane["id"])] in clients
             for pane in self.leaves(tab)
         )
 
     def navigate(self, method, kind, index, tab):
         client, view = self.clients[0], self.views[0]
         if method == "shortcut":
-            event = self.controls.direct_sequence(f"select-{kind}-{index + 1}")
+            event = controls.direct_sequence(f"select-{kind}-{index + 1}")
         else:
             lines = self.tmux(view, "capture-pane", "-p", "-t", "%0").splitlines()
             label = tab["name"] if kind == "tab" else f"[ {index + 1} ]"
@@ -416,7 +410,7 @@ class Fixture:
         token = os.urandom(8).hex()
         # Splitting the output marker prevents terminal echo from faking acknowledgement.
         client.send("printf 'BENCH_%s\\n' " + token + "\r")
-        target = "=" + self.terminal_module.Shells.name({"id": tab["focus"]}) + ":"
+        target = "=" + shells.Shells.name({"id": tab["focus"]}) + ":"
         marker = "BENCH_" + token
         routed_at = self.wait(
             lambda: marker in self.tmux(self.shell, "capture-pane", "-p", "-t", target),
@@ -462,8 +456,8 @@ class Fixture:
         for _ in range(5):
             before = time.monotonic()
             subprocess.run(
-                [sys.executable, "-c", "import viewer"],
-                cwd=self.runtime,
+                [sys.executable, "-c", "import tmux_workspaces.cli"],
+                cwd=ROOT,
                 env=self.env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
@@ -474,7 +468,7 @@ class Fixture:
         return {
             "raw_ms": values,
             "summary": summary(values),
-            "scope": "fresh interpreter + viewer module imports + exit; no action or tmux work",
+            "scope": "fresh interpreter + CLI imports + exit; no action or tmux work",
         }
 
     def idle(self):
@@ -536,7 +530,7 @@ class Fixture:
             )
 
         create_source()
-        client.send(self.controls.direct_sequence("attach"))
+        client.send(controls.direct_sequence("attach"))
 
         def chooser_row():
             lines = self.tmux(view, "capture-pane", "-p", "-t", "%0").splitlines()

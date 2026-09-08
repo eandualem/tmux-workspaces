@@ -13,8 +13,8 @@ From the checkout, with Python and tmux available:
 
 ```sh
 mkdir -p .backbone/benchmarks
-python3 scripts/benchmark.py > .backbone/benchmarks/baseline.json
-python3 scripts/benchmark.py --viewers 2 > .backbone/benchmarks/two-viewers.json
+python3 -m scripts.benchmark > .backbone/benchmarks/baseline.json
+python3 -m scripts.benchmark --viewers 2 > .backbone/benchmarks/two-viewers.json
 ```
 
 The default runs one-, four- and eight-pane layouts, three 30-second idle samples
@@ -29,11 +29,13 @@ PTY descriptors close even if process termination fails.
 For a quick harness check, not an acceptance measurement:
 
 ```sh
-python3 scripts/benchmark.py --panes 1 4 --samples 2 \
+python3 -m scripts.benchmark --panes 1 4 --samples 2 \
   --idle-samples 1 --idle-seconds 1 --warmup .2
 ```
 
-Use `--help` for durations, sample counts and polling controls. Navigation sample
+`make benchmark` runs the same module; pass options through `BENCHMARK_ARGS`.
+The module entry point uses the normal package imports, without modifying
+`sys.path`. Use `--help` for durations, sample counts and polling controls. Navigation sample
 counts are even so both destinations are exercised equally. Each workspace has two
 tabs with the chosen pane count; all four tabs are warmed before sampling. Only
 one tab per viewer is displayed; parked shells remain in the CPU scope. With two
@@ -92,7 +94,7 @@ simultaneous builds. Twenty events provide only a coarse tail estimate; increase
 ## Command and interpreter diagnostics
 
 ```sh
-python3 scripts/benchmark.py --panes 1 4 --samples 2 \
+python3 -m scripts.benchmark --panes 1 4 --samples 2 \
   --idle-samples 1 --idle-seconds 1 --trace-commands \
   > .backbone/benchmarks/commands.json
 ```
@@ -102,9 +104,9 @@ application tmux invocations separately from the observer's direct tmux queries.
 This wrapper adds process and file-I/O cost: compare traced runs only with traced
 runs, and use **untraced** runs for the latency gate. Batched tmux subcommands
 count as one invocation. The separate `helper_import_baseline` runs five fresh
-interpreters importing the viewer module and exiting, without actions or tmux work. It characterizes
-interpreter/module startup, not the cost of an actual `_action` request or
-individual rendering stages. The main viewer stays alive; keyboard
+interpreters importing `tmux_workspaces.cli` and exiting, without actions or tmux
+work. It characterizes interpreter/CLI startup, not the cost of an actual
+`_action` request or individual rendering stages. The main viewer stays alive; keyboard
 `_action` helpers and attachment `_leaf` helpers may start during interaction.
 Do not attribute the entire navigation time to interpreter startup.
 
