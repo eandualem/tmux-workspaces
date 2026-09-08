@@ -80,6 +80,24 @@ def launch_command(
     ]
 
 
+def check_launch(app: Path = DEFAULT_APP) -> None:
+    """Check availability without creating a library or launching the native app."""
+    from .preflight import check_tmux, load_curses
+
+    if sys.platform != "darwin":
+        raise RuntimeError(
+            "The Ghostty launcher requires macOS; use ./run in your current terminal."
+        )
+    binary = app.expanduser() / "Contents/MacOS/ghostty"
+    if not binary.is_file() or not os.access(binary, os.X_OK):
+        raise RuntimeError(
+            "Ghostty.app is missing or not executable; pass --ghostty-app PATH "
+            "or use ./run in your current terminal."
+        )
+    check_tmux()
+    load_curses()
+
+
 def main(arguments: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="ghostty",
@@ -104,21 +122,27 @@ def main(arguments: list[str] | None = None) -> int:
     if viewer_args[:1] == ["--"]:
         viewer_args = viewer_args[1:]
     try:
+        if not options.dry_run:
+            check_launch(options.ghostty_app)
         command = launch_command(viewer_args, options.ghostty_app)
-    except (ValueError, OSError) as error:
+    except (RuntimeError, ValueError, OSError) as error:
         parser.error(str(error))
     if options.dry_run:
         print(shlex.join(command))
         return 0
-    if sys.platform != "darwin":
-        parser.error("this launcher requires macOS; use ./run in your terminal")
-    binary = options.ghostty_app.expanduser() / "Contents/MacOS/ghostty"
-    if not binary.is_file():
-        parser.error("Ghostty.app was not found; pass --ghostty-app PATH or use ./run")
     try:
-        return subprocess.call(command)
+        result = subprocess.call(command)
+        if result:
+            print(
+                f"Ghostty launch failed (exit {result}); use ./run in your current terminal.",
+                file=sys.stderr,
+            )
+        return result
     except OSError as error:
-        print("tmux-workspaces: " + str(error), file=sys.stderr)
+        print(
+            "Ghostty launch failed: " + str(error) + "; use ./run in your current terminal.",
+            file=sys.stderr,
+        )
         return 1
 
 

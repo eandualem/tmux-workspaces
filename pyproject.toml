@@ -12,7 +12,7 @@ license = {file = "LICENSE"}
 dependencies = []
 
 [project.scripts]
-tmux-workspaces = "tmux_workspaces.cli:main"
+tmux-workspaces = "tmux_workspaces.bootstrap:main"
 
 [tool.setuptools.packages.find]
 include = ["tmux_workspaces*"]

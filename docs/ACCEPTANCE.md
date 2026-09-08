@@ -1,5 +1,27 @@
 # Verification and known limits
 
+## Startup preflight and failure cleanup — 2026-09-08
+
+The startup branch passed `make check`: **187 application tests and 12 benchmark
+tests**, Ruff and shell syntax on macOS/Python 3.14.7/tmux 3.7c and Debian 13
+aarch64/Python 3.12.14/tmux 3.5a. All eleven Linux PTY suites and ten macOS suites
+passed; SSH is explicitly skipped on macOS. The final preview-module error-status
+follow-up passed its subprocess regression and both platforms' unit checks.
+Hosted final-head CI remains pending account availability.
+
+Six real-PTY failures exercise missing/old tmux, missing/unknown TERM, monochrome
+terminfo and missing Python curses. Each leaves a fresh library empty, creates no
+runtime sockets and issues at most `tmux -V`. Actual Python 3.9.6 was rejected
+cleanly across nine public entry paths before runtime imports. Unit regressions
+cover development versions, help/diagnostic output, partial setup and cleanup
+failures. Internal action/leaf helpers retain their existing lightweight path.
+
+Linux testing also exposed a fixture-only process-exit race while reading /proc.
+That fix landed on the preceding fixture branch with its own regression before
+this full Linux run. Startup requirements and the limits of minimum terminfo
+checks are documented in [STARTUP.md](STARTUP.md). No native GUI, WSL or WAN
+behavior is established by these results.
+
 ## Owned fixtures and real SSH — 2026-09-08
 
 The shared PTY layer now owns fresh libraries, servers and clients through setup
