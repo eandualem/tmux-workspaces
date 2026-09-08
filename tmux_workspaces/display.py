@@ -33,6 +33,8 @@ class Display:
         self.panes: dict[str, str] = {}
         self.last_size = (0, 0)
         self.small = False
+        self._shell_names: dict[str, str] = {}
+        self._rendered_key = None
 
     def setup(self) -> None:
         for name, value in {
@@ -159,7 +161,7 @@ class Display:
             if self.host_socket and self.host_pane:
                 args += ["--host-socket", self.host_socket, "--host-pane", self.host_pane]
             return script_command(*args)
-        name = self.shells.ensure(pane)
+        name = self._shell_names.get(pane["id"]) or self.shells.ensure(pane)
         return script_command(
             "_leaf", "--source-socket", self.shells.tmux.socket, "--terminal", name
         )
@@ -171,6 +173,7 @@ class Display:
     def _pane_identity(self, tab: dict | None) -> None:
         if not tab:
             return
+        commands = []
         for leaf in leaves(tab["tree"]):
             pane = self.panes.get(leaf["id"])
             if not pane:
@@ -178,16 +181,37 @@ class Display:
             for name, value in {
                 "@viewer_leaf_id": leaf["id"],
                 "@viewer_tab_id": tab["id"],
+                "@viewer_agent": re.sub(r"[^\w .-]", "", leaf["agent"] or "Terminal"),
             }.items():
-                self.tmux.run("set-option", "-p", "-t", pane, name, value)
+                commands.append(["set-option", "-p", "-t", pane, name, value])
+        self.tmux.batch(commands)
+
+    @staticmethod
+    def _layout_key(tree: dict | None):
+        if not tree:
+            return None
+        if "agent" in tree:
+            # cwd is a saved restart location; changing it does not change the
+            # attachment client for an already-running shell.
+            return tree["id"], tree["agent"], tree.get("source_socket")
+        return (
+            tree["id"],
+            tree["direction"],
+            tree.get("ratio", 0.5),
+            Display._layout_key(tree["first"]),
+            Display._layout_key(tree["second"]),
+        )
 
     def render(self, tab: dict | None, focus: bool) -> None:
         # Only pane IDs on this dedicated server may be destroyed or rearranged.
-        owned = self.tmux.run("list-panes", "-t", "viewer:", "-F", "#{pane_id}").splitlines()
+        owned = dict(
+            line.split()
+            for line in self.tmux.run(
+                "list-panes", "-t", "viewer:", "-F", "#{pane_id} #{pane_dead}"
+            ).splitlines()
+        )
         content = [pane for pane in owned if pane != self.sidebar]
-        self.panes.clear()
         cols, rows = self.size()
-        self.last_size = (cols, rows)
         sidebar_width = min(28, max(24, cols // 4))
         tree = tab["tree"] if tab else None
         # Narrow displays use temporary focus. The saved tree is never replaced.
@@ -197,6 +221,23 @@ class Display:
             tree = next(
                 (item for item in leaves(tree) if item["id"] == tab["focus"]), leaves(tree)[0]
             )
+        key = (tab["id"], self._layout_key(tree)) if tab else None
+        if (
+            key is not None
+            and key == self._rendered_key
+            and self.last_size == (cols, rows)
+            and set(content) == set(self.panes.values())
+            and all(owned[pane] == "0" for pane in content)
+        ):
+            # Name-only edits, including peer renames, do not replace terminals.
+            self.select(tab["focus"])
+            return
+        self._rendered_key = None
+        self.last_size = (cols, rows)
+        self.panes.clear()
+        self._shell_names = self.shells.ensure_many(
+            [pane for pane in leaves(tree) if not pane["agent"]]
+        )
         first = leaves(tree)[0] if tree else None
         command = self._leaf_command(first)
         if content:
@@ -212,12 +253,7 @@ class Display:
                 ["set-option", "-p", "-t", pane, "@viewer_tab_id", ""],
                 ["respawn-pane", "-k", "-t", pane, command],
             ]
-            args = []
-            for operation in commands:
-                if args:
-                    args.append(";")
-                args.extend(operation)
-            self.tmux.run(*args)
+            self.tmux.batch(commands)
         else:
             pane = self.tmux.run(
                 "split-window",
@@ -240,11 +276,11 @@ class Display:
             self._label(pane, "Create a tab")
             self.tmux.run("select-pane", "-t", self.sidebar)
         self._pane_identity(tab)
+        self._rendered_key = key
 
     def _tree(self, tree: dict, pane: str) -> None:
         if "agent" in tree:
             self.panes[tree["id"]] = pane
-            self._label(pane, tree["agent"] or "Terminal")
             return
         second_leaf = leaves(tree["second"])[0]
         sibling = self.tmux.run(
@@ -293,3 +329,7 @@ class Display:
 
         with contextlib.suppress(KeyError):
             measure(tree)
+            if self._rendered_key is not None:
+                # A border drag already changed these clients' geometry. Saving
+                # its ratios must not turn the next name edit into a rebuild.
+                self._rendered_key = (self._rendered_key[0], self._layout_key(tree))

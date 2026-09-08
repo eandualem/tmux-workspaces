@@ -55,3 +55,14 @@ class Tmux:
         if check and result.returncode:
             raise RuntimeError(result.stderr.strip() or "tmux command failed")
         return result.stdout.strip()
+
+    def batch(self, commands: list[list[str]], *, check: bool = True) -> str:
+        """Execute an ordered command queue with one client process."""
+        args = []
+        for command in commands:
+            if not command:
+                raise ValueError("Empty tmux command")
+            if args:
+                args.append(";")
+            args.extend(command)
+        return self.run(*args, check=check) if args else ""

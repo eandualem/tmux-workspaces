@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -55,6 +56,28 @@ class RenderTests(unittest.TestCase):
                         )
                         for pane in leaves(four["tree"])
                     }
+                    clients = viewer.run("list-panes", "-F", "#{pane_id}:#{pane_pid}")
+                    # Name and saved cwd changes do not replace attachment
+                    # clients, even after recording actual rounded split ratios.
+                    display.remember_ratios(four["tree"])
+                    four["name"] = "Renamed without redraw"
+                    leaves(four["tree"])[0]["cwd"] = str(root)
+                    display.render(four, False)
+                    self.assertEqual(
+                        clients, viewer.run("list-panes", "-F", "#{pane_id}:#{pane_pid}")
+                    )
+                    dead = display.panes[leaves(four["tree"])[0]["id"]]
+                    viewer.run("set-option", "-p", "-t", dead, "remain-on-exit", "on")
+                    viewer.run("respawn-pane", "-k", "-t", dead, "/usr/bin/true")
+                    deadline = time.monotonic() + 5
+                    while viewer.run("display-message", "-p", "-t", dead, "#{pane_dead}") != "1":
+                        self.assertLess(time.monotonic(), deadline)
+                        time.sleep(0.01)
+                    # A dead client keeps its pane ID; reuse must detect that.
+                    display.render(four, False)
+                    self.assertEqual(
+                        viewer.run("display-message", "-p", "-t", dead, "#{pane_dead}"), "0"
+                    )
                     original = display.tmux.run
                     samples = []
 
@@ -73,6 +96,14 @@ class RenderTests(unittest.TestCase):
                         if tab is None:
                             self.assertEqual(
                                 viewer.run("list-panes", "-F", "#{@viewer_leaf_id}").strip(), ""
+                            )
+                        else:
+                            actual = viewer.run(
+                                "list-panes", "-F", "#{@viewer_tab_id}:#{@viewer_leaf_id}"
+                            ).splitlines()
+                            self.assertEqual(
+                                {line for line in actual if line != ":"},
+                                {tab["id"] + ":" + p["id"] for p in leaves(tab["tree"])},
                             )
                         for pane in leaves(four["tree"]):
                             self.assertEqual(

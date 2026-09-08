@@ -10,6 +10,7 @@ from collections.abc import Callable
 
 from .controls import DIRECT_SHORTCUTS, Actions
 from .display import Display
+from .events import InputEvents
 from .model import LayoutConflict, Model, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
@@ -67,8 +68,7 @@ class Sidebar:
             if focused:
                 tab["focus"] = focused
             self.display.remember_ratios(tab["tree"])
-            for pane in leaves(tab["tree"]):
-                self.display.shells.remember(pane)
+            self.display.shells.remember_many(leaves(tab["tree"]))
 
     def clear_inline(self, *, focus: bool = False) -> None:
         if self.inline_editor and self.message in {"Enter a tab name", "Enter a workspace name"}:
@@ -833,7 +833,8 @@ class Sidebar:
         curses.mouseinterval(0)
         curses.mousemask(curses.ALL_MOUSE_EVENTS)
         self.screen.keypad(True)
-        self.screen.timeout(150)
+        self.screen.timeout(0)
+        events = InputEvents(self.screen, self.actions.receiver)
         self.source.start()
         self.display.setup()
         self.show()
@@ -881,8 +882,11 @@ class Sidebar:
                         if self.inline_editor:
                             self.display.tmux.run("select-pane", "-t", self.display.sidebar)
                 self.draw()
-                with contextlib.suppress(curses.error):
-                    self.input(self.screen.get_wch())
+                key = events.read_or_wait(next_poll)
+                if key is not None:
+                    self.input(key)
+                    if key == curses.KEY_RESIZE:
+                        next_poll = 0.0
             except (RuntimeError, OSError, ValueError) as exc:
                 self.message = visible(str(exc))[:100]
                 self.last_frame = None
