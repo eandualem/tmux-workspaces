@@ -90,6 +90,11 @@ SSH-accessible environments are the intended setting alongside local terminals.
 This is an on-host application, not an SSH connection manager: `--source-socket`
 selects a socket on that host, and does not connect to another machine.
 
+New ordinary shells retain the invoking viewer's SSH-agent socket and standard
+XDG paths. After an SSH reconnect, reopen the viewer to supply the new context to
+new tabs; existing shells keep their processes and environment. See the exact
+[shell environment and reconnect policy](docs/SHELL_ENVIRONMENT.md).
+
 Linux and macOS pass the real-terminal integration suites in CI. WSL and an
 actual SSH connection still need verification; see [coverage and limits](docs/ACCEPTANCE.md).
 The viewer

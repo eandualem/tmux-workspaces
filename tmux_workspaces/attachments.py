@@ -30,7 +30,9 @@ def leaf_main(args) -> int:
         while True:
             time.sleep(60)
     target = session_target(name)
-    command = ["tmux", "-S", args.source_socket, "attach-session", "-t", target]
+    # Attaching must not update the external session's environment from this
+    # filtered client (including removing its existing SSH agent socket).
+    command = ["tmux", "-S", args.source_socket, "attach-session", "-E", "-t", target]
     notice = ""
     while True:
         exists = (
