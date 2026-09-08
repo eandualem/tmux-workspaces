@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 
 from tests.integration.support import Client
@@ -53,7 +54,10 @@ class SshHost:
             try:
                 self.close()
             except BaseException as cleanup:
-                error.add_note(f"SSH cleanup also failed: {cleanup}")
+                error.add_note(
+                    "SSH cleanup also failed:\n"
+                    + "".join(traceback.format_exception(cleanup, chain=False))
+                )
             raise
 
     def __exit__(self, _type, error, _traceback):
@@ -62,7 +66,10 @@ class SshHost:
         except BaseException as cleanup:
             if error is None:
                 raise
-            error.add_note(f"SSH cleanup also failed: {cleanup}")
+            error.add_note(
+                "SSH cleanup also failed:\n"
+                + "".join(traceback.format_exception(cleanup, chain=False))
+            )
 
     def start(self) -> None:
         for name in ("host_key", "client_key"):
@@ -245,4 +252,6 @@ class SshHost:
             except BaseException as error:
                 errors.append(error)
         if errors:
-            raise errors[0]
+            if len(errors) == 1:
+                raise errors[0]
+            raise BaseExceptionGroup("SSH host cleanup failed", errors)

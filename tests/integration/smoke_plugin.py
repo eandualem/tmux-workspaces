@@ -12,9 +12,6 @@ from tmux_workspaces.application import socket_path
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
 
-# Compatibility for the pending keymap suite; common fixtures live in support.
-__all__ = ["OuterClient", "run"]
-
 
 def run(directory: Path) -> None:
     with FixtureResources(parent=directory) as resources:

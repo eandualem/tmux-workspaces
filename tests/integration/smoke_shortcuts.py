@@ -11,7 +11,6 @@ from tests.integration.routing import exercise as routing
 from tests.integration.support import (
     FixtureResources,
     OuterClient,
-    cleanup_library,
     click_button,
     right_click,
     saved,
@@ -24,9 +23,6 @@ from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.model import leaves
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
-
-# Compatibility for smoke_keymaps on the earlier keymap branch.
-__all__ = ["cleanup_library", "nested", "right_click", "sidebar", "standalone", "tab_row"]
 
 
 def standalone(directory: Path) -> None:

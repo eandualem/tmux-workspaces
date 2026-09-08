@@ -63,6 +63,42 @@ class SshCleanupTests(unittest.TestCase):
                 host.__exit__(AssertionError, original, None)
             self.assertIn("cleanup failed", original.__notes__[0])
 
+    def test_multiple_cleanup_failures_preserve_all_errors_and_finish_teardown(self):
+        with tempfile.TemporaryDirectory() as directory, patch("os.killpg") as kill:
+            host = self.host(directory)
+            clients = host.clients.copy()
+            process, log = host.process, host.log
+            failures = (
+                OSError("client close failed"),
+                KeyboardInterrupt("client close interrupted"),
+                OSError("log close failed"),
+            )
+            clients[-1].close.side_effect = failures[0]
+            clients[0].close.side_effect = failures[1]
+            log.close.side_effect = failures[2]
+            with self.assertRaises(BaseExceptionGroup) as raised:
+                host.close()
+            self.assertEqual(raised.exception.exceptions, failures)
+            for client in clients:
+                client.close.assert_called_once()
+            kill.assert_called_once_with(987654, signal.SIGTERM)
+            process.wait.assert_called_once_with(timeout=5)
+            log.close.assert_called_once()
+            self.assertEqual(list(host.root.iterdir()), [])
+            host.close()
+
+    def test_grouped_cleanup_diagnostics_survive_an_existing_scenario_failure(self):
+        with tempfile.TemporaryDirectory() as directory, patch("os.killpg"):
+            host = self.host(directory)
+            host.clients[-1].close.side_effect = OSError("first client diagnostic")
+            host.log.close.side_effect = OSError("second log diagnostic")
+            original = AssertionError("scenario failed")
+            host.__exit__(AssertionError, original, None)
+            self.assertEqual(len(original.__notes__), 1)
+            self.assertIn("first client diagnostic", original.__notes__[0])
+            self.assertIn("second log diagnostic", original.__notes__[0])
+            self.assertEqual(list(host.root.iterdir()), [])
+
 
 if __name__ == "__main__":
     unittest.main()

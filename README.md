@@ -95,7 +95,7 @@ XDG paths. After an SSH reconnect, reopen the viewer to supply the new context t
 new tabs; existing shells keep their processes and environment. See the exact
 [shell environment and reconnect policy](docs/SHELL_ENVIRONMENT.md).
 
-Linux and macOS have passed the real-terminal integration suites in CI. A
+Local Linux and macOS runs passed the current real-terminal integration suites. A
 disposable Linux fixture also verifies actual loopback SSH, including reconnect
 and foreground-process preservation. WSL remains unverified; see
 [test setup and coverage](docs/TESTING.md).
