@@ -27,8 +27,10 @@ or edit tmux configuration.
   Attachment uses tmux's `-E` flag to preserve external session environments.
 - `sidebar.py`: curses UI controller, menu state, drawing and user actions. It
   composes the model, store, source and display; it does not launch the application.
-- `controls.py` and `name_editor.py`: action transport/key mappings and inline
-  name-editing input. `targets.py` keeps exact tmux targets separate from labels.
+- `controls.py`: stable action identifiers/default codes and acknowledged action
+  transport. `keymap.py` validates optional TOML maps and generates effective
+  shortcut labels and terminal profiles. `name_editor.py` owns inline name input;
+  `targets.py` keeps exact tmux targets separate from labels.
 - `cli.py`: argument defaults, validation surface and dispatch. `application.py`
   composes dependencies and owns launch, demo and viewer cleanup. Action dispatch
   imports neither the application nor the attachment client.
@@ -71,6 +73,15 @@ restart running terminals. Normal launch never reads Backbone configuration or
 calls its API; importing the package alone loads no application or adapter.
 
 ## Input ordering
+
+Configuration is selected and validated before runtime resources are created.
+The launcher transports a complete immutable keymap snapshot to the controller;
+Ghostty also freezes it in its new-surface command to match the instance's profile.
+Only the private display server's prefix table and direct CSI bindings change.
+The prefix table is rebuilt from that map so disabling a viewer key cannot expose
+an underlying native tmux command. Escape cancels a prefix and a doubled prefix
+passes through literally. User maps contain validated keys and action identifiers,
+never shell fragments. No config file is reread during navigation.
 
 The private tmux server holds each client's command queue while action helpers
 wait for the controller's acknowledgement. The controller applies the action,

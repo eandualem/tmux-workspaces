@@ -16,7 +16,7 @@ import traceback
 import uuid
 from pathlib import Path
 
-from .cli import default_source_socket
+from .cli import default_source_socket, effective_keymap
 from .controls import Actions
 from .display import Display
 from .entrypoints import script_command
@@ -49,6 +49,7 @@ def make_source(
 
 
 def sidebar_main(args) -> int:
+    keymap = effective_keymap(args)
     # Wait for the launcher's attachment before enabling exit-unattached.
     tmux = Tmux(args.viewer_socket)
     deadline = time.monotonic() + 15
@@ -76,6 +77,7 @@ def sidebar_main(args) -> int:
             args.action_socket,
             args.host_socket,
             args.host_pane,
+            keymap=keymap,
         )
         curses.wrapper(
             lambda screen: Sidebar(
@@ -156,6 +158,7 @@ def start_demo(socket: str, data_dir: Path) -> None:
 
 
 def launch(args) -> int:
+    keymap = effective_keymap(args)
     if not args.backbone and (args.backbone_data_dir is not None or args.url is not None):
         raise ValueError("Use --backbone to enable Backbone configuration and API access")
     if not sys.stdin.isatty() or not sys.stdout.isatty():
@@ -218,6 +221,8 @@ def launch(args) -> int:
             action_socket,
             "--shortcut-hints",
             args.shortcut_hints,
+            "--keymap-state",
+            keymap.to_toml(),
         ]
         if args.backbone:
             child_args += ["--backbone", "--backbone-data-dir", str(args.backbone_data_dir)]

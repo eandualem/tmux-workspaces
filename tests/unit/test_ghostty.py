@@ -5,6 +5,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -12,6 +13,7 @@ from unittest.mock import patch
 
 from tmux_workspaces import ghostty_launcher as launcher
 from tmux_workspaces.controls import ghostty_bindings
+from tmux_workspaces.keymap import DEFAULT_KEYMAP, Keymap
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -48,6 +50,8 @@ class GhosttyLauncherTests(unittest.TestCase):
                 "--source-socket",
                 str(Path("/tmp/outer,source.sock").resolve()),
                 "--shortcut-hints=command",
+                "--keymap-state",
+                DEFAULT_KEYMAP.to_toml(),
             ],
         )
 
@@ -99,6 +103,8 @@ class GhosttyLauncherTests(unittest.TestCase):
                     "--source-socket",
                     str((root / "source 'socket'").resolve()),
                     "--shortcut-hints=command",
+                    "--keymap-state",
+                    DEFAULT_KEYMAP.to_toml(),
                     "--backbone-data-dir",
                     str((root / "adapter config").resolve()),
                 ],
@@ -156,7 +162,33 @@ class GhosttyLauncherTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             command = shlex.split(result.stdout)
             self.assertIn("--working-directory=" + str(Path(directory).resolve()), command)
-            self.assertIn("--config-file=" + str(ROOT / "integrations/ghostty.conf"), command)
+            self.assertIn("--keybind=super+t=csi:9001~", command)
+
+    def test_custom_profile_and_new_surface_share_one_immutable_map(self):
+        with tempfile.TemporaryDirectory(prefix="tw-keymap-ghostty-", dir="/tmp") as directory:
+            cwd = Path(directory)
+            path = cwd / "custom map.toml"
+            path.write_text(
+                'prefix = "C-a"\n[bindings]\nnew-tab = ["u"]\n'
+                '[direct]\nnew-tab = ["super+alt+t"]\nrename-tab = []\n'
+            )
+            command = launcher.launch_command(["--keymap", path.name], cwd=cwd)
+            self.assertIn("--keybind=super+alt+t=csi:9001~", command)
+            self.assertIn("--keybind=super+t=ignore", command)
+            self.assertIn("--keybind=super+r=ignore", command)
+            self.assertNotIn("--keybind=super+r=csi:9011~", command)
+            shell = next(arg for arg in command if arg.startswith("--command="))
+            options = launcher.viewer_parser().parse_args(
+                shlex.split(shell.removeprefix("--command=shell:"))[2:]
+            )
+            path.write_text('prefix = "C-z"\n')
+            from tmux_workspaces.cli import effective_keymap
+
+            frozen = effective_keymap(options)
+            self.assertEqual(frozen.prefix, "C-a")
+            self.assertEqual(frozen.bindings["new-tab"], ("u",))
+            self.assertEqual(frozen.direct["rename-tab"], ())
+            self.assertEqual(frozen, Keymap.from_dict(tomllib.loads(options.keymap_state)))
 
 
 if __name__ == "__main__":

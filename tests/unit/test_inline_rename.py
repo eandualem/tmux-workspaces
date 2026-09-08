@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from tmux_workspaces.keymap import DEFAULT_KEYMAP
 from tmux_workspaces.name_editor import NameEditor, cells
 from tmux_workspaces.persistence import Store
 from tmux_workspaces.sidebar import Sidebar
@@ -20,7 +21,7 @@ class InlineRenameTests(unittest.TestCase):
         self.model = self.store.load()
         self.model.tab["name"] = "Original"
         self.store.save(self.model)
-        self.display = Mock(sidebar="%0", small=False)
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
         self.display.focused_leaf.side_effect = lambda: (
             self.model.tab["focus"] if self.model.tab else None
         )

@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
+from tmux_workspaces.keymap import DEFAULT_KEYMAP
 from tmux_workspaces.model import leaves
 from tmux_workspaces.persistence import Store
 from tmux_workspaces.sidebar import Sidebar
@@ -22,7 +23,7 @@ class AttachTargetTests(unittest.TestCase):
         self.tab_id = self.model.tab["id"]
         self.first, self.second = [pane["id"] for pane in leaves(self.model.tab["tree"])]
         self.focus = self.second
-        self.display = Mock(sidebar="%0", small=False)
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
         self.display.panes = {self.first: "%1", self.second: "%2"}
         self.display.focused_leaf.side_effect = lambda: self.focus
         self.display.select.side_effect = lambda leaf: setattr(self, "focus", leaf)
