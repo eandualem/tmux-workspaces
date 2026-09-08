@@ -23,7 +23,7 @@ from .entrypoints import script_command
 from .persistence import Store
 from .sidebar import Sidebar
 from .source import Source
-from .tmux import Tmux, clean_env
+from .tmux import Tmux, clean_env, shell_context
 
 
 def make_source(
@@ -254,7 +254,9 @@ def launch(args) -> int:
                     str(rows),
                     script_command(*child_args),
                 ],
-                env=clean_env(),
+                # This new, private server carries session paths to its sidebar
+                # so each viewer can initialize new shells from its own context.
+                env=clean_env() | shell_context(),
                 check=True,
                 capture_output=True,
             )

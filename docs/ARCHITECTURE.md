@@ -17,11 +17,14 @@ or edit tmux configuration.
   combines shared arrangements with each viewer's independent navigation state.
 - `tmux.py`: explicit-socket subprocess calls and the child environment policy.
 - `shells.py`: creation, cwd capture and explicit deletion of ordinary shell
-  sessions on a library's persistent shell server.
+  sessions on a library's persistent shell server. Each new shell explicitly
+  sets/unsets the creating viewer's SSH-agent and XDG context, preventing stale
+  server-global paths from leaking across reconnects or concurrent viewers.
 - `display.py`: split geometry, focus and disposable attachment clients on one
   viewer's private display server. It never moves or owns external panes.
 - `attachments.py`: external attachment clients and recursive-host protection;
   the leaf helper imports no curses controller, SQLite store or metadata adapter.
+  Attachment uses tmux's `-E` flag to preserve external session environments.
 - `sidebar.py`: curses UI controller, menu state, drawing and user actions. It
   composes the model, store, source and display; it does not launch the application.
 - `controls.py` and `name_editor.py`: action transport/key mappings and inline

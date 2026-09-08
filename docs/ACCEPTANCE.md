@@ -1,5 +1,6 @@
 # Verification and known limits
 
+
 ## Hosted terminal coverage — 2026-09-08
 
 The merged package version passed `make check` (89 tests) and all seven real-PTY
@@ -50,6 +51,24 @@ Generic session availability, offline associations, demo attachment identity,
 source-socket persistence, concurrent windows and user-owned shell behavior remain
 covered by the PTY suites. Snapshot freshness metadata is internal; this change
 adds no status notifications or claims of external session ownership.
+
+
+## SSH and XDG shell context — 2026-09-08
+
+`make check` passed **91 tests**, Ruff and TPM shell checks. All eight real PTY
+suites in `make smoke` passed, including the new environment suite. The new real PTY
+environment suite uses synthetic launcher secrets, a temporary HOME and two mock
+Unix sockets. Ordinary shell commands connect to the configured socket and read a
+file through `XDG_CONFIG_HOME`. Reopening supplies changed paths to newly created
+tabs; a concurrent viewer with no SSH/XDG context creates shells with those
+variables absent. Existing shells retain their PID, cwd and original environment.
+
+External attachment preserves the source session's full environment, including
+its own SSH-agent socket. The ordinary-shell allowlist and explicit reconnect
+instructions are documented in [SHELL_ENVIRONMENT.md](SHELL_ENVIRONMENT.md).
+These tests use macOS, Python 3.14.7 and tmux 3.7c. They verify the environment
+plumbing with mock sockets, not an actual SSH connection or agent credentials.
+
 
 ## Package extraction — 2026-09-08
 

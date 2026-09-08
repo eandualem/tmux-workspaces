@@ -3,6 +3,22 @@
 import os
 import subprocess
 
+SHELL_CONTEXT_NAMES = (
+    "SSH_AUTH_SOCK",
+    "XDG_CONFIG_HOME",
+    "XDG_CONFIG_DIRS",
+    "XDG_DATA_HOME",
+    "XDG_DATA_DIRS",
+    "XDG_CACHE_HOME",
+    "XDG_STATE_HOME",
+    "XDG_RUNTIME_DIR",
+)
+
+
+def shell_context() -> dict[str, str]:
+    """Session paths carried to ordinary shells, never external tmux controls."""
+    return {key: os.environ[key] for key in SHELL_CONTEXT_NAMES if key in os.environ}
+
 
 def clean_env() -> dict[str, str]:
     # An allowlist prevents tokens and agent launch metadata entering the viewer server.

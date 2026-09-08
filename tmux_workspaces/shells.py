@@ -6,7 +6,17 @@ import re
 import shlex
 from pathlib import Path
 
-from .tmux import Tmux
+from .tmux import SHELL_CONTEXT_NAMES, Tmux, shell_context
+
+
+def shell_command(shell: str) -> str:
+    # The library server outlives a viewer/SSH connection. Explicitly reset this
+    # context, including missing values, rather than inheriting its stale globals.
+    command = ["env", "-u", "TMUX", "-u", "TMUX_PANE"]
+    for name in SHELL_CONTEXT_NAMES:
+        command += ["-u", name]
+    command += [f"{name}={value}" for name, value in shell_context().items()]
+    return shlex.join([*command, shell, "-l", "-i"])
 
 
 class Shells:
@@ -40,7 +50,7 @@ class Shells:
                 cwd = str(Path.home())
             # The viewer's private tmux identity must not redirect Backbone CLI
             # commands to this server. The shell still has a normal terminal.
-            command = shlex.join(["env", "-u", "TMUX", "-u", "TMUX_PANE", shell, "-l", "-i"])
+            command = shell_command(shell)
             self.tmux.run("-f", "/dev/null", "new-session", "-d", "-s", name, "-c", cwd, command)
             self.tmux.run("set-option", "-t", "=" + name + ":", "status", "off")
             self.tmux.run("set-option", "-t", "=" + name + ":", "mouse", "on")

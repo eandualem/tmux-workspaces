@@ -17,6 +17,7 @@ smoke:
 	$(PYTHON) -m tests.integration.smoke_ghostty_launch
 	$(PYTHON) -m tests.integration.smoke_shortcuts
 	$(PYTHON) -m tests.integration.smoke_standalone
+	$(PYTHON) -m tests.integration.smoke_environment
 	$(PYTHON) -m tests.integration.smoke
 	$(PYTHON) -m tests.integration.smoke_windows
 	$(PYTHON) -m tests.integration.smoke_plugin
