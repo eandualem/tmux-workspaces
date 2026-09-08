@@ -224,6 +224,8 @@ keyboard input, attachment, concurrent edits, resizing and persistence. The
 limits. Nested tmux can affect redraws, sizing, selection, clipboard and scrollback.
 
 For code responsibilities and ownership, see [architecture](docs/ARCHITECTURE.md).
+The [naming decision](docs/NAMING.md) records the planned Muxstead identity and
+compatibility plan; current commands and library paths still use tmux-workspaces.
 
 The imported MIT notice is retained in [LICENSE](LICENSE).
 See [provenance](docs/PROVENANCE.md) and the [product contract](docs/INITIAL_TASK.md).
