@@ -104,6 +104,23 @@ checks recursive-host protection when host information exists, and retains the
 offline/reconnection loop after the client returns. External sessions retain their
 preflight and host checks. The leaf entry path does not import the action transport.
 
+Changing tabs can reuse the private display's pane containers when the effective
+visible split directions and ratios, window dimensions, exact owned pane IDs and
+all pane rectangles still match the last completed layout. Every content pane must
+also be alive. Leaf traversal order maps the old containers to the new targets.
+One command batch selects the navigation panel, restarts each attachment wrapper,
+writes target metadata and selects the final focus. Persistent shells and external
+sessions keep running; no inactive attachment clients are parked, and no living
+wrapper is retargeted with a stale recovery destination.
+
+Target commands are validated before respawning anything. A planning or partial
+batch failure clears the reuse state and returns typing focus to the navigation
+panel; the next render rebuilds the layout. Resize, topology/ratio changes, missing
+or dead panes and empty tabs also use the full rebuild. The rectangle baseline is
+captured after a full rebuild and is never promoted by ratio capture or a name-only
+update: a border drag conservatively costs one rebuild on subsequent navigation.
+Reuse itself needs no additional post-render pane query.
+
 ## Existing terminals and entry paths
 
 Already-running viewers embed absolute commands to

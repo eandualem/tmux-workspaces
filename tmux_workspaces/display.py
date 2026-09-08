@@ -54,6 +54,8 @@ class Display:
         self.small = False
         self._shell_names: dict[str, str] = {}
         self._rendered_key = None
+        self._rendered_shape = None
+        self._rendered_geometry = None
         self._snapshot_enabled = False
         self._snapshot: DisplayState | None = None
 
@@ -272,15 +274,16 @@ class Display:
         label = re.sub(r"[^\w .-]", "", name)
         self.tmux.run("set-option", "-p", "-t", pane, "@viewer_agent", label)
 
-    def _pane_identity(self, tab: dict | None) -> None:
+    def _identity_commands(self, tab: dict | None, panes: dict[str, str]) -> list[list[str]]:
         if not tab:
-            return
-        focused = self.panes.get(tab["focus"])
+            return []
+        focused = panes.get(tab["focus"])
         # A stale focus may be absent from the displayed fallback tree. Preserve
         # the existing safe no-op selection while still applying pane metadata.
-        commands = [["select-pane", "-t", focused]] if focused else []
+        select = [["select-pane", "-t", focused]] if focused else []
+        commands = []
         for leaf in leaves(tab["tree"]):
-            pane = self.panes.get(leaf["id"])
+            pane = panes.get(leaf["id"])
             if not pane:
                 continue
             for name, value in {
@@ -289,8 +292,68 @@ class Display:
                 "@viewer_agent": re.sub(r"[^\w .-]", "", leaf["agent"] or "Terminal"),
             }.items():
                 commands.append(["set-option", "-p", "-t", pane, name, value])
+        return commands + select
+
+    def _pane_identity(self, tab: dict | None) -> None:
+        commands = self._identity_commands(tab, self.panes)
+        if not commands:
+            return
         self.invalidate_snapshot()
         self.tmux.batch(commands)
+
+    @staticmethod
+    def _shape_key(tree: dict | None):
+        if not tree:
+            return None
+        if "agent" in tree:
+            return ("leaf",)
+        return (
+            tree["direction"],
+            tree.get("ratio", 0.5),
+            Display._shape_key(tree["first"]),
+            Display._shape_key(tree["second"]),
+        )
+
+    @staticmethod
+    def _geometry(state: DisplayState):
+        # Include the sidebar: matching content shape must not preserve an
+        # externally resized navigation panel or a rearranged tmux layout.
+        return tuple(
+            (pane, item.left, item.top, item.width, item.height)
+            for pane, item in sorted(state.panes.items())
+        )
+
+    def _reuse_containers(self, tab: dict, tree: dict, key) -> None:
+        try:
+            displayed = leaves(tree)
+            containers = list(self.panes.values())
+            replacement = {
+                leaf["id"]: pane for leaf, pane in zip(displayed, containers, strict=True)
+            }
+            shape, geometry = self._rendered_shape, self._rendered_geometry
+            self._shell_names = self.shells.ensure_many(
+                [leaf for leaf in displayed if not leaf["agent"]]
+            )
+            # Construct and validate every target before touching displayed clients.
+            commands = [["select-pane", "-t", self.sidebar]]
+            commands += [
+                ["respawn-pane", "-k", "-t", pane, self._leaf_command(leaf)]
+                for leaf, pane in zip(displayed, containers, strict=True)
+            ]
+            commands += self._identity_commands(tab, replacement)
+            self.invalidate_snapshot()
+            self._rendered_key = self._rendered_shape = self._rendered_geometry = None
+            # Restart wrappers; a living wrapper would recover to its old target.
+            # Focus leaves the sidebar only after all targets/metadata succeed.
+            self.tmux.batch(commands)
+        except (RuntimeError, OSError, ValueError):
+            self._rendered_key = self._rendered_shape = self._rendered_geometry = None
+            self.panes.clear()
+            with contextlib.suppress(RuntimeError, OSError, ValueError):
+                self.select_sidebar()
+            raise
+        self.panes = replacement
+        self._rendered_key, self._rendered_shape, self._rendered_geometry = key, shape, geometry
 
     @staticmethod
     def _layout_key(tree: dict | None):
@@ -324,18 +387,31 @@ class Display:
                 (item for item in leaves(tree) if item["id"] == tab["focus"]), leaves(tree)[0]
             )
         key = (tab["id"], self._layout_key(tree)) if tab else None
+        healthy = (
+            bool(self.panes)
+            and set(content) == set(self.panes.values())
+            and all(not owned[pane].dead for pane in content)
+        )
         if (
             key is not None
             and key == self._rendered_key
             and self.last_size == (cols, rows)
-            and set(content) == set(self.panes.values())
-            and all(not owned[pane].dead for pane in content)
+            and healthy
         ):
             # Name-only edits, including peer renames, do not replace terminals.
             self.select(tab["focus"])
             return
+        if (
+            tree
+            and healthy
+            and self.last_size == state.size
+            and self._rendered_shape == self._shape_key(tree)
+            and self._rendered_geometry == self._geometry(state)
+        ):
+            self._reuse_containers(tab, tree, key)
+            return
         self.invalidate_snapshot()
-        self._rendered_key = None
+        self._rendered_key = self._rendered_shape = self._rendered_geometry = None
         self.last_size = (cols, rows)
         self.panes.clear()
         self._shell_names = self.shells.ensure_many(
@@ -379,6 +455,9 @@ class Display:
             self.select_sidebar()
         self._pane_identity(tab)
         self._rendered_key = key
+        if tree:
+            self._rendered_shape = self._shape_key(tree)
+            self._rendered_geometry = self._geometry(self.state())
 
     def _tree(self, tree: dict, pane: str) -> None:
         if "agent" in tree:
