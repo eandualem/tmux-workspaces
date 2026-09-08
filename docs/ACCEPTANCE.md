@@ -7,7 +7,8 @@ tests**, Ruff and shell syntax on macOS/Python 3.14.7/tmux 3.7c and Debian 13
 aarch64/Python 3.12.14/tmux 3.5a. All eleven Linux PTY suites and ten macOS suites
 passed; SSH is explicitly skipped on macOS. The final preview-module error-status
 follow-up passed its subprocess regression and both platforms' unit checks.
-Hosted final-head CI remains pending account availability.
+Hosted final-head CI is blocked by the repository account's payment/spending
+restriction; its jobs ran no steps.
 
 Six real-PTY failures exercise missing/old tmux, missing/unknown TERM, monochrome
 terminfo and missing Python curses. Each leaves a fresh library empty, creates no
@@ -31,7 +32,8 @@ The existing scenarios retain their behavioral assertions, including the keymap
 suite integrated from its preceding PR. The combined branch passed 164 application
 and 12 benchmark tests on macOS/Python 3.14.7 and Linux/Python 3.12.14, plus all
 ten PTY scenarios on Linux and nine on macOS with an explicit SSH skip. The updated
-hosted matrix remains pending account availability; these are local results.
+hosted matrix is blocked by the repository account's payment/spending restriction;
+its jobs ran no steps. These are local results.
 
 A nonroot Debian 13 container with Python 3.12.14, tmux 3.5a and OpenSSH 10.0p2
 passed a real authenticated loopback SSH scenario: mouse and keyboard input,

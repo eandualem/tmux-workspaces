@@ -186,7 +186,7 @@ class LayoutRecoveryTests(unittest.TestCase):
                         side_effect=AssertionError("tmux started"),
                     ),
                     patch(
-                        "tmux_workspaces.application.subprocess.run",
+                        "tmux_workspaces.preflight.subprocess.run",
                         return_value=subprocess.CompletedProcess(["tmux", "-V"], 0, "tmux 3.3"),
                     ) as command,
                     self.assertRaises(LibraryError),
