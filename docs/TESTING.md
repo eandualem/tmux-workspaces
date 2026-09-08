@@ -13,6 +13,7 @@ make check
 make smoke
 python3 -m tests.integration.smoke_preflight
 python3 -m tests.integration.smoke_shortcuts
+python3 -m tests.integration.smoke_menus
 python3 -m tests.integration.smoke_windows
 python3 -m unittest tests.unit.test_integration_support tests.unit.test_ssh_support -v
 ```

@@ -21,7 +21,7 @@ MAX_KEYMAP_BYTES = 64 * 1024
 MAX_BINDINGS_PER_ACTION = 32
 ACTION_CODES = MappingProxyType(
     {action: entry[2] for action, entry in DIRECT_SHORTCUTS.items()}
-    | {"workspaces": 9018, "quit": 9019}
+    | {"workspaces": 9018, "quit": 9019, "tab-options": 9051, "workspace-options": 9052}
 )
 ACTION_LABELS = MappingProxyType(
     {
@@ -30,12 +30,14 @@ ACTION_LABELS = MappingProxyType(
         "split-below": "Split below",
         "attach": "Attach session",
         "rename-tab": "Rename tab",
+        "tab-options": "Tab options",
         "next-tab": "Next tab",
         "previous-tab": "Previous tab",
         "next-pane": "Next pane",
         "previous-pane": "Previous pane",
         "focus": "Focus / restore layout",
         "workspaces": "Workspace menu",
+        "workspace-options": "Workspace options",
         "new-workspace": "New workspace",
         "rename-workspace": "Rename workspace",
         "next-workspace": "Next workspace",

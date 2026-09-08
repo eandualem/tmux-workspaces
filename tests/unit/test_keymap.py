@@ -6,6 +6,7 @@ from pathlib import Path
 from tmux_workspaces.controls import ACTIONS, DIRECT_SHORTCUTS, SHORTCUTS
 from tmux_workspaces.keymap import (
     ACTION_CODES,
+    ACTION_LABELS,
     DEFAULT_KEYMAP,
     MAX_KEYMAP_BYTES,
     Keymap,
@@ -149,6 +150,49 @@ class KeymapTests(unittest.TestCase):
         )
         self.assertEqual(keymap.direct["quit"], ("alt+t", "super+ctrl+g"))
         Keymap.from_dict({"bindings": {"new-tab": []}, "direct": {"new-tab": ["alt+t"]}})
+
+    def test_menu_entry_actions_bind_by_default_without_changing_the_terminal_profile(self):
+        # Tab/workspace option menus need a keyboard route; the shipped terminal
+        # profile keeps its existing triggers, so its documented count is unchanged.
+        self.assertEqual(SHORTCUTS["m"], "tab-options")
+        self.assertEqual(SHORTCUTS["M"], "workspace-options")
+        for action, key, code in (("tab-options", "m", 9051), ("workspace-options", "M", 9052)):
+            with self.subTest(action=action):
+                self.assertIn(action, ACTIONS)
+                self.assertEqual(DEFAULT_KEYMAP.bindings[action], (key,))
+                self.assertEqual(DEFAULT_KEYMAP.direct[action], ())
+                self.assertEqual(ACTION_CODES[action], code)
+                self.assertNotIn(action, DIRECT_SHORTCUTS)
+                self.assertIn(
+                    (DEFAULT_KEYMAP.label(action), ACTION_LABELS[action]),
+                    DEFAULT_KEYMAP.prefix_help_rows(),
+                )
+                self.assertNotIn(
+                    ACTION_LABELS[action], [row[1] for row in DEFAULT_KEYMAP.direct_help_rows()]
+                )
+        profile = DEFAULT_KEYMAP.ghostty_bindings()
+        self.assertEqual(len(DEFAULT_KEYMAP.direct_items()), len(DIRECT_SHORTCUTS))
+        for code in (9051, 9052):
+            self.assertNotIn(f"csi:{code}~", profile)
+
+    def test_menu_entry_actions_are_rebindable_and_reserve_their_wire_codes(self):
+        # An action without a shipped trigger still accepts a configured one, and
+        # its reserved code reaches the terminal profile unchanged.
+        keymap = Keymap.from_dict(
+            {
+                "bindings": {"tab-options": ["C-m"], "workspace-options": []},
+                "direct": {"tab-options": ["super+shift+m"]},
+            }
+        )
+        self.assertEqual(keymap.bindings["tab-options"], ("Enter",))
+        self.assertEqual(keymap.bindings["workspace-options"], ())
+        self.assertNotIn("m", dict(keymap.prefix_items()))
+        self.assertNotIn("M", dict(keymap.prefix_items()))
+        self.assertEqual(direct_sequence("tab-options"), "\x1b[9051~")
+        self.assertIn("keybind = super+shift+m=csi:9051~\n", keymap.ghostty_bindings())
+        self.assertEqual(Keymap.from_dict(tomllib.loads(keymap.to_toml())), keymap)
+        with self.assertRaisesRegex(ValueError, "duplicate key 'm'"):
+            Keymap.from_dict({"bindings": {"new-tab": ["m"]}})
 
     def test_effective_help_and_profile_cover_remaps_unbindings_and_new_direct_actions(self):
         keymap = Keymap.from_dict(

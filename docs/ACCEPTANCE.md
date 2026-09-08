@@ -293,12 +293,35 @@ validator accepts a generated custom profile and rejects an intentionally invali
 action. These checks do not automate native physical-key interception, operating
 system conflicts, actual SSH transport or the menu-navigation work.
 
+## Keyboard menu coverage
+
+The keyboard menu work adds **Ctrl-g m** for tab options and **Ctrl-g M** for
+workspace options, alongside **Ctrl-g a** for Attach and **Ctrl-g w** for the
+workspace chooser. All option lists support Up/Down and Ctrl-p/Ctrl-n, with
+Home/End and PageUp/PageDown for longer lists. Enter activates the visible
+selection; Escape and Back close the whole overlay and return to the pane.
+An empty workspace keeps navigation focus. Menu movement keys are fixed; the
+existing keymap feature customizes the viewer actions that open these menus.
+
+`tests.integration.smoke_menus` sends keyboard input through a real PTY with
+private demo sessions. It checks filtering, empty-result Enter, attachment and
+return to the same parked shell, preserved tab/pane identity, external-session
+survival, Escape focus, resize with an open chooser, tab reorder/transfer,
+empty-workspace deletion and an overflowing workspace list. The selected row is
+observed in a styled terminal capture. Existing mouse and concurrent-target
+regressions remain in their original suites.
+
+Unit regressions cover selection identity when sessions change or workspace
+names repeat, refusing vanished or newly arrived unseen targets, filter resets,
+scrolling and callback activation, action registration and configurable entry
+bindings. Attachment and return-to-shell revalidate the saved destination before
+changing it. The keymap feature landed first; menu navigation supplies the
+previously missing keyboard routes for these commands. This is evidence for
+those implemented workflows, not for arbitrary terminal or operating-system
+shortcut capture or native GUI parity.
+
 ## Remaining limits
 
-- Selecting an attachment, returning a pane to its shell, tab reordering/transfer,
-  and empty-workspace deletion still require a mouse. The attachment search field
-  is keyboard-accessible, but Enter does not activate a session.
-  Core shortcuts and user-defined maps exist; complete menu parity does not yet.
 - Nested tmux affects terminal sizing, clipboard/copy mode, scrolling and repaint.
   Shared writable clients can affect the same session's size in another window.
 - Layout changes rebuild content attachment clients. The main viewer process is

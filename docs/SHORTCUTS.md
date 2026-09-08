@@ -88,6 +88,7 @@ remain available in every profile unless overridden by a user keymap:
 - **w** workspace chooser; **W** new workspace; **[ / ]** previous / next workspace.
 - **R** rename workspace; **s** focus navigation panel; **d** exit viewer.
 - **x** close pane; **&** close tab.
+- **m / M** tab options / workspace options.
 
 The Command keys require the Ghostty profile; opening `./run` inside a normal
 Ghostty window keeps Ghostty's native Command bindings. Installing the TPM plugin
@@ -154,11 +155,20 @@ The dedicated terminal profile has 17 core action bindings plus numbered selecti
 for tabs and workspaces 1–9. Navigation, creating tabs/workspaces, splitting,
 renaming, focus and closing are available by shortcut.
 
-Opening a chooser by shortcut does not yet make its choices keyboard-accessible.
-The session chooser accepts typed filtering but requires a mouse to pick a result.
-Return pane to shell, tab reordering/transferring and empty-workspace deletion are
-menu commands without a keyboard activation path. These gaps belong to the menu
-navigation work; they do not require a shortcut for every individual command.
+Open **Attach** with **Ctrl-g a**, **Tab options** with **Ctrl-g m**, or
+**Workspace options** with **Ctrl-g M**. **Ctrl-g w** opens the workspace chooser.
+Inside any chooser or option list, **Up / Down** or **Ctrl-p / Ctrl-n** moves the
+highlight; **Enter** activates that row. **Home / End** selects the first / last
+row; **PageUp / PageDown** moves through longer lists. The list scrolls to keep
+the selection visible. **Escape** or **Back** closes the whole menu and returns to the pane,
+including from a nested chooser; an empty workspace keeps navigation focus.
+
+Type in Attach to filter session names without case sensitivity. Editing the
+filter selects its first match; no matches means Enter does nothing. **Ctrl-u**
+clears the filter. Tab options provide **Return pane to shell**, tab reordering
+and transfer. Workspace options provide **Delete empty workspace**; a workspace
+with tabs cannot be deleted. These commands need no individual shortcut.
+Menu input belongs to the navigation panel while the menu has focus.
 
 ## User keymaps
 
@@ -212,7 +222,8 @@ other action too. Duplicates, including aliases such as C-i and Tab, are errors.
 
 The complete shipped configuration is [integrations/keymap.toml](../integrations/keymap.toml).
 Its action names are stable identifiers. Both sections accept every listed action,
-including numbered selection, `workspaces` and `quit`; each action accepts up to
+including numbered selection, `workspaces`, `tab-options`, `workspace-options`
+and `quit`; each action accepts up to
 32 keys per section. Configured keys are data, never shell commands.
 
 `bindings` uses a bounded subset of tmux notation: printable ASCII keys (except
@@ -262,7 +273,9 @@ Ghostty instance retain that instance's map so their help matches its terminal
 profile; start a fresh `./ghostty` instance to apply a new map. No hot reload is
 performed. Existing shells and saved arrangements remain independent of keymaps.
 
-User keymaps and keyboard menu navigation are separate features. Menu choices
-listed above still require the mouse. This change does not establish full
-keyboard parity or mouse-optional workflows; those claims remain gated on the
-menu navigation work being verified.
+User keymaps and keyboard menu navigation are separate features. The keymap
+feature landed first; menu navigation supplies the previously missing keyboard
+routes for attachment and option commands. Menu movement and filtering keys are
+fixed; the TOML map customizes viewer action bindings, including the actions that
+open menus. Verified coverage and platform limits are recorded in
+[ACCEPTANCE.md](ACCEPTANCE.md).

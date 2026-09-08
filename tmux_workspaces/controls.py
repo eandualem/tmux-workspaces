@@ -16,6 +16,8 @@ SHORTCUTS = {
     '"': "split-below",
     "a": "attach",
     "r": "rename-tab",
+    "m": "tab-options",
+    "M": "workspace-options",
     "n": "next-tab",
     "p": "previous-tab",
     "o": "next-pane",

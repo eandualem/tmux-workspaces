@@ -361,5 +361,309 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(self.sidebar.query, "")
 
 
+class KeyboardMenuTests(SidebarTests):
+    """Every chooser and options menu is selectable and activatable by keyboard."""
+
+    def sessions(self, *names):
+        self.source.snapshot.return_value = (
+            {name: {"online": True, "state": "ready"} for name in names},
+            "",
+        )
+
+    def labels(self):
+        self.sidebar.draw()
+        return [text for text, _ in self.sidebar.options]
+
+    def select(self, label):
+        for _ in range(self.labels().index(label)):
+            self.sidebar.input(curses.KEY_DOWN)
+        self.assertEqual(self.sidebar.options[self.sidebar.selected][0], label)
+
+    def test_filter_then_arrow_and_enter_attaches_the_selected_session(self):
+        self.sessions("builder", "bureau", "manager")
+        pane = self.model.pane["id"]
+        self.sidebar.action("attach")
+        self.assertEqual(self.sidebar.menu, "agents")
+        self.sidebar.input("b")
+        self.assertEqual(self.labels(), ["builder", "bureau"])
+        self.sidebar.input(curses.KEY_DOWN)
+        self.sidebar.input("\n")
+        self.assertIsNone(self.sidebar.menu)
+        self.assertEqual(self.model.pane["id"], pane)
+        self.assertEqual(self.model.pane["agent"], "bureau")
+        self.assertEqual(self.model.pane["source_socket"], "/unused/source.sock")
+        self.display.shells.close.assert_not_called()
+
+    def test_control_aliases_and_carriage_return_drive_the_chooser_too(self):
+        self.sessions("builder", "manager")
+        self.sidebar.action("attach")
+        self.sidebar.input("\x0e")
+        self.assertEqual(self.sidebar.selected, 1)
+        self.sidebar.input("\x10")
+        self.assertEqual(self.sidebar.selected, 0)
+        self.sidebar.input("\r")
+        self.assertEqual(self.model.pane["agent"], "builder")
+
+    def test_typing_still_filters_and_never_moves_the_selection_by_itself(self):
+        self.sessions("builder", "manager")
+        self.sidebar.action("attach")
+        self.sidebar.input(curses.KEY_DOWN)
+        self.assertEqual(self.sidebar.selected, 1)
+        self.sidebar.input("m")
+        self.assertEqual((self.sidebar.query, self.sidebar.selected), ("m", 0))
+        self.assertEqual(self.labels(), ["manager"])
+        self.sidebar.input(curses.KEY_BACKSPACE)
+        self.assertEqual((self.sidebar.query, self.sidebar.selected), ("", 0))
+
+    def test_enter_without_a_matching_session_leaves_the_chooser_open(self):
+        self.sessions("builder")
+        self.sidebar.action("attach")
+        for char in "zzz":
+            self.sidebar.input(char)
+        self.assertEqual(self.labels(), [])
+        self.sidebar.input("\n")
+        self.assertEqual(self.sidebar.menu, "agents")
+        self.assertIsNone(self.model.pane["agent"])
+        self.display.shells.close.assert_not_called()
+
+    def test_session_appearing_before_the_selected_one_does_not_redirect_attach(self):
+        self.sessions("builder", "manager")
+        self.sidebar.action("attach")
+        self.select("manager")
+        self.sessions("archivist", "builder", "manager")
+        self.assertEqual(self.labels(), ["archivist", "builder", "manager"])
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.pane["agent"], "manager")
+
+    def test_resize_key_keeps_the_open_chooser_and_its_selection(self):
+        self.sessions("builder", "manager")
+        self.sidebar.action("attach")
+        self.select("manager")
+        self.sidebar.input(curses.KEY_RESIZE)
+        self.assertEqual((self.sidebar.menu, self.sidebar.query), ("agents", ""))
+        self.assertEqual(self.sidebar.options[self.sidebar.selected][0], "manager")
+
+    def test_scrolled_chooser_activates_a_row_that_is_actually_visible(self):
+        self.screen.getmaxyx.return_value = (16, 28)
+        self.sessions(*[f"session-{index:02d}" for index in range(20)])
+        self.sidebar.action("attach")
+        self.sidebar.scroll(6)
+        self.sidebar.draw()
+        visible = [text for text, _ in self.sidebar.options][
+            self.sidebar.offset : self.sidebar.offset + 8
+        ]
+        active = self.sidebar.options[self.sidebar.selected][0]
+        self.assertIn(active, visible)
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.pane["agent"], active)
+
+    def test_moving_the_selection_repaints_the_frame(self):
+        self.sessions("builder", "manager")
+        self.sidebar.action("attach")
+        self.sidebar.draw()
+        painted = len(self.screen.addnstr.call_args_list)
+        self.sidebar.draw()
+        self.assertEqual(len(self.screen.addnstr.call_args_list), painted)
+        self.sidebar.input(curses.KEY_DOWN)
+        self.sidebar.draw()
+        self.assertGreater(len(self.screen.addnstr.call_args_list), painted)
+
+    def test_tab_options_open_by_keyboard_and_return_the_pane_to_its_shell(self):
+        self.model.attach("manager", "/unused/source.sock")
+        self.sidebar.action("tab-options")
+        self.assertEqual(self.sidebar.menu, "tab")
+        self.select("Return pane to shell")
+        self.sidebar.input("\n")
+        self.assertIsNone(self.model.pane["agent"])
+        self.assertNotIn("source_socket", self.model.pane)
+        self.assertIsNone(self.sidebar.menu)
+        self.display.shells.close.assert_not_called()
+
+    def test_return_to_shell_refuses_a_pane_a_peer_changed(self):
+        self.model.attach("manager", "/unused/source.sock")
+        pane = self.model.pane
+        self.sidebar.action("tab-options")
+        self.assertEqual(self.sidebar.attach_target[1], pane["id"])
+        self.select("Return pane to shell")
+
+        def peer(model):
+            model.pane["agent"] = "peer session"
+
+        self.store.refresh.side_effect = peer
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.pane["agent"], "peer session")
+        self.assertIn("Pane changed", self.sidebar.message)
+        self.display.select_sidebar.assert_called_with()
+        self.display.shells.close.assert_not_called()
+
+    def test_tab_menu_reaches_reordering_and_transfer_without_a_mouse(self):
+        first = self.model.tab
+        self.model.add_tab("Second tab")
+        second = self.model.tab
+        self.display.focused_leaf.return_value = second["focus"]
+        self.sidebar.action("tab-options")
+        self.select("Move tab up")
+        self.sidebar.input("\n")
+        self.assertEqual(
+            [tab["id"] for tab in self.model.space["tabs"]], [second["id"], first["id"]]
+        )
+        self.model.add_workspace("Target workspace")
+        target = self.model.space
+        self.model.state["selected"] = self.model.state["workspaces"][0]["id"]
+        self.sidebar.action("tab-options")
+        self.select("Move to workspace")
+        self.sidebar.input("\n")
+        self.assertEqual(self.sidebar.menu, "move")
+        self.select("Target workspace")
+        self.sidebar.input("\n")
+        self.assertEqual([tab["id"] for tab in target["tabs"]], [second["id"]])
+        self.assertEqual(self.model.space["id"], target["id"])
+
+    def test_workspace_options_open_by_keyboard_and_delete_an_empty_workspace(self):
+        first = self.model.space
+        self.model.add_workspace("Scratch")
+        scratch = self.model.space
+        self.sidebar.action("workspace-options")
+        self.assertEqual(self.sidebar.menu, "workspace")
+        self.select("Delete empty workspace")
+        self.sidebar.input("\n")
+        self.assertEqual([space["id"] for space in self.model.state["workspaces"]], [first["id"]])
+        self.assertNotIn(scratch["id"], [space["id"] for space in self.model.state["workspaces"]])
+        self.display.shells.close.assert_not_called()
+
+    def test_workspace_switcher_selects_by_keyboard_and_escape_closes_the_menu(self):
+        first = self.model.space
+        self.model.add_workspace("Research")
+        self.model.state["selected"] = first["id"]
+        self.sidebar.action("workspaces")
+        self.select("Research")
+        self.sidebar.input("\x1b")
+        self.assertIsNone(self.sidebar.menu)
+        self.assertEqual(self.model.space["id"], first["id"])
+        self.sidebar.action("workspaces")
+        self.select("Research")
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.space["name"], "Research")
+        self.assertIsNone(self.sidebar.menu)
+
+    def test_repeated_workspace_names_activate_the_intended_workspace(self):
+        first = self.model.space
+        self.model.add_workspace("Shared")
+        self.model.add_workspace("Shared")
+        third = self.model.space
+        self.model.state["selected"] = first["id"]
+        self.sidebar.action("workspaces")
+        self.assertEqual(self.labels(), [first["name"], "Shared", "Shared"])
+        self.sidebar.input(curses.KEY_DOWN)
+        self.sidebar.input(curses.KEY_DOWN)
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.space["id"], third["id"])
+
+    def test_rows_added_to_the_menu_source_stay_selectable(self):
+        self.sidebar.open_menu("spaces")
+        source, chosen = self.sidebar._options, []
+        self.sidebar._options = lambda agents: [
+            *source(agents),
+            ("Extra row", lambda: chosen.append("extra")),
+        ]
+        self.select("Extra row")
+        self.sidebar.input("\n")
+        self.assertEqual(chosen, ["extra"])
+
+    def test_enter_on_a_drawn_list_attaches_its_first_row(self):
+        self.sessions("builder", "manager")
+        self.sidebar.action("attach")
+        self.assertEqual(self.labels(), ["builder", "manager"])
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.pane["agent"], "builder")
+
+    def test_enter_on_drawn_filtered_results_attaches_the_first_match(self):
+        self.sessions("builder", "manager", "researcher")
+        self.sidebar.action("attach")
+        for char in "re":
+            self.sidebar.input(char)
+        self.assertEqual(self.labels(), ["researcher"])
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.pane["agent"], "researcher")
+
+    def test_session_arriving_after_an_empty_result_is_not_attached_by_that_enter(self):
+        self.sessions("builder")
+        self.sidebar.action("attach")
+        for char in "note":
+            self.sidebar.input(char)
+        self.assertEqual(self.labels(), [])
+        # The chooser is showing no results when a matching session appears.
+        self.sessions("builder", "notebook")
+        self.sidebar.input("\n")
+        self.assertIsNone(self.model.pane["agent"])
+        self.assertEqual(self.sidebar.menu, "agents")
+        self.assertEqual(self.labels(), ["notebook"])
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.pane["agent"], "notebook")
+
+    def test_a_menu_too_small_to_draw_activates_nothing_until_it_fits_again(self):
+        self.sessions("unseen")
+        self.sidebar.action("attach")
+        self.screen.getmaxyx.return_value = (15, 28)
+        self.sidebar.draw()
+        drawn = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
+        self.assertEqual(drawn, ["Enlarge terminal", "Exit viewer"])
+        self.sidebar.input(curses.KEY_DOWN)
+        self.sidebar.input("\n")
+        self.assertIsNone(self.model.pane["agent"])
+        self.assertEqual(self.sidebar.menu, "agents")
+        # The chooser is still open, so restoring the size restores activation.
+        self.screen.getmaxyx.return_value = (38, 28)
+        self.assertEqual(self.labels(), ["unseen"])
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.pane["agent"], "unseen")
+
+    def test_shrinking_below_the_minimum_disarms_a_row_chosen_while_visible(self):
+        self.sessions("builder", "manager")
+        self.sidebar.action("attach")
+        self.select("manager")
+        for size in ((15, 28), (38, 17)):
+            with self.subTest(size=size):
+                self.screen.getmaxyx.return_value = size
+                self.sidebar.draw()
+                self.sidebar.input(curses.KEY_UP)
+                self.sidebar.input("\n")
+                self.assertIsNone(self.model.pane["agent"])
+                self.screen.getmaxyx.return_value = (38, 28)
+                self.sidebar.draw()
+                self.assertEqual(self.sidebar.options[self.sidebar.selected][0], "manager")
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.pane["agent"], "manager")
+
+    def test_a_session_that_disappears_refuses_to_attach_its_neighbour(self):
+        self.sessions("builder", "manager")
+        self.sidebar.action("attach")
+        self.select("manager")
+        self.sessions("builder", "reviewer")
+        self.sidebar.input("\n")
+        self.assertIsNone(self.model.pane["agent"])
+        self.assertEqual(self.sidebar.menu, "agents")
+        self.assertIn("choose again", self.sidebar.message)
+        self.sidebar.input(curses.KEY_DOWN)
+        self.sidebar.input("\n")
+        self.assertEqual(self.model.pane["agent"], "reviewer")
+
+    def test_focus_moving_to_a_pane_closes_the_menu_instead_of_stealing_input(self):
+        self.sessions("builder")
+        self.sidebar.action("attach")
+        self.sidebar.close_menu()
+        self.assertIsNone(self.sidebar.menu)
+        self.assertIsNone(self.sidebar.attach_target)
+        self.assertEqual(self.sidebar.options, [])
+        self.display.render.assert_not_called()
+        self.display.select_sidebar.assert_called_once_with()
+
+    def test_shortcut_help_activates_the_selected_action(self):
+        self.sidebar.open_menu("shortcuts")
+        self.select(next(text for text in self.labels() if text.endswith("New tab")))
+        self.sidebar.input("\n")
+        self.assertEqual(len(self.model.space["tabs"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

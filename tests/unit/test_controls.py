@@ -16,6 +16,7 @@ from tmux_workspaces.controls import (
     Actions,
     direct_sequence,
     mouse_action,
+    send_action,
     valid_action,
 )
 from tmux_workspaces.display import Display
@@ -39,6 +40,24 @@ class ControlTests(unittest.TestCase):
             with self.subTest(action=action):
                 self.assertIsNone(mouse_action(action))
                 self.assertFalse(valid_action(action))
+
+    def test_menu_entry_actions_travel_over_the_action_socket(self):
+        # Keyboard routes to the tab/workspace option menus are ordinary actions:
+        # the receiver accepts their exact names and nothing that merely resembles one.
+        with tempfile.TemporaryDirectory(prefix="tw-menu-actions-", dir="/tmp") as directory:
+            receiver = Actions(str(Path(directory) / "actions.sock"))
+            self.addCleanup(receiver.close)
+            for action in ("tab-options", "workspace-options"):
+                with self.subTest(action=action):
+                    self.assertTrue(valid_action(action))
+                    send_action(receiver.path, action)
+                    self.assertEqual(next(receiver.pending()), action)
+            rejected = ("tab-option", "options", "tab-options ", "tab-options;quit", "TAB-OPTIONS")
+            for action in rejected:
+                with self.subTest(action=action):
+                    self.assertFalse(valid_action(action))
+                    with self.assertRaisesRegex(ValueError, "Unknown viewer action"):
+                        send_action(receiver.path, action)
 
     @unittest.skipUnless(shutil.which("tmux"), "tmux required for real key ordering test")
     def test_burst_of_direct_keys_reaches_action_receiver_in_input_order(self):

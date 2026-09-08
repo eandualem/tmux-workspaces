@@ -75,8 +75,11 @@ or workspace headers/buttons for the corresponding options menu. Rename fields
 select the existing name so typing replaces it.
 
 The following portable shortcuts remain available in every profile.
-The session chooser supports typed filtering, but selecting its result still
-requires a mouse; some option menus also lack keyboard activation.
+Use **Ctrl-g m** for tab options and **Ctrl-g M** for workspace options.
+In choosers and option menus, **Up / Down** or **Ctrl-p / Ctrl-n** moves the
+highlight and **Enter** activates it. Type to filter the attachment chooser;
+**Escape** closes the menu and returns to the pane. Return to shell, tab
+reordering/transfer and empty-workspace deletion are available from these menus.
 
 Press **Ctrl-g**, release it, then press the listed key. These actions operate
 inside the viewer and match the clickable controls. **Shortcuts…** shows them
