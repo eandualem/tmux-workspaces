@@ -315,7 +315,7 @@ def nested(directory: Path) -> None:
         outer.run("run-shell", shlex.quote(str(plugin)).replace("#", "##"))
         client = OuterClient(outer.socket)
         wait(client, lambda: outer.run("list-clients"), "outer tmux client did not attach")
-        client.type("\x02W")
+        client.prefix_key(outer, "W")
         wait(client, manifest, "plugin did not open nested viewer")
         viewer = Tmux(json.loads(manifest().read_text())["viewer_socket"])
 

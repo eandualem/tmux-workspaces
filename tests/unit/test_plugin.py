@@ -144,9 +144,20 @@ class PluginTests(unittest.TestCase):
                         self.fail("private test client did not attach")
                     time.sleep(0.02)
                 # Default prefix from our empty tmux config, then configured M-w.
-                os.write(master, b"\x02\x1bw")
+                # Keep these separate gestures: the host's default paste
+                # heuristic may bypass a binding when both arrive together.
+                os.write(master, b"\x02")
+                deadline = time.monotonic() + 8
+                while tmux("list-clients", "-F", "#{client_prefix}").strip() != "1":
+                    if time.monotonic() > deadline:
+                        self.fail("private test client did not enter prefix mode")
+                    ready, _, _ = select.select([master], [], [], 0.05)
+                    if ready:
+                        os.read(master, 65536)
+                os.write(master, b"\x1bw")
                 launched = repo / "launched.json"
                 output = bytearray()
+                deadline = time.monotonic() + 8
                 while not launched.exists() and time.monotonic() < deadline:
                     ready, _, _ = select.select([master], [], [], 0.05)
                     if ready:
