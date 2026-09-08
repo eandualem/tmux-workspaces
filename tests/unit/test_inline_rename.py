@@ -26,7 +26,7 @@ class InlineRenameTests(unittest.TestCase):
         )
         screen = Mock()
         screen.getmaxyx.return_value = (38, 28)
-        source = Mock(socket="/unused", demo=None)
+        source = Mock(socket="/unused", persistent_socket=True)
         source.snapshot.return_value = ({}, "")
         self.sidebar = Sidebar(screen, self.model, self.store, source, self.display, Mock())
         for target in (
