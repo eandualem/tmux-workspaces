@@ -119,3 +119,10 @@ Demo construction similarly does not read its fixture until requested. Demo
 composition uses a nonpersistent source socket reference so recreated fixtures can
 reconnect; ordinary attachments retain their exact source socket. Neither path
 changes the historical saved `agent` field or version-2 layout schema.
+
+Source also isolates unexpected provider exceptions and malformed snapshot values.
+One provider cannot stop polling or prevent other providers from publishing.
+Fallbacks retain that provider's last good observation with a fixed, sanitized
+error; unexpected discovery failure makes cached names explicitly offline.
+A subsequent successful read clears the stale error. Cancellation exceptions derived
+from BaseException are deliberately allowed to propagate.

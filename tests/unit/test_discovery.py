@@ -92,6 +92,120 @@ class DiscoveryTests(unittest.TestCase):
         source.refresh()
         self.assertFalse(source.snapshot()[0]["offline"]["online"])
 
+    def test_raising_overlay_keeps_other_providers_live_and_recovers(self):
+        discovery = Mock(
+            read=Mock(
+                return_value=Snapshot({"live": {"name": "live", "online": True}}, observed_at=30)
+            )
+        )
+        first = Mock(
+            read=Mock(
+                side_effect=[
+                    Snapshot({"cached": {"name": "cached", "state": "busy"}}, observed_at=10),
+                    TimeoutError("credential-must-not-escape"),
+                    Snapshot({"recovered": {"name": "recovered"}}, observed_at=40),
+                ]
+            )
+        )
+        second = Mock(
+            read=Mock(
+                side_effect=[
+                    Snapshot({"other": {"name": "other", "state": "old"}}, observed_at=20),
+                    Snapshot({"other": {"name": "other", "state": "new"}}, observed_at=35),
+                    Snapshot({"other": {"name": "other", "state": "new"}}, observed_at=45),
+                ]
+            )
+        )
+        source = Source("/explicit/source.sock", discovery, (first, second))
+        source.refresh()
+        source.refresh()
+        failed = source.observation()
+        self.assertEqual(set(failed.sessions), {"live", "cached", "other"})
+        self.assertTrue(failed.sessions["live"]["online"])
+        self.assertEqual(failed.sessions["other"]["state"], "new")
+        self.assertEqual(failed.sessions["cached"]["state"], "busy")
+        self.assertEqual(failed.error, "Session metadata unavailable; states stale")
+        self.assertEqual(failed.observed_at, 10)
+        self.assertTrue(failed.stale)
+        source.refresh()
+        recovered = source.observation()
+        self.assertEqual(set(recovered.sessions), {"live", "recovered", "other"})
+        self.assertEqual(recovered.error, "")
+        self.assertFalse(recovered.stale)
+
+    def test_discovery_exception_marks_cached_names_offline_and_still_reads_metadata(self):
+        discovery = Mock(
+            read=Mock(
+                side_effect=[
+                    Snapshot({"live": {"name": "live", "online": True}}, observed_at=10),
+                    RuntimeError("private failure detail"),
+                ]
+            )
+        )
+        metadata = Mock(
+            read=Mock(
+                return_value=Snapshot(
+                    {
+                        "live": {"name": "live", "online": True, "state": "busy"},
+                        "other": {"name": "other"},
+                    },
+                    observed_at=20,
+                )
+            )
+        )
+        source = Source("/explicit/source.sock", discovery, (metadata,))
+        source.refresh()
+        source.refresh()
+        result = source.observation()
+        self.assertEqual(set(result.sessions), {"live", "other"})
+        self.assertFalse(result.sessions["live"]["online"])
+        self.assertFalse(result.sessions["other"]["online"])
+        self.assertEqual(metadata.read.call_count, 2)
+        self.assertEqual(result.error, "Session discovery unavailable; states stale")
+        self.assertTrue(result.stale)
+        self.assertEqual(result.observed_at, 10)
+
+    def test_malformed_provider_snapshot_does_not_break_composition(self):
+        primary = Mock(read=Mock(return_value=Snapshot({"live": {"name": "live", "online": True}})))
+        malformed = [
+            None,
+            Snapshot(sessions=[]),
+            Snapshot(sessions={"invalid:target": {}}),
+            Snapshot(sessions={"item": None}),
+            Snapshot(observed_at="not-a-time"),
+        ]
+        for value in malformed:
+            with self.subTest(value=value):
+                source = Source(
+                    "/explicit/source.sock", primary, (Mock(read=Mock(return_value=value)),)
+                )
+                source.refresh()
+                self.assertTrue(source.snapshot()[0]["live"]["online"])
+                self.assertTrue(source.observation().stale)
+
+    def test_error_snapshot_does_not_discard_last_good_fallback(self):
+        discovery = Mock(read=Mock(return_value=Snapshot()))
+        overlay = Mock(
+            read=Mock(
+                side_effect=[
+                    Snapshot({"cached": {"name": "cached"}}, observed_at=10),
+                    Snapshot(error="provider temporarily empty", stale=True),
+                    TimeoutError("not for display"),
+                ]
+            )
+        )
+        source = Source("/explicit/source.sock", discovery, (overlay,))
+        source.refresh()
+        source.refresh()
+        source.refresh()
+        self.assertIn("cached", source.snapshot()[0])
+        self.assertTrue(source.observation().stale)
+
+    def test_provider_cancellation_is_not_swallowed(self):
+        source = Source("/explicit/source.sock", Mock(read=Mock(side_effect=SystemExit(7))))
+        with self.assertRaises(SystemExit):
+            source.refresh()
+
     def test_snapshot_consumers_cannot_mutate_provider_or_shared_cache(self):
         provider = Mock(
             read=Mock(

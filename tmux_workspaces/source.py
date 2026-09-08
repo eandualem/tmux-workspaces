@@ -6,6 +6,7 @@ import copy
 import threading
 
 from .discovery import Provider, Snapshot
+from .targets import valid_session
 
 
 class Source:
@@ -21,16 +22,58 @@ class Source:
         self.discovery, self.overlays = discovery, overlays
         self.persistent_socket = persistent_socket
         self.current = Snapshot()
+        self._provider_snapshots = [Snapshot() for _ in range(1 + len(overlays))]
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
         self.thread: threading.Thread | None = None
 
+    def _read(self, provider: Provider, index: int) -> Snapshot:
+        try:
+            snapshot = provider.read()
+            if (
+                not isinstance(snapshot, Snapshot)
+                or not isinstance(snapshot.sessions, dict)
+                or not isinstance(snapshot.error, str)
+                or not isinstance(snapshot.stale, bool)
+                or (
+                    snapshot.observed_at is not None
+                    and not isinstance(snapshot.observed_at, (int, float))
+                )
+                or any(
+                    not valid_session(name) or not isinstance(item, dict)
+                    for name, item in snapshot.sessions.items()
+                )
+            ):
+                raise ValueError("Invalid provider observation")
+            # Keep provider-owned objects separate from both the UI snapshot and
+            # the fallback used if this provider later raises unexpectedly.
+            detached = copy.deepcopy(snapshot)
+            if not snapshot.stale:
+                self._provider_snapshots[index] = detached
+            return detached
+        except Exception:
+            # Third-party providers can fail outside their expected IO paths.
+            # A failure must not prevent another provider from publishing or
+            # terminate polling. Never expose exception text (it may hold secrets),
+            # and deliberately let BaseException cancellation propagate.
+            previous = self._provider_snapshots[index]
+            if index == 0:
+                # Cached discovery names are references, not proof that their
+                # sessions remain attachable after discovery becomes unavailable.
+                return Snapshot(
+                    {name: {**item, "online": False} for name, item in previous.sessions.items()},
+                    error="Session discovery unavailable; states stale",
+                    stale=True,
+                    observed_at=previous.observed_at,
+                )
+            return previous.unavailable("Session metadata unavailable; states stale")
+
     def refresh(self) -> None:
-        available = self.discovery.read()
+        available = self._read(self.discovery, 0)
         agents = copy.deepcopy(available.sessions)
         observations = [available]
-        for provider in self.overlays:
-            snapshot = provider.read()
+        for index, provider in enumerate(self.overlays, 1):
+            snapshot = self._read(provider, index)
             observations.append(snapshot)
             for name, item in snapshot.sessions.items():
                 # Only discovery describes attachment availability. Metadata may

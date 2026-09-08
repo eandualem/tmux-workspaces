@@ -2,12 +2,15 @@
 
 ## Read-only provider isolation — 2026-09-08
 
-The adapter extraction passed **95 tests** and all seven real PTY suites on macOS,
+The adapter extraction passed **100 tests** and all seven real PTY suites on macOS,
 Python 3.14 and tmux 3.7c. Contract tests cover default startup importing neither
 Backbone nor demo, generic discovery using only the chosen socket, overlays from
 an independently supplied provider, stale timestamps/cache/recovery, consumer
 mutation isolation, malformed payloads and transport failures, no writes, GET-only
-requests, and the existing loopback/no-proxy/no-redirect restrictions.
+requests, and the existing loopback/no-proxy/no-redirect restrictions. Additional
+provider-boundary regressions verify that unexpected exceptions and malformed
+snapshots cannot prevent independent provider progress, discard last-good metadata,
+expose exception details, or swallow cancellation; subsequent reads recover.
 
 Generic session availability, offline associations, demo attachment identity,
 source-socket persistence, concurrent windows and user-owned shell behavior remain
