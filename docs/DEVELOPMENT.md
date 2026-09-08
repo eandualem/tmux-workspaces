@@ -15,6 +15,8 @@ make smoke
 `make smoke` exercises real tmux servers through disposable PTYs. Run it after
 changes to terminal behavior, lifecycle, input or runtime structure. Tests must
 create their own sockets and libraries; existing sessions are never fixtures.
+See [test prerequisites, fixtures and SSH](TESTING.md) for focused commands and
+a container recipe.
 
 Ruff can also be supplied explicitly without uv:
 
@@ -40,7 +42,8 @@ branches when no active worktree or running helper still depends on them.
 GitHub CI runs checks and all terminal integration suites on Linux with Python
 3.11 and 3.14, and macOS with Python 3.14. Jobs use read-only repository permissions
 and no user credentials. Passing PTY tests does not establish native GUI rendering
-or end-to-end SSH coverage. The Ghostty command fixture uses its macOS login
+or real network latency. A separate disposable loopback SSH fixture exercises
+authentication, remote PTYs and reconnect on Linux. The Ghostty command fixture uses its macOS login
 wrapper on macOS and ordinary exec on Linux; it never opens the native app.
 Performance budgets belong in opt-in benchmarks,
 rather than timing assertions in ordinary unit tests.

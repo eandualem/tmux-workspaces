@@ -1,7 +1,7 @@
 PYTHON ?= python3
 RUFF ?= env UV_TOOL_DIR="$(CURDIR)/.backbone/tools" uvx ruff
 
-.PHONY: check test smoke benchmark
+.PHONY: check test smoke smoke-ssh benchmark
 check:
 	$(RUFF) check tmux_workspaces tests experiments/workspace_viewer scripts run ghostty preview
 	$(RUFF) format --check tmux_workspaces tests experiments/workspace_viewer scripts run ghostty preview
@@ -14,6 +14,7 @@ test:
 
 smoke:
 	$(PYTHON) -m tests.integration.smoke_keymaps
+	$(PYTHON) -m tests.integration.smoke_ssh
 	$(PYTHON) -m tests.integration.smoke_inline_rename
 	$(PYTHON) -m tests.integration.smoke_ghostty_launch
 	$(PYTHON) -m tests.integration.smoke_shortcuts
@@ -22,6 +23,9 @@ smoke:
 	$(PYTHON) -m tests.integration.smoke
 	$(PYTHON) -m tests.integration.smoke_windows
 	$(PYTHON) -m tests.integration.smoke_plugin
+
+smoke-ssh:
+	$(PYTHON) -m tests.integration.smoke_ssh --required
 
 benchmark:
 	@$(PYTHON) -m scripts.benchmark $(BENCHMARK_ARGS)

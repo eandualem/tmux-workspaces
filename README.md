@@ -95,8 +95,10 @@ XDG paths. After an SSH reconnect, reopen the viewer to supply the new context t
 new tabs; existing shells keep their processes and environment. See the exact
 [shell environment and reconnect policy](docs/SHELL_ENVIRONMENT.md).
 
-Linux and macOS pass the real-terminal integration suites in CI. WSL and an
-actual SSH connection still need verification; see [coverage and limits](docs/ACCEPTANCE.md).
+Local Linux and macOS runs passed the current real-terminal integration suites. A
+disposable Linux fixture also verifies actual loopback SSH, including reconnect
+and foreground-process preservation. WSL remains unverified; see
+[test setup and coverage](docs/TESTING.md).
 The viewer
 adapts to available terminal dimensions by temporarily focusing a pane when a
 layout will not fit. It does not save a different arrangement per physical display.
@@ -218,7 +220,9 @@ make check
 make smoke
 ```
 
-Tests use private tmux sockets and disposable shells. They exercise mouse and
+See [test setup](docs/TESTING.md) for Linux prerequisites, focused scenarios and
+the isolated SSH container. Tests use private tmux sockets and disposable shells.
+They exercise mouse and
 keyboard input, attachment, concurrent edits, resizing and persistence. The
 [acceptance report](docs/ACCEPTANCE.md) distinguishes tested platforms and remaining
 limits. Nested tmux can affect redraws, sizing, selection, clipboard and scrollback.
