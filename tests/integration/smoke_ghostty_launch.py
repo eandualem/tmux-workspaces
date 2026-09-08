@@ -188,9 +188,10 @@ def exercise(directory: Path) -> None:
         client = GhosttyShellClient(library, source_socket)
         viewer = initialized()
         wait(client, lambda: content_ready(viewer), "paused-client fixture did not attach")
-        # Keep the sidebar alive until its own finally block finishes; otherwise
-        # destroying its session can SIGHUP it before the old premature kill.
-        viewer.run("set-option", "-g", "destroy-unattached", "off")
+        # Exercise the production lifecycle: the session stays intact until all
+        # client handshakes finish, then the private server retires as a whole.
+        assert viewer.run("show-options", "-gv", "destroy-unattached") == "off"
+        assert viewer.run("show-options", "-gv", "exit-unattached") == "on"
         attached = viewer.run("list-clients", "-F", "#{client_pid}|#{session_name}").splitlines()
         assert len(attached) == 1, "fixture must own exactly one attached client"
         attached_pid, attached_session = attached[0].split("|", 1)

@@ -173,9 +173,15 @@ def exercise(root: Path) -> None:
         key("select-workspace-1")
         wait(client, lambda: "after-resize-ok" in sidebar(viewer), "return to workspace failed")
         assert saved(library).space["name"] == "Development"
+        error_path = client.manifest(library).parent / "error.txt"
         click_button(client, viewer, "Exit")
         client.process.wait(timeout=10)
-        assert client.process.returncode == 0
+        client.pump(0.1)
+        assert client.process.returncode == 0, {
+            "returncode": client.process.returncode,
+            "terminal": client.output[-3000:].decode(errors="replace"),
+            "runtime_error": error_path.read_text() if error_path.exists() else None,
+        }
         client.close()
         client = Client(
             ["--data-dir", str(library), "--source-socket", str(root / "absent.sock")],

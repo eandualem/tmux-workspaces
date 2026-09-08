@@ -43,7 +43,9 @@ class Display:
             "escape-time": "10",
             "focus-events": "on",
             "set-clipboard": "on",
-            "destroy-unattached": "on",
+            # Keep the session/window alive until all detach/control clients
+            # finish. exit-unattached then retires this entire private server.
+            "destroy-unattached": "off",
             "exit-unattached": "on",
         }.items():
             self.tmux.run("set-option", "-g", name, value)

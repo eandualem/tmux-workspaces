@@ -54,6 +54,12 @@ close ends that pane's ordinary shell; attached processes always remain external
 The `Store` owns its SQLite connection, and `Source` owns its polling thread.
 The application closes both when the curses controller exits.
 
+The private display server has one session. It uses `exit-unattached` to retire
+the entire server, with `destroy-unattached` off so session/window destruction
+does not run separately during the detach handshake. Normal exit requests detach;
+the launcher also cleans up after its attached client returns. Unexpected server
+loss retains its nonzero exit status.
+
 The persisted schema, historical `agent` attachment field, library defaults and
 socket naming are unchanged. Updating code does not migrate user libraries or
 restart running terminals. Normal launch never reads Backbone configuration or

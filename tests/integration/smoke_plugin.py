@@ -35,6 +35,17 @@ class OuterClient(Client):
         os.close(slave)
         self.output = b""
 
+    def prefix_key(self, tmux: Tmux, key: str) -> None:
+        # Model two user gestures: an unmodified outer tmux can classify bytes
+        # arriving together as a paste and send the binding key into its shell.
+        self.type("\x02")
+        wait(
+            self,
+            lambda: tmux.run("list-clients", "-F", "#{client_prefix}") == "1",
+            "outer tmux did not enter prefix mode",
+        )
+        self.type(key)
+
 
 def run(directory: Path) -> None:
     source = Tmux(str(directory / "source.sock"))
@@ -73,7 +84,7 @@ def run(directory: Path) -> None:
         wait(client, lambda: source.run("list-clients"), "outer tmux client did not attach")
 
         def open_viewer():
-            client.type("\x02W")
+            client.prefix_key(source, "W")
             wait(client, manifest, "Prefix W failed to launch the viewer")
             runtime = json.loads(manifest().read_text())
             assert Path(runtime["source_socket"]).resolve() == Path(source.socket).resolve()
