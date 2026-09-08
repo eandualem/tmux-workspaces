@@ -90,10 +90,13 @@ def sidebar_main(args) -> int:
         source.close()
         store.close()
         if clean_exit:
-            # Detach normally so the outer tmux client returns success. Killing
-            # its server first reports an error to terminal launchers like Ghostty.
+            # Let the detach handshake finish. Immediately killing the server
+            # can race the attached client processing its normal exit message.
+            # exit-unattached handles this private server; the launcher also
+            # cleans it up after attach-session has returned.
             tmux.run("detach-client", "-s", "=viewer:", check=False)
-        tmux.run("kill-server", check=False)
+        else:
+            tmux.run("kill-server", check=False)
     return 0
 
 
