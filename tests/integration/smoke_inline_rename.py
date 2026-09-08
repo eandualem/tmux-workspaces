@@ -192,6 +192,29 @@ def exercise(root: Path) -> None:
         wait(client, lambda: "after-resize-ok" in sidebar(viewer), "inline name was not persisted")
         assert pid == shells.run("display-message", "-p", "-t", terminal, "#{pane_pid}")
         assert saved(library).space["name"] == "Development"
+        # Physical double-click plus typing in one terminal write must reach
+        # the inline field before the delayed tmux DoubleClick notification.
+        for workspace in (True, False):
+            client.pump(0.5)
+            name = "Immediate workspace" if workspace else "Immediate tab"
+            row = 0 if workspace else tab_row(viewer, "after-resize-ok")
+            column = (
+                7 if workspace else sidebar(viewer).splitlines()[row].index("after-resize-ok") + 2
+            )
+            top = int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
+            click = f"\x1b[<0;{column};{row + top + 1}M\x1b[<0;{column};{row + top + 1}m"
+            os.write(client.master, (click + click + name + "\r").encode())
+            wait(
+                client,
+                lambda workspace=workspace, name=name: (
+                    (saved(library).space if workspace else saved(library).tab)["name"] == name
+                ),
+                "same-write double-click typing did not reach inline name",
+            )
+            client.pump(0.5)
+            assert not editing(), "delayed double-click reopened the completed editor"
+            assert name not in shells.run("capture-pane", "-p", "-t", terminal)
+        assert pid == shells.run("display-message", "-p", "-t", terminal, "#{pane_pid}")
         print(
             "PASS: tab/workspace/empty-workspace inline rename, cursor editing, Enter/Escape, "
             "resize focus, outside-click cancellation, no input leak, "

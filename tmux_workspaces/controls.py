@@ -58,9 +58,20 @@ DIRECT_SHORTCUTS = {
 ACTIONS = frozenset(SHORTCUTS.values()) | DIRECT_SHORTCUTS.keys() | {"quit"}
 
 
+def mouse_action(action: str) -> tuple[int, int] | None:
+    """Decode a bounded pane-relative mouse action without evaluating input."""
+    match = re.fullmatch(r"mouse:left:([0-9]{1,5}):([0-9]{1,5})", action)
+    if match:
+        x, y = match.groups()
+        if int(x) <= 65535 and int(y) <= 65535:
+            return int(x), int(y)
+    return None
+
+
 def valid_action(action: str) -> bool:
     return (
         action in ACTIONS
+        or mouse_action(action) is not None
         or re.fullmatch(r"attach-pane:[a-f0-9]{12}:[a-f0-9]{12}", action) is not None
     )
 

@@ -1,5 +1,29 @@
 # Verification and known limits
 
+## Combined navigation and input verification — 2026-09-08
+
+The integrated package, provider, recovery, shell-context and navigation changes
+passed `make check`: **127 application tests and 12 benchmark tests**, Ruff and
+TPM shell syntax. All eight real-PTY suites passed on macOS/Python 3.14/tmux 3.7c.
+The routing suite delivers 64 immediate and burst commands across one/four-pane
+tabs and workspaces, using both clicks and direct shortcuts; each marker reaches
+only its intended shell and original shell PIDs survive. Native content mouse
+forwarding, word/line selection, bracketed paste and same-write inline renaming
+retain dedicated coverage.
+
+Review regressions cover newline-containing cwd, fragmented Unicode input,
+metadata-only reuse, dead attachment clients and stale focus. Event-local pane
+snapshots are discarded after mutations and exceptions. The environment fixture
+checks shell handoff independently of system profile overrides; other suites
+continue to launch ordinary login shells. Normal exit and delayed detach succeed;
+unexpected private-server loss still fails.
+
+The isolated repeated performance comparison and remaining four-pane budgets are
+described in [PERFORMANCE.md](PERFORMANCE.md). PTY readiness and routing do not
+prove native Ghostty paint, actual SSH transport, or WSL behavior. The public
+performance gate remains open pending its remaining measurements and manual
+acceptance procedure.
+
 
 ## Hosted terminal coverage — 2026-09-08
 

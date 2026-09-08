@@ -131,7 +131,7 @@ class InlineRenameTests(unittest.TestCase):
         self.assertEqual(self.model.tab["name"], "From another window")
         self.assertEqual(self.store.load().tab["name"], "From another window")
         self.assertIsNone(self.sidebar.inline_editor)
-        self.display.tmux.run.assert_called_with("select-pane", "-t", "%0")
+        self.display.select_sidebar.assert_called_with()
         self.assertIn("Tab changed", self.sidebar.message)
 
     def test_peer_deletion_cannot_rename_surviving_tab(self):
@@ -213,7 +213,7 @@ class InlineRenameTests(unittest.TestCase):
         self.sidebar.input("X")
         self.sidebar.input("\n")
         self.assertEqual(self.model.space["name"], "Survivor")
-        self.display.tmux.run.assert_called_with("select-pane", "-t", "%0")
+        self.display.select_sidebar.assert_called_with()
         self.display.shells.close.assert_not_called()
 
     def test_clicks_on_different_names_do_not_combine_into_double_click(self):

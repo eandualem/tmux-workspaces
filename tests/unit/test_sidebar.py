@@ -38,7 +38,7 @@ class SidebarTests(unittest.TestCase):
         with self.assertRaises(LayoutConflict):
             self.sidebar.save()
         self.display.render.assert_called_once()
-        self.display.tmux.run.assert_called_with("select-pane", "-t", "%0")
+        self.display.select_sidebar.assert_called_with()
 
     def test_right_click_inactive_tab_renames_target_and_preserves_previous_layout(self):
         first = self.model.tab
@@ -60,7 +60,7 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(first["focus"], actual_focus)
         self.assertEqual(first["tree"], first_tree)
         self.assertEqual(target["tree"], target_tree)
-        self.display.tmux.run.assert_called_with("select-pane", "-t", "%0")
+        self.display.select_sidebar.assert_called_with()
         self.display.shells.close.assert_not_called()
         dict(self.sidebar._options({}))["Rename tab"]()
         self.assertEqual(self.sidebar.query, "Target tab")
@@ -78,11 +78,11 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.draw()
         self.assertEqual(self.sidebar.context_hits, [])
         self.store.save.reset_mock()
-        self.display.tmux.run.reset_mock()
+        self.display.select_sidebar.reset_mock()
         self.mouse(3, 3, curses.BUTTON3_RELEASED)
         self.assertEqual(self.sidebar.menu, "tab")
         self.store.save.assert_not_called()
-        self.display.tmux.run.assert_not_called()
+        self.display.select_sidebar.assert_not_called()
 
     def test_choose_tab_resolves_stale_draw_reference_by_id(self):
         self.model.split("right")
@@ -121,7 +121,7 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.context_tab(removed_tab)
         self.assertIsNone(self.sidebar.menu)
         self.assertEqual(self.model.state, before)
-        self.display.tmux.run.assert_not_called()
+        self.display.select_sidebar.assert_not_called()
         removed_space = copy.deepcopy(self.model.space)
         self.model.add_workspace("Surviving workspace")
         self.model.state["workspaces"].pop(0)
@@ -129,7 +129,7 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.context_workspace(removed_space)
         self.assertIsNone(self.sidebar.menu)
         self.assertEqual(self.model.state, before)
-        self.display.tmux.run.assert_not_called()
+        self.display.select_sidebar.assert_not_called()
         self.display.shells.close.assert_not_called()
 
     def test_right_click_never_triggers_regular_button_and_left_click_still_works(self):
@@ -302,7 +302,7 @@ class SidebarTests(unittest.TestCase):
     def test_sidebar_action_focuses_sidebar_without_redrawing_or_discarding_menu(self):
         self.sidebar.menu, self.sidebar.query = "name", "Unfinished name"
         self.sidebar.action("sidebar")
-        self.display.tmux.run.assert_called_once_with("select-pane", "-t", "%0")
+        self.display.select_sidebar.assert_called_once_with()
         self.display.render.assert_not_called()
         self.assertEqual((self.sidebar.menu, self.sidebar.query), ("name", "Unfinished name"))
         self.sidebar.action("quit")

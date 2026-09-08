@@ -33,6 +33,13 @@ def leaf_main(args) -> int:
     # Attaching must not update the external session's environment from this
     # filtered client (including removing its existing SSH agent socket).
     command = ["tmux", "-S", args.source_socket, "attach-session", "-E", "-t", target]
+    # The display has just ensured ordinary sessions exist. Start their first
+    # attachment directly; preserve host checks and the normal recovery loop if
+    # that session disappears before the client connects. External attachments
+    # retain the preflight below, including recursive-host protection.
+    if args.terminal and not args.agent and not attachment_hosts_viewer(args, target):
+        subprocess.run(command, env=clean_env(), stderr=subprocess.DEVNULL, check=False)
+        time.sleep(1)
     notice = ""
     while True:
         exists = (

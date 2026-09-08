@@ -8,8 +8,9 @@ import os
 import time
 from collections.abc import Callable
 
-from .controls import DIRECT_SHORTCUTS, Actions
+from .controls import DIRECT_SHORTCUTS, Actions, mouse_action
 from .display import Display
+from .events import InputEvents
 from .model import LayoutConflict, Model, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
@@ -57,7 +58,7 @@ class Sidebar:
             self.store.save(self.model)
         except LayoutConflict:
             self.display.render(self.model.tab, self.model.state["focus"])
-            self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+            self.display.select_sidebar()
             raise
 
     def remember(self) -> None:
@@ -67,8 +68,7 @@ class Sidebar:
             if focused:
                 tab["focus"] = focused
             self.display.remember_ratios(tab["tree"])
-            for pane in leaves(tab["tree"]):
-                self.display.shells.remember(pane)
+            self.display.shells.remember_many(leaves(tab["tree"]))
 
     def clear_inline(self, *, focus: bool = False) -> None:
         if self.inline_editor and self.message in {"Enter a tab name", "Enter a workspace name"}:
@@ -134,7 +134,7 @@ class Sidebar:
         if not item or identity != target:
             self.clear_inline()
             self.display.render(self.model.tab, self.model.state["focus"])
-            self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+            self.display.select_sidebar()
             self.message = f"{label} changed; rename again"
             return
         item["name"] = name
@@ -206,7 +206,7 @@ class Sidebar:
             if name == "agents" and tab and pane
             else None
         )
-        self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+        self.display.select_sidebar()
 
     def attach_pane(self, tab_id: str, leaf_id: str) -> None:
         tab = self.model.tab
@@ -247,7 +247,7 @@ class Sidebar:
             )
             if not pane or (pane["agent"], pane.get("source_socket")) != target[2:]:
                 self.show()
-                self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+                self.display.select_sidebar()
                 self.message = "Pane changed; choose Attach again"
                 return
             # A click in another pane while the chooser is open must not change
@@ -276,9 +276,16 @@ class Sidebar:
     def focus_sidebar(self) -> None:
         self.remember()
         self.save()
-        self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+        self.display.select_sidebar()
 
     def action(self, name: str) -> None:
+        mouse = mouse_action(name)
+        if mouse:
+            x, y = mouse
+            height, width = self.screen.getmaxyx()
+            if x < width and y < height:
+                self.mouse(x, y, curses.BUTTON1_PRESSED)
+            return
         self.clear_inline()
         if name.startswith("attach-pane:"):
             _, tab_id, leaf_id = name.split(":")
@@ -833,7 +840,8 @@ class Sidebar:
         curses.mouseinterval(0)
         curses.mousemask(curses.ALL_MOUSE_EVENTS)
         self.screen.keypad(True)
-        self.screen.timeout(150)
+        self.screen.timeout(0)
+        events = InputEvents(self.screen, self.actions.receiver)
         self.source.start()
         self.display.setup()
         self.show()
@@ -841,48 +849,54 @@ class Sidebar:
         while self.running:
             try:
                 for action in self.actions.pending():
-                    self.action(action)
-                    self.draw()
+                    with self.display.snapshot_scope():
+                        self.action(action)
+                        self.draw()
                 now = time.monotonic()
                 if now >= next_poll:
-                    next_poll = now + 0.6
-                    if (
-                        self.inline_editor
-                        and self.display.tmux.run(
-                            "display-message", "-p", "-t", "viewer:", "#{pane_id}"
-                        )
-                        != self.display.sidebar
-                    ):
-                        self.clear_inline()
-                    if not self.menu:
-                        before = repr(self.model.tab)
-                        before_tree = repr(self.model.tab["tree"]) if self.model.tab else None
-                        try:
-                            self.store.refresh(self.model)
-                        except LayoutConflict as exc:
-                            self.message = str(exc)
-                        if before != repr(self.model.tab):
+                    with self.display.snapshot_scope():
+                        next_poll = now + 0.6
+                        if (
+                            self.inline_editor
+                            and self.display.tmux.run(
+                                "display-message", "-p", "-t", "viewer:", "#{pane_id}"
+                            )
+                            != self.display.sidebar
+                        ):
+                            self.clear_inline()
+                        if not self.menu:
+                            before = repr(self.model.tab)
+                            before_tree = repr(self.model.tab["tree"]) if self.model.tab else None
+                            try:
+                                self.store.refresh(self.model)
+                            except LayoutConflict as exc:
+                                self.message = str(exc)
+                            if before != repr(self.model.tab):
+                                self.display.render(self.model.tab, self.model.state["focus"])
+                                if before_tree != (
+                                    repr(self.model.tab["tree"]) if self.model.tab else None
+                                ):
+                                    # A peer changed the pane or attachment. Do not redirect typing.
+                                    self.display.select_sidebar()
+                                    self.message = "Tab changed; choose a pane"
+                        focused = self.display.focused_leaf()
+                        if focused and self.model.tab and focused != self.model.tab["focus"]:
+                            self.model.tab["focus"] = focused
+                            self.save()
+                        size = self.display.size()
+                        if size != self.display.last_size:
+                            # tmux resized the panes; this is not a user ratio edit.
                             self.display.render(self.model.tab, self.model.state["focus"])
-                            if before_tree != (
-                                repr(self.model.tab["tree"]) if self.model.tab else None
-                            ):
-                                # A peer changed the pane or attachment. Do not redirect typing.
-                                self.display.tmux.run("select-pane", "-t", self.display.sidebar)
-                                self.message = "Tab changed; choose a pane"
-                    focused = self.display.focused_leaf()
-                    if focused and self.model.tab and focused != self.model.tab["focus"]:
-                        self.model.tab["focus"] = focused
-                        self.save()
-                    size = self.display.size()
-                    if size != self.display.last_size:
-                        # tmux already resized the panes; don't mistake this for a user ratio edit.
-                        self.display.render(self.model.tab, self.model.state["focus"])
-                        self.last_name_click = None
-                        if self.inline_editor:
-                            self.display.tmux.run("select-pane", "-t", self.display.sidebar)
+                            self.last_name_click = None
+                            if self.inline_editor:
+                                self.display.select_sidebar()
                 self.draw()
-                with contextlib.suppress(curses.error):
-                    self.input(self.screen.get_wch())
+                key = events.read_or_wait(next_poll)
+                if key is not None:
+                    with self.display.snapshot_scope():
+                        self.input(key)
+                    if key == curses.KEY_RESIZE:
+                        next_poll = 0.0
             except (RuntimeError, OSError, ValueError) as exc:
                 self.message = visible(str(exc))[:100]
                 self.last_frame = None
