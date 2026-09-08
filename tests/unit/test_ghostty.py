@@ -14,6 +14,7 @@ from unittest.mock import patch
 from tmux_workspaces import ghostty_launcher as launcher
 from tmux_workspaces.controls import ghostty_bindings
 from tmux_workspaces.keymap import DEFAULT_KEYMAP, Keymap
+from tmux_workspaces.theme import theme_path
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -29,6 +30,7 @@ class GhosttyLauncherTests(unittest.TestCase):
                 "TMUX": "/tmp/outer,source.sock,1,0",
                 "TMUX_WORKSPACES_DATA_DIR": "/tmp/active library",
                 "PATH": "/custom tools:/usr/bin:/bin",
+                "TMUX_WORKSPACES_THEME": "/tmp/theme file.toml",
             },
             clear=True,
         ):
@@ -52,6 +54,8 @@ class GhosttyLauncherTests(unittest.TestCase):
                 "--shortcut-hints=command",
                 "--keymap-state",
                 DEFAULT_KEYMAP.to_toml(),
+                "--theme",
+                "/tmp/theme file.toml",
             ],
         )
 
@@ -105,6 +109,8 @@ class GhosttyLauncherTests(unittest.TestCase):
                     "--shortcut-hints=command",
                     "--keymap-state",
                     DEFAULT_KEYMAP.to_toml(),
+                    "--theme",
+                    str(theme_path(cwd=root)),
                     "--backbone-data-dir",
                     str((root / "adapter config").resolve()),
                 ],

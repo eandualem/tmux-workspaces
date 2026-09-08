@@ -1,11 +1,15 @@
 import copy
 import curses
+import os
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 from tmux_workspaces.keymap import DEFAULT_KEYMAP, Keymap
 from tmux_workspaces.model import LayoutConflict, Model, leaves
 from tmux_workspaces.sidebar import Sidebar
+from tmux_workspaces.theme import DEFAULT_THEME, load_theme
 
 
 class SidebarTests(unittest.TestCase):
@@ -741,3 +745,424 @@ class KeyboardMenuTests(SidebarTests):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThemeMenuTests(unittest.TestCase):
+    """The compact color editor reached from the sidebar, by click or by key."""
+
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.path = Path(directory.name) / "theme.toml"
+        self.model = Model.initial()
+        self.screen = Mock()
+        self.screen.getmaxyx.return_value = (38, 28)
+        self.store = Mock()
+        source = Mock(socket="/unused/source.sock", persistent_socket=True)
+        source.snapshot.return_value = ({}, "")
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
+        self.display.focused_leaf.return_value = self.model.tab["focus"]
+        self.sidebar = Sidebar(
+            self.screen,
+            self.model,
+            self.store,
+            source,
+            self.display,
+            Mock(),
+            theme_path=self.path,
+            terminal_colors=256,
+        )
+        for name, result in (
+            ("color_pair", 0),
+            ("init_pair", None),
+            ("start_color", None),
+            ("use_default_colors", None),
+        ):
+            patcher = patch(f"tmux_workspaces.sidebar.curses.{name}", return_value=result)
+            setattr(self, name, patcher.start())
+            self.addCleanup(patcher.stop)
+        colors = patch("tmux_workspaces.sidebar.curses.COLORS", 256, create=True)
+        colors.start()
+        self.addCleanup(colors.stop)
+        self.sidebar.setup_theme()
+
+    def drawn(self):
+        return [call.args[:3] for call in self.screen.addnstr.call_args_list]
+
+    def click(self, text):
+        for row, column, drawn in reversed(self.drawn()):
+            if drawn.startswith(text):
+                self.sidebar.mouse(column, row, curses.BUTTON1_PRESSED)
+                return
+        raise AssertionError(f"{text!r} was never drawn")
+
+    def type(self, text):
+        for char in text:
+            self.sidebar.input(char)
+
+    def goto(self, role, field):
+        editor = self.sidebar.theme_editor
+        editor.index = editor.targets.index((role, field))
+
+    def test_startup_without_a_config_keeps_the_shipped_pairs(self):
+        self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
+        self.assertEqual(self.sidebar.colors, 256)
+        self.assertEqual(
+            [call.args for call in self.init_pair.call_args_list],
+            [(1, -1, -1), (2, 231, 238), (3, 108, -1), (4, 245, -1)],
+        )
+        self.assertEqual(self.sidebar.message, "")
+
+    def test_a_smaller_terminal_palette_bounds_the_outer_client_snapshot(self):
+        # The transported outer capability cannot exceed what init_pair accepts.
+        with patch("tmux_workspaces.sidebar.curses.COLORS", 8, create=True):
+            self.sidebar.setup_theme()
+        self.assertEqual(self.sidebar.colors, 8)
+        self.assertEqual(
+            [call.args for call in self.init_pair.call_args_list[-4:]],
+            [(1, -1, -1), (2, 7, 4), (3, 6, -1), (4, 7, -1)],
+        )
+
+    def test_the_sidebar_base_takes_the_normal_role(self):
+        configured = DEFAULT_THEME.with_role("normal", background=["blue"])
+        self.path.write_text(configured.to_toml())
+        self.sidebar.setup_theme()
+        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, -1, 4))
+        self.screen.bkgdset.assert_called_with(" ", self.sidebar.style("normal"))
+        self.screen.getmaxyx.return_value = (10, 10)
+        self.sidebar.draw()
+        small = [call.args for call in self.screen.addnstr.call_args_list]
+        self.assertEqual(small[0][2], "Enlarge terminal")
+        self.assertEqual(small[0][4], self.sidebar.style("normal"))
+
+    def test_unreadable_config_reports_it_and_keeps_working_colors(self):
+        self.path.write_text("[active]\nforeground = '#8ab4f8'\n")
+        self.sidebar.setup_theme()
+        self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
+        self.assertTrue(self.sidebar.message.startswith("Error: active.foreground"))
+
+    def test_colors_button_and_local_key_open_the_same_editor(self):
+        self.sidebar.draw()
+        self.click("Colors…")
+        self.assertEqual(self.sidebar.menu, "theme")
+        editor = self.sidebar.theme_editor
+        self.assertIsNotNone(editor)
+        self.sidebar.input("\x1b")
+        self.assertIsNone(self.sidebar.theme_editor)
+        self.assertIsNone(self.sidebar.menu)
+        self.sidebar.input("t")
+        self.assertEqual(self.sidebar.menu, "theme")
+        self.assertIsNot(self.sidebar.theme_editor, editor)
+
+    def test_every_role_and_action_is_drawn_with_a_non_color_marker(self):
+        self.sidebar.input("t")
+        self.sidebar.draw()
+        text = [drawn for _, _, drawn in self.drawn()]
+        self.assertTrue(any(line.startswith("▶ Normal fg") for line in text))
+        for label in ("Apply", "Cancel", "Restore defaults", "< Back"):
+            self.assertTrue(any(line.startswith(label) for line in text), label)
+        self.assertTrue(any("terminal default on terminal default" in line for line in text))
+
+    def test_a_refused_restore_keeps_the_editor_and_its_reason_on_screen(self):
+        self.sidebar.input("t")
+        self.sidebar.input("\n")
+        self.type("blue")
+        self.sidebar.input("\n")
+        self.init_pair.side_effect = curses.error("cannot install")
+        self.sidebar.input("\x1b")
+        self.assertIsNotNone(self.sidebar.theme_editor)
+        self.assertEqual(self.sidebar.menu, "theme")
+        self.assertTrue(self.sidebar.theme_editor.message.startswith("Error: "))
+        self.sidebar.action("new-tab")
+        self.assertEqual(self.sidebar.menu, "theme")
+        self.assertEqual(len(self.model.space["tabs"]), 1)
+        self.init_pair.side_effect = None
+        self.sidebar.input("\x1b")
+        self.assertIsNone(self.sidebar.theme_editor)
+        self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
+
+    def fresh(self):
+        source = Mock(socket="/unused/source.sock", persistent_socket=True)
+        source.snapshot.return_value = ({}, "")
+        return Sidebar(
+            self.screen,
+            self.model,
+            self.store,
+            source,
+            self.display,
+            Mock(),
+            theme_path=self.path,
+            terminal_colors=256,
+        )
+
+    def test_the_editor_stays_usable_when_no_theme_could_be_installed(self):
+        # Every install refused at startup leaves no palette at all, and the
+        # colors editor is exactly where a user would go to repair that.
+        sidebar = self.fresh()
+        self.init_pair.side_effect = curses.error("cannot install")
+        sidebar.setup_theme()
+        self.assertIsNone(sidebar.palette)
+        self.assertTrue(sidebar.message.startswith("Error: "))
+        self.assertEqual(sidebar.describe("normal"), "")
+        sidebar.input("t")
+        sidebar.draw()
+        self.assertEqual(sidebar.menu, "theme")
+        drawn = [call.args[2] for call in self.screen.addnstr.call_args_list]
+        self.assertTrue(any(line.startswith("▶ Normal fg") for line in drawn))
+
+    def test_the_editor_opens_before_any_palette_is_installed(self):
+        sidebar = self.fresh()
+        self.assertIsNone(sidebar.palette)
+        sidebar.open_theme()
+        sidebar.draw()
+        self.assertEqual(sidebar.menu, "theme")
+
+    def test_a_refused_restore_blocks_every_route_out_of_the_editor(self):
+        self.sidebar.input("t")
+        self.sidebar.input("\n")
+        self.type("blue")
+        self.sidebar.input("\n")
+        self.init_pair.side_effect = curses.error("cannot install")
+        for leave in (
+            lambda: self.sidebar.input("\x1b"),
+            self.sidebar.show,
+            self.sidebar.close_menu,
+            lambda: self.sidebar.open_menu("workspace"),
+            lambda: self.sidebar.open_theme(),
+            lambda: self.sidebar.action("workspaces"),
+        ):
+            leave()
+            self.assertEqual(self.sidebar.menu, "theme")
+            self.assertIsNotNone(self.sidebar.theme_editor)
+            self.assertTrue(self.sidebar.theme_editor.message.startswith("Error: "))
+        self.init_pair.side_effect = None
+        self.sidebar.input("\x1b")
+        self.assertIsNone(self.sidebar.theme_editor)
+        self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
+
+    def test_leaving_the_editor_leaves_its_screen_with_it(self):
+        for leave in (
+            lambda: self.sidebar.action("sidebar"),
+            lambda: self.sidebar.action("next-pane"),
+            self.sidebar.show,
+        ):
+            self.sidebar.input("t")
+            self.assertEqual(self.sidebar.menu, "theme")
+            leave()
+            self.assertIsNone(self.sidebar.theme_editor)
+            self.assertIsNone(self.sidebar.menu)
+            self.sidebar.draw()
+
+    def test_the_workspace_header_carries_the_normal_role(self):
+        self.sidebar.draw()
+        header = next(
+            call.args
+            for call in self.screen.addnstr.call_args_list
+            if call.args[2].startswith(self.model.space["name"])
+        )
+        self.assertEqual(header[4], self.sidebar.style("normal") | curses.A_BOLD)
+
+    def test_the_workspace_menu_reaches_the_same_editor(self):
+        self.sidebar.open_menu("workspace")
+        dict(self.sidebar._options({}))["Colors…"]()
+        self.assertEqual(self.sidebar.menu, "theme")
+        self.assertIsNotNone(self.sidebar.theme_editor)
+        self.sidebar.input("\x1b")
+        self.assertIsNone(self.sidebar.theme_editor)
+
+    def test_a_short_terminal_scrolls_to_the_selected_role(self):
+        self.screen.getmaxyx.return_value = (16, 20)
+        self.sidebar.input("t")
+        self.goto("muted", "attributes")
+        self.sidebar.draw()
+        text = [drawn for _, _, drawn in self.drawn()]
+        self.assertTrue(any(line.startswith("▶ Mu… style") for line in text))
+        self.assertFalse(any(line.startswith("  Normal fg") for line in text))
+        for label in ("Apply", "Cancel", "Restore defaults", "↵ edit a apply"):
+            self.assertTrue(any(line.startswith(label) for line in text), label)
+        rows = [line for line in text if line.startswith((" ", "▶"))]
+        self.assertEqual(len({line[:11] for line in rows}), len(rows))
+
+    def test_editing_a_role_previews_at_once_and_apply_saves_the_file(self):
+        self.sidebar.input("t")
+        self.goto("active", "background")
+        self.sidebar.input("\n")
+        self.type("blue")
+        self.sidebar.input("\n")
+        self.assertEqual(self.sidebar.theme.roles["active"].background, ("blue",))
+        self.assertEqual(self.init_pair.call_args_list[-3].args, (2, 231, 4))
+        self.assertFalse(self.path.exists())
+        self.sidebar.input("a")
+        self.assertEqual(load_theme(self.path).theme, self.sidebar.theme)
+        self.assertIsNone(self.sidebar.theme_editor)
+        self.assertIsNone(self.sidebar.menu)
+        self.assertEqual(self.sidebar.message, "Colors saved")
+
+    def test_cancel_restores_the_colors_the_editor_opened_with(self):
+        self.sidebar.input("t")
+        self.sidebar.input("\n")
+        self.type("blue")
+        self.sidebar.input("\n")
+        self.assertEqual(self.sidebar.theme.roles["normal"].foreground, ("blue",))
+        self.sidebar.input("\x1b")
+        self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
+        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, -1, -1))
+        self.assertFalse(self.path.exists())
+        self.assertEqual(self.sidebar.message, "")
+
+    def test_leaving_by_a_global_action_cancels_an_uncommitted_preview(self):
+        self.sidebar.input("t")
+        self.sidebar.input("\n")
+        self.type("blue")
+        self.sidebar.input("\n")
+        self.sidebar.action("new-tab")
+        self.assertIsNone(self.sidebar.theme_editor)
+        self.assertIsNone(self.sidebar.menu)
+        self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
+        self.assertFalse(self.path.exists())
+
+    def test_rejected_value_keeps_the_colors_and_says_why(self):
+        self.sidebar.input("t")
+        self.sidebar.input("\n")
+        self.type("#8ab4f8")
+        self.sidebar.input("\n")
+        self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
+        self.assertIn("not supported", self.sidebar.theme_editor.message)
+        self.sidebar.draw()
+        self.assertTrue(
+            any("not supported" in drawn for _, _, drawn in self.drawn()),
+        )
+
+    def test_concurrent_edit_is_reported_and_discards_nothing(self):
+        self.path.write_text(DEFAULT_THEME.to_toml())
+        self.sidebar.input("t")
+        self.sidebar.input("\n")
+        self.type("blue")
+        self.sidebar.input("\n")
+        elsewhere = DEFAULT_THEME.with_role("accent", foreground=["cyan"]).to_toml()
+        self.path.write_text(elsewhere)
+        self.sidebar.input("a")
+        self.assertIn("changed on disk", self.sidebar.theme_editor.message)
+        self.assertEqual(self.path.read_text(), elsewhere)
+        self.assertEqual(self.sidebar.theme.roles["normal"].foreground, ("blue",))
+        self.assertEqual(self.sidebar.theme_editor.working, DEFAULT_THEME)
+        self.sidebar.input("\x1b")
+        self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
+
+    def test_read_only_file_is_announced_and_never_loses_the_colors(self):
+        self.path.write_text(DEFAULT_THEME.to_toml())
+        os.chmod(self.path, 0o444)
+        self.addCleanup(os.chmod, self.path, 0o644)
+        self.sidebar.input("t")
+        self.assertIn("read-only", self.sidebar.theme_editor.message)
+        self.sidebar.input("d")
+        self.sidebar.input("a")
+        self.assertIn("read-only", self.sidebar.theme_editor.message)
+        self.assertEqual(self.path.read_text(), DEFAULT_THEME.to_toml())
+        self.assertEqual(self.sidebar.menu, "theme")
+
+    def test_defaults_are_previewed_before_they_are_kept(self):
+        self.path.write_text(DEFAULT_THEME.with_role("accent", foreground=["red"]).to_toml())
+        self.sidebar.setup_theme()
+        self.assertEqual(self.sidebar.theme.roles["accent"].foreground, ("red",))
+        self.sidebar.input("t")
+        self.sidebar.input("d")
+        self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
+        self.assertEqual(load_theme(self.path).theme.roles["accent"].foreground, ("red",))
+        self.sidebar.input("a")
+        self.assertEqual(load_theme(self.path).theme, DEFAULT_THEME)
+
+    def test_reopening_reports_a_refused_saved_theme_preview(self):
+        saved = DEFAULT_THEME.with_role("muted", foreground=["green"])
+        self.path.write_text(saved.to_toml())
+        self.init_pair.side_effect = curses.error("cannot install saved colors")
+        self.sidebar.open_theme()
+        self.assertFalse(self.sidebar.theme_editor.installed)
+        self.assertTrue(self.sidebar.theme_editor.message.startswith("Error: "))
+        self.assertFalse(self.sidebar.theme_editor.closed)
+
+    def test_workspace_menu_keyboard_activation_opens_colors_and_cancel_restores(self):
+        self.sidebar.action("workspace-options")
+        self.sidebar.draw()
+        self.sidebar.input(curses.KEY_END)
+        self.sidebar.draw()
+        self.assertEqual(self.sidebar.options[self.sidebar.selected][0], "Colors…")
+        self.sidebar.input("\r")
+        self.assertEqual(self.sidebar.menu, "theme")
+        self.sidebar.theme_editor.preview(DEFAULT_THEME.with_role("normal", background=["blue"]))
+        self.sidebar.close_menu()
+        self.assertIsNone(self.sidebar.menu)
+        self.assertIsNone(self.sidebar.theme_editor)
+        self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
+
+    def test_reopening_after_an_external_save_shows_the_saved_colors(self):
+        self.path.write_text(DEFAULT_THEME.with_role("accent", foreground=["red"]).to_toml())
+        self.sidebar.setup_theme()
+        saved = DEFAULT_THEME.with_role("muted", foreground=["green"])
+        self.path.write_text(saved.to_toml())
+        self.sidebar.input("t")
+        self.assertEqual(self.sidebar.theme, saved)
+        self.assertEqual(self.sidebar.theme_editor.message, "Saved colors shown")
+        self.sidebar.input("\x1b")
+        self.assertEqual(self.sidebar.theme.roles["accent"].foreground, ("red",))
+
+    def test_applying_after_a_conflict_never_replaces_values_never_seen(self):
+        self.path.write_text(DEFAULT_THEME.to_toml())
+        self.sidebar.input("t")
+        self.sidebar.input("\n")
+        self.type("blue")
+        self.sidebar.input("\n")
+        elsewhere = DEFAULT_THEME.with_role("muted", foreground=["green"])
+        self.path.write_text(elsewhere.to_toml())
+        self.sidebar.input("a")
+        self.assertIn("changed on disk", self.sidebar.theme_editor.message)
+        self.sidebar.input("\x1b")
+        self.sidebar.input("t")
+        self.assertEqual(self.sidebar.theme_editor.draft, elsewhere)
+        self.sidebar.input("a")
+        self.assertEqual(load_theme(self.path).theme, elsewhere)
+
+    def styles_for(self, prefix):
+        return [
+            call.args[4]
+            for call in self.screen.addnstr.call_args_list
+            if call.args[2].startswith(prefix)
+        ]
+
+    def test_a_failure_is_bold_and_labelled_while_progress_is_neither(self):
+        self.sidebar.input("t")
+        self.sidebar.input("\n")
+        self.type("#8ab4f8")
+        self.sidebar.input("\n")
+        self.sidebar.draw()
+        self.assertTrue(self.sidebar.theme_editor.message.startswith("Error: "))
+        failures = self.styles_for("Error: ")
+        self.assertTrue(failures and all(style & curses.A_BOLD for style in failures))
+        self.sidebar.input("\x1b")
+        self.sidebar.input("t")
+        self.sidebar.input("d")
+        self.sidebar.draw()
+        progress = self.styles_for("Defaults shown")
+        self.assertTrue(progress and not any(style & curses.A_BOLD for style in progress))
+
+    def test_a_startup_theme_failure_is_bold_in_the_status_row(self):
+        self.path.write_text("[active]\nforeground = '#8ab4f8'\n")
+        self.sidebar.setup_theme()
+        self.sidebar.draw()
+        rows = self.styles_for("Error: ")
+        self.assertTrue(rows and all(style & curses.A_BOLD for style in rows))
+        self.sidebar.message = ""
+        self.screen.addnstr.reset_mock()
+        self.sidebar.draw()
+        idle = self.styles_for("Layouts saved")
+        self.assertTrue(idle and not any(style & curses.A_BOLD for style in idle))
+
+    def test_an_unchanged_editor_frame_is_not_repainted(self):
+        self.sidebar.input("t")
+        self.sidebar.draw()
+        self.screen.erase.reset_mock()
+        self.sidebar.draw()
+        self.screen.erase.assert_not_called()
+        self.sidebar.input(curses.KEY_DOWN)
+        self.sidebar.draw()
+        self.screen.erase.assert_called_once()

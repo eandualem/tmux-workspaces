@@ -101,7 +101,15 @@ def sidebar_main(args) -> int:
             try:
                 curses.wrapper(
                     lambda screen: Sidebar(
-                        screen, model, store, source, display, actions, args.shortcut_hints
+                        screen,
+                        model,
+                        store,
+                        source,
+                        display,
+                        actions,
+                        args.shortcut_hints,
+                        theme_path=args.theme,
+                        terminal_colors=args.terminal_colors,
                     ).run()
                 )
             except curses.error as error:
@@ -188,10 +196,20 @@ def start_demo(socket: str, data_dir: Path) -> None:
 
 
 def launch(args) -> int:
+    from .theme import theme_path
+
     keymap = effective_keymap(args)
     if not args.backbone and (args.backbone_data_dir is not None or args.url is not None):
         raise ValueError("Use --backbone to enable Backbone configuration and API access")
     check_startup()
+    args.theme = theme_path(path=args.theme)
+    # Curses inside the private tmux may advertise more colors than the
+    # invoking terminal. Capture its terminfo once, before crossing that boundary.
+    curses = load_curses()
+    try:
+        terminal_colors = curses.tigetnum("colors")
+    except curses.error:
+        terminal_colors = None
     outer = os.environ.get("TMUX", "").rsplit(",", 2)
     if not args.host_socket and len(outer) == 3:
         args.host_socket = outer[0]
@@ -250,7 +268,11 @@ def launch(args) -> int:
             args.shortcut_hints,
             "--keymap-state",
             keymap.to_toml(),
+            "--theme",
+            str(args.theme),
         ]
+        if terminal_colors is not None:
+            child_args += ["--terminal-colors", str(terminal_colors)]
         if args.backbone:
             child_args += ["--backbone", "--backbone-data-dir", str(args.backbone_data_dir)]
         if args.backbone and args.url:
