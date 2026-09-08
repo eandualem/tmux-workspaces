@@ -153,3 +153,31 @@ processes stayed stable through the idle samples. Shell identities also survived
 navigation, resize and attachment changes. These are one host's exploratory
 results, not evidence that more panes use less CPU. The navigation gate is still
 open; keep the raw event samples with the engineering issue for comparison.
+
+## Repeated packaged baseline
+
+Three clean, untraced runs at `6abcad8` used the command below, with thirty events
+per path per run and three ten-second idle samples per pane count:
+
+```sh
+python3 -m scripts.benchmark --panes 1 4 --samples 30 \
+  --idle-samples 3 --idle-seconds 10 --warmup 2
+```
+
+The environment was Darwin 25.6.0, arm64, ten logical CPUs, Python 3.14.7 and
+tmux 3.7c, at 160×38 with `xterm-256color`. Background load and power settings
+were not controlled. All shell identity, post-readiness input uniqueness, resize
+and attachment probes passed. These are local PTY measurements, not SSH or
+native display measurements.
+
+Valid idle samples had weighted means of 0.797% of one CPU for one pane and
+0.843% for four panes. One of nine one-pane CPU samples was invalidated for
+process-set churn and retained in the raw evidence; all nine four-pane samples
+were valid. No run or latency sample was discarded. Only the one-pane click-tab
+path met both navigation budgets in every run. The performance gate remains open.
+
+An independent same-write gesture-and-typing stress test found an existing mouse
+input loss on the baseline: readiness probes alone do not establish immediate
+typing correctness. This is tracked separately in issue #17 and must be fixed
+and included in the optimized comparison. Keep the raw baseline runs and final
+comparison with the engineering review; timing eligibility is not acceptance.
