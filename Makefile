@@ -14,6 +14,7 @@ test:
 
 smoke:
 	$(PYTHON) -m tests.integration.smoke_themes
+	$(PYTHON) -m tests.integration.smoke_refresh
 	$(PYTHON) -m tests.integration.smoke_preflight
 	$(PYTHON) -m tests.integration.smoke_keymaps
 	$(PYTHON) -m tests.integration.smoke_ssh

@@ -13,6 +13,7 @@ from tmux_workspaces.keymap import (
     canonical_ghostty_trigger,
     canonical_tmux_key,
     direct_sequence,
+    keymap_source,
     load_keymap,
 )
 
@@ -32,6 +33,23 @@ class KeymapTests(unittest.TestCase):
         self.assertEqual(len(set(ACTION_CODES.values())), len(ACTIONS))
         self.assertEqual(ACTION_CODES["quit"], 9019)
         self.assertEqual(ACTION_CODES["workspaces"], 9018)
+        self.assertEqual(ACTION_CODES["refresh-viewer"], 9050)
+
+    def test_refresh_action_ships_a_prefix_key_without_claiming_a_profile_trigger(self):
+        self.assertEqual(DEFAULT_KEYMAP.bindings["refresh-viewer"], ("f",))
+        self.assertIn(("f", "Refresh viewer"), DEFAULT_KEYMAP.prefix_help_rows())
+        # The terminal profile is fixed when its window opens, so refresh takes
+        # no Command key by default and cannot shadow an existing one.
+        self.assertEqual(DEFAULT_KEYMAP.direct["refresh-viewer"], ())
+        self.assertNotIn("refresh-viewer", DIRECT_SHORTCUTS)
+        self.assertNotIn("Refresh viewer", [row[1] for row in DEFAULT_KEYMAP.direct_help_rows()])
+        chosen = Keymap.from_dict(
+            {"bindings": {"refresh-viewer": ["F5"]}, "direct": {"refresh-viewer": ["ctrl+alt+r"]}}
+        )
+        self.assertEqual(dict(chosen.prefix_items())["F5"], "refresh-viewer")
+        self.assertNotIn("f", dict(chosen.prefix_items()))
+        self.assertIn("keybind = ctrl+alt+r=csi:9050~\n", chosen.ghostty_bindings())
+        self.assertEqual(direct_sequence("refresh-viewer"), "\x1b[9050~")
 
     def test_override_replaces_aliases_and_unbinding_does_not_remove_other_actions(self):
         keymap = Keymap.from_dict(
@@ -287,6 +305,30 @@ class KeymapTests(unittest.TestCase):
                 load_keymap("missing.toml", environ=env, cwd=root)
             with self.assertRaisesRegex(ValueError, "file does not exist"):
                 load_keymap(environ={"TMUX_WORKSPACES_KEYMAP": "missing"}, cwd=root)
+
+    def test_keymap_source_reports_the_file_a_relaunch_would_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = {"HOME": str(root), "XDG_CONFIG_HOME": str(root / "config")}
+            default = root / "config/tmux-workspaces/keymap.toml"
+            # An implicit default is still reported, so a refresh can pick up a
+            # file created after launch, while staying optional.
+            self.assertEqual(keymap_source(environ=env), (default, False))
+            env["TMUX_WORKSPACES_KEYMAP"] = "env.toml"
+            self.assertEqual(keymap_source(environ=env, cwd=root), (root / "env.toml", True))
+            self.assertEqual(
+                keymap_source("~/explicit.toml", environ=env), (root / "explicit.toml", True)
+            )
+            self.assertEqual(
+                keymap_source(root / "absolute.toml", environ=env, cwd=Path("/elsewhere")),
+                (root / "absolute.toml", True),
+            )
+            default.parent.mkdir(parents=True)
+            default.write_text('prefix = "C-a"\n')
+            implicit = {"HOME": str(root), "XDG_CONFIG_HOME": str(root / "config")}
+            selected, explicit = keymap_source(environ=implicit)
+            self.assertFalse(explicit)
+            self.assertEqual(load_keymap(selected).prefix, load_keymap(environ=implicit).prefix)
 
     def test_malformed_oversized_and_unreadable_files_report_path(self):
         with tempfile.TemporaryDirectory() as directory:

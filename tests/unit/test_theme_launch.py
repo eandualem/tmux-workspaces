@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tmux_workspaces import application, ghostty_launcher
+from tmux_workspaces import application, ghostty_launcher, supervisor
 from tmux_workspaces.cli import parser
 
 
@@ -37,6 +37,52 @@ class ThemeLaunchTests(unittest.TestCase):
                     self.assertEqual(options.theme, expected)
                     self.assertIsNone(options.terminal_colors)
 
+    def test_refresh_parent_pins_theme_for_children_and_reopen_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for arguments, env, expected in (
+                (
+                    ["--theme", str(root / "explicit colors.toml")],
+                    {},
+                    root / "explicit colors.toml",
+                ),
+                (
+                    [],
+                    {"TMUX_WORKSPACES_THEME": str(root / "env colors.toml")},
+                    root / "env colors.toml",
+                ),
+                (
+                    [],
+                    {"XDG_CONFIG_HOME": str(root / "config")},
+                    root / "config/tmux-workspaces/theme.toml",
+                ),
+            ):
+                with self.subTest(expected=expected):
+                    with patch.dict(os.environ, env, clear=True):
+                        context = supervisor.LaunchContext(
+                            parser().parse_args(
+                                [
+                                    "--no-keymap",
+                                    "--data-dir",
+                                    str(root / "library"),
+                                    *arguments,
+                                ]
+                            )
+                        )
+                    with patch.dict(
+                        os.environ,
+                        {"TMUX_WORKSPACES_THEME": str(root / "different.toml")},
+                        clear=True,
+                    ):
+                        for navigation in (None, {"workspace": "w1"}):
+                            child = parser().parse_args(
+                                context.child_args(root / "handover", navigation)
+                            )
+                            self.assertEqual(child.theme, expected)
+                        reopen = parser().parse_args(shlex.split(context.reopen)[2:])
+                        self.assertEqual(reopen.theme, expected)
+                    self.assertFalse(expected.exists())
+
     def test_private_sidebar_receives_outer_palette_and_absolute_config_path(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -56,7 +102,7 @@ class ThemeLaunchTests(unittest.TestCase):
                 patch.object(application.subprocess, "run") as run,
                 self.assertRaisesRegex(RuntimeError, "captured"),
             ):
-                application.launch(args)
+                application.window_main(args)
             child = parser().parse_args(command.call_args.args)
             self.assertEqual(child.theme, root / "colors.toml")
             self.assertEqual(child.terminal_colors, 8)

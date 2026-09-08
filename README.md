@@ -37,7 +37,7 @@ Use **Ctrl-g**, release it, then:
 - **n / p**: next / previous tab; **o / O**: next / previous pane.
 - **W**: new workspace; **[ / ]**: previous / next workspace.
 - **r / R**: rename tab / workspace; **z**: focus one pane / restore its layout.
-- **a**: open the attachment chooser; **d**: exit the viewer.
+- **a**: open the attachment chooser; **f**: refresh the viewer; **d**: exit the viewer.
 - **m / M**: tab options / workspace options.
 
 Core navigation and editing work by shortcut. The dedicated terminal profile has
@@ -119,6 +119,10 @@ adapts to available terminal dimensions by temporarily focusing a pane when a
 layout will not fit. It does not save a different arrangement per physical display.
 
 ## Keep your arrangement
+
+Use **Ctrl-g, then f** for an intentional viewer refresh, or open **Refresh viewer**
+from the shortcut controls. Dedicated Ghostty profiles and changes to the launcher
+installation require manual reopening; see [refresh and recovery](docs/REFRESH.md).
 
 Choose **Exit** and reopen with the same command to resume. Saved names, grouping,
 splits and attachment references remain. Ordinary shells and their running

@@ -56,19 +56,25 @@ def failure(
             "XDG_DATA_HOME": str(resources.root / "data"),
         }
         launcher = None
-        if missing_term or missing_curses:
-            program = "import os, runpy, sys\n"
-            if missing_term:
-                program += "os.environ.pop('TERM', None)\n"
-            if missing_curses:
-                program += (
-                    "class NoCurses:\n"
-                    " def find_spec(self, fullname, path=None, target=None):\n"
-                    "  if fullname in ('curses', '_curses'):\n"
-                    "   raise ModuleNotFoundError('fixture: Python built without curses')\n"
-                    "sys.meta_path.insert(0, NoCurses())\n"
-                )
-            program += (
+        if missing_curses:
+            # A launcher opens its window in a new interpreter, so an absent
+            # curses has to look absent to every process this command starts,
+            # the way a Python built without it would.
+            hook = resources.root / "no-curses"
+            hook.mkdir()
+            (hook / "sitecustomize.py").write_text(
+                "import sys\n"
+                "class NoCurses:\n"
+                " def find_spec(self, fullname, path=None, target=None):\n"
+                "  if fullname in ('curses', '_curses'):\n"
+                "   raise ModuleNotFoundError('fixture: Python built without curses')\n"
+                "sys.meta_path.insert(0, NoCurses())\n"
+            )
+            env["PYTHONPATH"] = str(hook)
+        if missing_term:
+            program = (
+                "import os, runpy, sys\n"
+                "os.environ.pop('TERM', None)\n"
                 f"sys.path.insert(0, {str(ROOT)!r})\n"
                 f"runpy.run_path({str(ROOT / 'run')!r}, run_name='__main__')\n"
             )

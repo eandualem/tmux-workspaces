@@ -30,6 +30,7 @@ SHORTCUTS = {
     "[": "previous-workspace",
     "x": "close-pane",
     "&": "close-tab",
+    "f": "refresh-viewer",
 }
 
 # Explicit codes stay stable when bindings are added. These are terminal input

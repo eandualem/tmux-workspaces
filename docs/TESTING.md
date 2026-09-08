@@ -12,6 +12,7 @@ floors are requirements, not a claim that every version combination was tested.
 make check
 make smoke
 python3 -m tests.integration.smoke_preflight
+python3 -m tests.integration.smoke_refresh
 python3 -m tests.integration.smoke_shortcuts
 python3 -m tests.integration.smoke_menus
 python3 -m tests.integration.smoke_windows

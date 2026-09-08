@@ -1,6 +1,7 @@
 """A workspace layer for tmux. Named purposes, tabs and saved split arrangements."""
 
 import argparse
+import contextlib
 import os
 import signal
 import subprocess
@@ -28,7 +29,10 @@ def default_source_socket() -> str:
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(prog="tmux-workspaces", description=__doc__)
     result.add_argument(
-        "mode", nargs="?", choices=["_sidebar", "_leaf", "_action"], help=argparse.SUPPRESS
+        "mode",
+        nargs="?",
+        choices=["_window", "_sidebar", "_leaf", "_action"],
+        help=argparse.SUPPRESS,
     )
     adapters = result.add_mutually_exclusive_group()
     adapters.add_argument("--demo", action="store_true", help="use disposable demo shells")
@@ -75,6 +79,22 @@ def parser() -> argparse.ArgumentParser:
         "--theme", type=Path, help="viewer color TOML (overrides environment/default path)"
     )
     result.add_argument("--terminal-colors", type=int, help=argparse.SUPPRESS)
+    # A refresh re-reads the selected file before it replaces the viewer, so the
+    # running instance validates exactly what the launcher will load next.
+    result.add_argument("--keymap-source", type=Path, help=argparse.SUPPRESS)
+    result.add_argument("--keymap-required", action="store_true", help=argparse.SUPPRESS)
+    # Set for a window whose map came fixed from an outer launcher, together
+    # with a terminal profile generated from it: such a window is reopened,
+    # never replaced in place.
+    result.add_argument("--manual-reopen", action="store_true", help=argparse.SUPPRESS)
+    # Written by one supervised window after its own cleanup, and read only by
+    # the supervisor that named it.
+    result.add_argument("--handover", type=Path, help=argparse.SUPPRESS)
+    result.add_argument("--supervisor-pid", type=int, default=0, help=argparse.SUPPRESS)
+    # Advisory text and selection built by the supervisor; never executed here.
+    result.add_argument("--reopen-command", help=argparse.SUPPRESS)
+    result.add_argument("--carry-navigation", help=argparse.SUPPRESS)
+    result.add_argument("--ghostty-app", help=argparse.SUPPRESS)
     result.add_argument("--viewer-socket", help=argparse.SUPPRESS)
     result.add_argument("--instance-dir", type=Path, help=argparse.SUPPRESS)
     result.add_argument("--agent", default="", help=argparse.SUPPRESS)
@@ -88,8 +108,31 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
+
+
+def install_stop_signals() -> None:
+    """Leave the terminal cleanly, and let the cleanup that follows finish.
+
+    Both a launcher and its window stop this way, the window by running its own
+    cleanup first. Once that has begun, every signal handled here is ignored: a
+    second copy of the same one, or a different one arriving behind it, must not
+    cut the cleanup short.
+    """
+
+    def stop(number, _frame):
+        for managed in STOP_SIGNALS:
+            with contextlib.suppress(OSError, ValueError):
+                signal.signal(managed, signal.SIG_IGN)
+        sys.exit(128 + number)
+
+    for managed in STOP_SIGNALS:
+        with contextlib.suppress(OSError, ValueError):
+            signal.signal(managed, stop)
+
+
 def effective_keymap(args, *, cwd: Path | None = None):
-    from .keymap import Keymap, load_keymap
+    from .keymap import DEFAULT_KEYMAP, Keymap, load_keymap
 
     if args.keymap_state is not None:
         import tomllib
@@ -97,6 +140,14 @@ def effective_keymap(args, *, cwd: Path | None = None):
         if len(args.keymap_state.encode()) > 65536:
             raise ValueError("Keymap snapshot exceeds 64 KiB")
         return Keymap.from_dict(tomllib.loads(args.keymap_state))
+    source = getattr(args, "keymap_source", None)
+    if source is not None and args.keymap is None and not args.no_keymap:
+        # A supervisor resolved the selection once, from its own directory and
+        # environment. Read that exact file, and keep an absent optional
+        # default optional so one created later is still picked up.
+        if args.keymap_required or source.exists():
+            return load_keymap(source)
+        return DEFAULT_KEYMAP
     return load_keymap(args.keymap, disabled=args.no_keymap, cwd=cwd)
 
 
@@ -115,7 +166,7 @@ def keymap_help(keymap) -> str:
         "The terminal consumes these triggers and sends stable CSI action codes to tmux.",
         "Keys intercepted by your OS or hosting tmux never reach the viewer.",
         "Print --print-keymap ghostty for the effective trigger-to-CSI profile.",
-        "Chooser selection and some menu commands still require the mouse; see docs/SHORTCUTS.md.",
+        "Use arrows and Enter in choosers and menus; see docs/SHORTCUTS.md.",
     ]
     return "\n".join(lines) + "\n"
 
@@ -141,13 +192,19 @@ def main() -> int:
             }[args.print_keymap]()
             print(text, end="")
             return 0
-        from .application import launch, sidebar_main
-
         if args.mode == "_sidebar":
+            from .application import sidebar_main
+
             return sidebar_main(args)
-        signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
-        signal.signal(signal.SIGHUP, lambda *_: sys.exit(129))
-        return launch(args)
+
+        install_stop_signals()
+        if args.mode == "_window":
+            from .application import window_main
+
+            return window_main(args)
+        from .supervisor import supervise
+
+        return supervise(args)
     except subprocess.CalledProcessError as exc:
         detail = (
             exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr

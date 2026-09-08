@@ -19,7 +19,10 @@ For an existing custom library, pass the same options you already use:
 ./ghostty --backbone --backbone-data-dir /path/to/backbone-data
 ```
 
-To replace an already-open viewer, use **Exit viewer**, then launch with `./ghostty`.
+Use **Ctrl-g, then f** to open **Refresh viewer**. A dedicated Ghostty instance
+needs manual reopening to apply its terminal profile; the refresh flow supplies
+an exact reopen command. Changes to the interpreter, dependencies or launcher
+installation still need reopening with the intended launcher. See [refresh scope and recovery](REFRESH.md).
 Do not close its tabs to upgrade: **Exit viewer** preserves shells and programs;
 closing a pane or tab ends that pane/tab's ordinary shells. Existing views can also
 remain open alongside the new window; they share arrangements and shells.
@@ -86,9 +89,13 @@ remain available in every profile unless overridden by a user keymap:
 - **t** new tab; **v / h** split right / below; **a** attach; **r** rename tab.
 - **n / p** next / previous tab; **o / O** next / previous pane; **z** focus/layout.
 - **w** workspace chooser; **W** new workspace; **[ / ]** previous / next workspace.
-- **R** rename workspace; **s** focus navigation panel; **d** exit viewer.
+- **R** rename workspace; **s** focus navigation panel; **f** refresh viewer; **d** exit viewer.
 - **x** close pane; **&** close tab.
 - **m / M** tab options / workspace options.
+
+If an existing keymap uses **f** for another action or as its prefix, that setting
+takes precedence over the new refresh default. **Refresh viewer** remains available
+in **Shortcuts…**, even without a key binding.
 
 The Command keys require the Ghostty profile; opening `./run` inside a normal
 Ghostty window keeps Ghostty's native Command bindings. Installing the TPM plugin

@@ -15,6 +15,7 @@ import traceback
 import uuid
 from pathlib import Path
 
+from . import relaunch
 from .cli import default_source_socket, effective_keymap
 from .controls import Actions
 from .display import Display
@@ -88,6 +89,18 @@ def sidebar_main(args) -> int:
             store = cleanup.enter_context(contextlib.closing(Store(args.data_dir)))
             actions = cleanup.enter_context(contextlib.closing(Actions(args.action_socket)))
             model = store.load()
+            # The library keeps one navigation record, so a replacement viewer
+            # restores its own selection instead of adopting a peer's.
+            relaunch.apply_navigation(model.state, relaunch.parse_navigation(args.carry_navigation))
+            request = relaunch.Request(
+                args.instance_dir,
+                keymap_source=args.keymap_source,
+                keymap_required=args.keymap_required,
+                manual_reopen=args.manual_reopen,
+                profile_hints=args.shortcut_hints == "command",
+                nested=bool(args.host_socket),
+                reopen_command=args.reopen_command,
+            )
             display = Display(
                 args.viewer_socket,
                 args.source_socket,
@@ -98,6 +111,7 @@ def sidebar_main(args) -> int:
                 args.host_pane,
                 effective_keymap(args),
             )
+            relaunch.started(args.instance_dir)
             try:
                 curses.wrapper(
                     lambda screen: Sidebar(
@@ -110,6 +124,7 @@ def sidebar_main(args) -> int:
                         args.shortcut_hints,
                         theme_path=args.theme,
                         terminal_colors=args.terminal_colors,
+                        relaunch=request,
                     ).run()
                 )
             except curses.error as error:
@@ -195,42 +210,56 @@ def start_demo(socket: str, data_dir: Path) -> None:
     (data_dir / "demo.json").write_text(json.dumps(items))
 
 
-def launch(args) -> int:
+def window_main(args) -> int:
+    """Run exactly one viewer window, then report how it ended.
+
+    A supervisor started this interpreter from disk, so every check, setting and
+    application module here is freshly loaded. The report is written only after
+    this window's own cleanup has finished; anything else counts as a failure and
+    is never replaced automatically.
+    """
+    # Reject an unusable settings file before any startup check, server or state.
+    effective_keymap(args)
+    check_startup()
     from .theme import theme_path
 
-    keymap = effective_keymap(args)
-    if not args.backbone and (args.backbone_data_dir is not None or args.url is not None):
-        raise ValueError("Use --backbone to enable Backbone configuration and API access")
-    check_startup()
     args.theme = theme_path(path=args.theme)
     # Curses inside the private tmux may advertise more colors than the
     # invoking terminal. Capture its terminfo once, before crossing that boundary.
     curses = load_curses()
     try:
-        terminal_colors = curses.tigetnum("colors")
+        args.terminal_colors = curses.tigetnum("colors")
     except curses.error:
-        terminal_colors = None
-    outer = os.environ.get("TMUX", "").rsplit(",", 2)
-    if not args.host_socket and len(outer) == 3:
-        args.host_socket = outer[0]
-        args.host_pane = os.environ.get("TMUX_PANE")
+        args.terminal_colors = None
     args.data_dir = args.data_dir.expanduser().resolve()
-    if args.demo:
-        args.data_dir = args.data_dir / "demo"
-    if args.backbone:
-        args.backbone_data_dir = (
-            (
-                args.backbone_data_dir
-                or Path(os.environ.get("BACKBONE_DATA_DIR") or "~/.local/share/agent-backbone")
-            )
-            .expanduser()
-            .resolve()
-        )
+    if args.backbone and args.backbone_data_dir is None:
+        raise ValueError("Use --backbone-data-dir with --backbone")
     # Validate before creating display/demo servers or ordinary shells. A corrupt
     # arrangement must not start a partial viewer or overwrite recovery data.
     with contextlib.closing(Store(args.data_dir)) as store:
         store.load()
     args.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    result, request, ready = run_instance(args)
+    if args.handover:
+        relaunch.write_status(
+            args.handover,
+            ready=ready,
+            relaunch=request is not None,
+            selection=(request or {}).get("navigation"),
+        )
+    return result
+
+
+def run_instance(args) -> tuple[int, dict | None, bool]:
+    """Open the display for this window, then report how it ended.
+
+    The window derives its own identifier, display sockets and effective keymap
+    here, so it inherits the canonical launch context and none of any previous
+    window's per-viewer resources. The last result says whether this window's
+    navigation actually started, which is what tells a failed replacement apart
+    from someone closing a working one.
+    """
+    keymap = effective_keymap(args)
     instance = uuid.uuid4().hex[:12]
     args.instance_dir = args.data_dir / "windows" / instance
     args.instance_dir.mkdir(parents=True, mode=0o700)
@@ -244,6 +273,7 @@ def launch(args) -> int:
         elif not source_socket:
             source_socket = default_source_socket()
         source_socket = str(Path(source_socket).resolve())
+
         if source_socket in (viewer_socket, shell_socket):
             raise ValueError("Viewer, terminal and source sockets must differ")
         tmux = Tmux(viewer_socket)
@@ -271,8 +301,25 @@ def launch(args) -> int:
             "--theme",
             str(args.theme),
         ]
-        if terminal_colors is not None:
-            child_args += ["--terminal-colors", str(terminal_colors)]
+        if args.terminal_colors is not None:
+            child_args += ["--terminal-colors", str(args.terminal_colors)]
+        if args.manual_reopen:
+            # An outer launcher fixed this window's map and generated a matching
+            # terminal profile from it. Reloading into that surface would leave
+            # the two disagreeing, so such a window is reopened by hand.
+            child_args.append("--manual-reopen")
+        elif args.keymap_source is not None:
+            # Carry the selection rather than this window's map: a refresh
+            # re-reads the same file and validates it before replacing itself.
+            child_args += ["--keymap-source", str(args.keymap_source)]
+            if args.keymap_required:
+                child_args.append("--keymap-required")
+        if args.reopen_command:
+            # Advisory text built by the supervisor from the canonical launch
+            # context. This window's own arguments are private and never shown.
+            child_args += ["--reopen-command", args.reopen_command]
+        if args.carry_navigation:
+            child_args += ["--carry-navigation", args.carry_navigation]
         if args.backbone:
             child_args += ["--backbone", "--backbone-data-dir", str(args.backbone_data_dir)]
         if args.backbone and args.url:
@@ -285,7 +332,13 @@ def launch(args) -> int:
             "viewer_socket": viewer_socket,
             "source_socket": source_socket,
             "shell_socket": shell_socket,
-            "pid": os.getpid(),
+            # The launcher owning this terminal, so a window replaced under it
+            # keeps the same identity for anything watching the library.
+            "pid": args.supervisor_pid or os.getpid(),
+            "window_pid": os.getpid(),
+            # Advisory text this window may offer for reopening. It is published
+            # here so it can be read exactly as shown, never executed from here.
+            "reopen_command": args.reopen_command or "",
         }
         (args.instance_dir / "runtime.json").write_text(json.dumps(manifest))
         with startup_cleanup() as cleanup:
@@ -322,8 +375,12 @@ def launch(args) -> int:
                 ["tmux", "-S", viewer_socket, "attach-session", "-t", "=viewer:"], env=clean_env()
             )
             error = args.instance_dir / "error.txt"
+            ready = relaunch.has_started(args.instance_dir)
             if error.exists():
                 raise RuntimeError(error.read_text().strip())
-            return result
+            # Read the request while this window still owns its directory. The
+            # supervisor is told only after the cleanup below has succeeded.
+            request = None if args.manual_reopen else relaunch.take_request(args.instance_dir)
+            return result, request, ready
     finally:
         shutil.rmtree(args.instance_dir, ignore_errors=True)

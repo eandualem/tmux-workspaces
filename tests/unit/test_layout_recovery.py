@@ -10,7 +10,7 @@ from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
-from tmux_workspaces.application import launch
+from tmux_workspaces.application import window_main
 from tmux_workspaces.cli import parser
 from tmux_workspaces.layout_validation import InvalidLayout, validate_state
 from tmux_workspaces.model import Model, leaves
@@ -177,7 +177,11 @@ class LayoutRecoveryTests(unittest.TestCase):
                 library.mkdir(exist_ok=True)
                 path = database(library, "{broken")
                 before = path.read_bytes()
-                args = parser().parse_args(["--data-dir", str(root), *(["--demo"] if demo else [])])
+                # A supervisor resolves the library once, so the window it
+                # starts is handed the final directory for that mode.
+                args = parser().parse_args(
+                    ["_window", "--data-dir", str(library), *(["--demo"] if demo else [])]
+                )
                 with (
                     patch("tmux_workspaces.preflight.check_terminal"),
                     patch("tmux_workspaces.preflight.shutil.which", return_value="tmux"),
@@ -191,7 +195,7 @@ class LayoutRecoveryTests(unittest.TestCase):
                     ) as command,
                     self.assertRaises(LibraryError),
                 ):
-                    launch(args)
+                    window_main(args)
                 command.assert_called_once_with(
                     ["tmux", "-V"], capture_output=True, text=True, timeout=5
                 )
