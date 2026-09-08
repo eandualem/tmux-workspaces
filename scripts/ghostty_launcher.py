@@ -6,7 +6,7 @@ from pathlib import Path
 
 # Direct file execution starts in this legacy directory, not the package root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tmux_workspaces.ghostty_launcher import main
+from tmux_workspaces.bootstrap import ghostty_main as main
 
 if __name__ == "__main__":
     raise SystemExit(main())

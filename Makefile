@@ -13,6 +13,7 @@ test:
 	$(PYTHON) -m unittest discover -s scripts/tests -v
 
 smoke:
+	$(PYTHON) -m tests.integration.smoke_preflight
 	$(PYTHON) -m tests.integration.smoke_keymaps
 	$(PYTHON) -m tests.integration.smoke_ssh
 	$(PYTHON) -m tests.integration.smoke_inline_rename

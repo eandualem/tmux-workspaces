@@ -3,6 +3,7 @@
 import copy
 import json
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from contextlib import closing
@@ -168,7 +169,7 @@ class LayoutRecoveryTests(unittest.TestCase):
                 store.load()
             self.assertEqual(path.read_bytes(), before)
 
-    def test_invalid_library_preflight_starts_no_tmux_processes_even_in_demo_mode(self):
+    def test_invalid_library_preflight_starts_no_tmux_servers_even_in_demo_mode(self):
         for demo in (False, True):
             with self.subTest(demo=demo), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -178,20 +179,22 @@ class LayoutRecoveryTests(unittest.TestCase):
                 before = path.read_bytes()
                 args = parser().parse_args(["--data-dir", str(root), *(["--demo"] if demo else [])])
                 with (
-                    patch("tmux_workspaces.application.sys.stdin.isatty", return_value=True),
-                    patch("tmux_workspaces.application.sys.stdout.isatty", return_value=True),
-                    patch("tmux_workspaces.application.shutil.which", return_value="tmux"),
+                    patch("tmux_workspaces.preflight.check_terminal"),
+                    patch("tmux_workspaces.preflight.shutil.which", return_value="tmux"),
                     patch(
                         "tmux_workspaces.application.Tmux",
                         side_effect=AssertionError("tmux started"),
                     ),
                     patch(
-                        "tmux_workspaces.application.subprocess.run",
-                        side_effect=AssertionError("process started"),
-                    ),
+                        "tmux_workspaces.preflight.subprocess.run",
+                        return_value=subprocess.CompletedProcess(["tmux", "-V"], 0, "tmux 3.3"),
+                    ) as command,
                     self.assertRaises(LibraryError),
                 ):
                     launch(args)
+                command.assert_called_once_with(
+                    ["tmux", "-V"], capture_output=True, text=True, timeout=5
+                )
                 self.assertEqual(path.read_bytes(), before)
                 self.assertFalse((library / "windows").exists())
 

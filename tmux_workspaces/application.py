@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import contextlib
-import curses
 import hashlib
 import json
 import os
@@ -21,7 +20,7 @@ from .controls import Actions
 from .display import Display
 from .entrypoints import script_command
 from .persistence import Store
-from .sidebar import Sidebar
+from .preflight import check_startup, load_curses
 from .source import Source
 from .tmux import Tmux, clean_env, shell_context
 
@@ -48,58 +47,89 @@ def make_source(
     return Source(socket, TmuxProvider(socket), overlays)
 
 
+@contextlib.contextmanager
+def startup_cleanup():
+    """Attempt every cleanup while retaining the original startup diagnostic."""
+    with contextlib.ExitStack() as cleanup:
+        try:
+            yield cleanup
+        except BaseException as original:
+            try:
+                cleanup.close()
+            except BaseException as error:
+                original.add_note(f"Startup cleanup also failed: {error}")
+            raise
+
+
 def sidebar_main(args) -> int:
-    keymap = effective_keymap(args)
-    # Wait for the launcher's attachment before enabling exit-unattached.
     tmux = Tmux(args.viewer_socket)
-    deadline = time.monotonic() + 15
-    while tmux.run("display-message", "-p", "-t", "viewer:", "#{session_attached}") == "0":
-        if time.monotonic() > deadline:
-            return 1
-        time.sleep(0.05)
-    source = make_source(
-        args.source_socket,
-        backbone_data_dir=args.backbone_data_dir if args.backbone else None,
-        url=args.url,
-        demo=args.instance_dir / "demo.json" if args.demo else None,
-    )
-    source.refresh()
-    store = Store(args.data_dir)
-    actions = Actions(args.action_socket)
     clean_exit = False
     try:
-        model = store.load()
-        display = Display(
-            args.viewer_socket,
-            args.source_socket,
-            os.environ["TMUX_PANE"],
-            args.shell_socket,
-            args.action_socket,
-            args.host_socket,
-            args.host_pane,
-            keymap=keymap,
-        )
-        curses.wrapper(
-            lambda screen: Sidebar(
-                screen, model, store, source, display, actions, args.shortcut_hints
-            ).run()
-        )
+        curses = load_curses()
+        from .sidebar import Sidebar
+
+        # Wait for the launcher's attachment before enabling exit-unattached.
+        deadline = time.monotonic() + 15
+        while tmux.run("display-message", "-p", "-t", "viewer:", "#{session_attached}") == "0":
+            if time.monotonic() > deadline:
+                raise RuntimeError(
+                    "Viewer terminal did not attach within 15 seconds; try ./run again."
+                )
+            time.sleep(0.05)
+        with startup_cleanup() as cleanup:
+            source = make_source(
+                args.source_socket,
+                backbone_data_dir=args.backbone_data_dir if args.backbone else None,
+                url=args.url,
+                demo=args.instance_dir / "demo.json" if args.demo else None,
+            )
+            cleanup.callback(source.close)
+            source.refresh()
+            store = cleanup.enter_context(contextlib.closing(Store(args.data_dir)))
+            actions = cleanup.enter_context(contextlib.closing(Actions(args.action_socket)))
+            model = store.load()
+            display = Display(
+                args.viewer_socket,
+                args.source_socket,
+                os.environ["TMUX_PANE"],
+                args.shell_socket,
+                args.action_socket,
+                args.host_socket,
+                args.host_pane,
+                effective_keymap(args),
+            )
+            try:
+                curses.wrapper(
+                    lambda screen: Sidebar(
+                        screen, model, store, source, display, actions, args.shortcut_hints
+                    ).run()
+                )
+            except curses.error as error:
+                raise RuntimeError(
+                    f"Terminal initialization failed for TERM={os.environ.get('TERM', '')!r}. "
+                    "Check the host's tmux terminfo and Python ncurses support; "
+                    "then reopen with ./run in a supported terminal."
+                ) from error
         clean_exit = True
-    except Exception:
-        (args.instance_dir / "error.txt").write_text(traceback.format_exc())
+    except BaseException as error:
+        # Include setup failures too, so the outer launcher can report them after
+        # tmux closes. Known environment failures need an actionable message.
+        detail = str(error) if isinstance(error, RuntimeError) else traceback.format_exc()
+        with contextlib.suppress(OSError):
+            (args.instance_dir / "error.txt").write_text(detail)
         raise
     finally:
-        actions.close()
-        source.close()
-        store.close()
-        if clean_exit:
-            # Let the detach handshake finish. Immediately killing the server
-            # can race the attached client processing its normal exit message.
-            # exit-unattached handles this private server; the launcher also
-            # cleans it up after attach-session has returned.
-            tmux.run("detach-client", "-s", "=viewer:", check=False)
-        else:
-            tmux.run("kill-server", check=False)
+        original = sys.exception()
+        try:
+            if clean_exit:
+                # Finish detach before exit-unattached retires this private server.
+                tmux.run("detach-client", "-s", "=viewer:", check=False)
+            else:
+                tmux.run("kill-server", check=False)
+        except BaseException as cleanup_error:
+            if original is None:
+                raise
+            original.add_note(f"Private viewer cleanup also failed: {cleanup_error}")
     return 0
 
 
@@ -161,10 +191,7 @@ def launch(args) -> int:
     keymap = effective_keymap(args)
     if not args.backbone and (args.backbone_data_dir is not None or args.url is not None):
         raise ValueError("Use --backbone to enable Backbone configuration and API access")
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
-        raise ValueError("Run the viewer in an interactive terminal")
-    if not shutil.which("tmux"):
-        raise ValueError("tmux is required (macOS, Linux, or WSL)")
+    check_startup()
     outer = os.environ.get("TMUX", "").rsplit(",", 2)
     if not args.host_socket and len(outer) == 3:
         args.host_socket = outer[0]
@@ -239,7 +266,11 @@ def launch(args) -> int:
             "pid": os.getpid(),
         }
         (args.instance_dir / "runtime.json").write_text(json.dumps(manifest))
-        try:
+        with startup_cleanup() as cleanup:
+            if args.demo:
+                cleanup.callback(Tmux(source_socket).run, "kill-server", check=False)
+            cleanup.callback(Path(action_socket).unlink, missing_ok=True)
+            cleanup.callback(tmux.run, "kill-server", check=False)
             if args.demo:
                 start_demo(source_socket, args.instance_dir)
             subprocess.run(
@@ -272,10 +303,5 @@ def launch(args) -> int:
             if error.exists():
                 raise RuntimeError(error.read_text().strip())
             return result
-        finally:
-            tmux.run("kill-server", check=False)
-            Path(action_socket).unlink(missing_ok=True)
-            if args.demo:
-                Tmux(source_socket).run("kill-server", check=False)
     finally:
         shutil.rmtree(args.instance_dir, ignore_errors=True)

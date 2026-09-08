@@ -2,7 +2,7 @@
 
 import contextlib
 
-from .cli import main
+from .bootstrap import main
 
 with contextlib.suppress(BrokenPipeError):
     raise SystemExit(main())

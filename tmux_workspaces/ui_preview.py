@@ -48,12 +48,24 @@ def seed(directory: Path) -> None:
             store.close()
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--terminal", action="store_true", help="run in the current terminal")
     options = parser.parse_args()
     directory = ROOT / ".backbone/ui-preview"
-    seed(directory)
+    try:
+        if options.terminal:
+            from .preflight import check_startup
+
+            check_startup()
+        else:
+            from .ghostty_launcher import check_launch
+
+            check_launch()
+        seed(directory)
+    except (RuntimeError, ValueError, OSError) as error:
+        print("tmux-workspaces: " + str(error), file=sys.stderr)
+        return 1
     launcher = ROOT / ("run" if options.terminal else "ghostty")
     os.execv(
         sys.executable, [sys.executable, str(launcher), "--data-dir", str(directory), "--demo"]
@@ -61,4 +73,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

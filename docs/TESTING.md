@@ -11,6 +11,7 @@ floors are requirements, not a claim that every version combination was tested.
 ```sh
 make check
 make smoke
+python3 -m tests.integration.smoke_preflight
 python3 -m tests.integration.smoke_shortcuts
 python3 -m tests.integration.smoke_windows
 python3 -m unittest tests.unit.test_integration_support tests.unit.test_ssh_support -v
@@ -18,7 +19,8 @@ python3 -m unittest tests.unit.test_integration_support tests.unit.test_ssh_supp
 
 `make check` runs Ruff, shell syntax and unit tests. Supply `RUFF="python3 -m ruff"`
 if Ruff is already installed; otherwise the default uses uv. `make smoke` runs the
-PTY scenarios, including SSH on Linux. The old experiment smoke launchers remain
+PTY scenarios, including startup-failure isolation and SSH on Linux. See
+[startup requirements and failure tests](STARTUP.md). The old experiment smoke launchers remain
 compatibility entry points. Each scenario can also run as its module under
 `tests.integration`. Failures include the predicate that timed out; waits use a
 monotonic deadline rather than assuming a fixed startup time.
@@ -93,6 +95,12 @@ scenario failure keeps its identity and receives a cleanup note. Unit tests inje
 PTY setup failures, timeouts, interruptions and hostile manifest paths.
 
 ## Coverage and limits
+
+The startup-preflight follow-up passed 187 application and 12 benchmark tests on
+both platforms below, plus eleven Linux and ten macOS PTY scenarios (SSH skipped
+on macOS). Its failure fixtures establish empty-library/no-server behavior for
+unsupported environments. Full evidence and the final preview exit-status check
+are recorded in [ACCEPTANCE.md](ACCEPTANCE.md).
 
 The combined fixture/keymap branch passed `make check` with 164 application tests
 and 12 benchmark tests on macOS and Linux. All ten PTY scenarios passed on Linux;

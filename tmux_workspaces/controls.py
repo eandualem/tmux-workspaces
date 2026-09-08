@@ -109,8 +109,23 @@ class Actions:
     def __init__(self, path: str):
         self.path = path
         self.receiver = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-        self.receiver.bind(path)
-        self.receiver.setblocking(False)
+        bound = False
+        try:
+            self.receiver.bind(path)
+            bound = True
+            self.receiver.setblocking(False)
+        except BaseException as error:
+            try:
+                self.receiver.close()
+            except OSError as cleanup_error:
+                error.add_note(f"Action socket close failed: {cleanup_error}")
+            if bound:
+                # A failed bind never grants ownership of an existing socket.
+                try:
+                    Path(path).unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    error.add_note(f"Action socket removal failed: {cleanup_error}")
+            raise
 
     def pending(self):
         while True:

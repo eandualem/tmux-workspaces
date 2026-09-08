@@ -23,7 +23,9 @@ development, review or operations, rather than particular screen sizes.
 ## Start in your terminal
 
 Requirements: **Python 3.11+**, **tmux 3.3+**, and a Unix terminal. There are no
-third-party Python runtime dependencies. Run from the top of your checkout:
+third-party Python runtime dependencies. Startup checks the version floors and
+minimum curses/terminfo support before opening your library; failures include a
+remedy. See [startup requirements](docs/STARTUP.md). Run from the top of your checkout:
 
 ```sh
 ./run
