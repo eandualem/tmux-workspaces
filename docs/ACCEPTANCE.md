@@ -1,6 +1,32 @@
 # Verification and known limits
 
-## Verified baseline — 2026-09-08
+## Package extraction — 2026-09-08
+
+The package extraction passed **87 tests** plus Ruff and TPM shell checks.
+All seven real PTY suites passed from a fresh checkout copy whose directory name
+contained spaces, with no Git metadata or development memory. The relocated tests
+covered standalone and TPM launch, generic/optional sources, inline editing,
+shortcuts, four-pane layouts, concurrent windows and persistence.
+
+Compatibility regressions execute the old viewer/plugin/Ghostty/preview command
+paths and the standalone symlink from another working directory. A real action
+receiver verifies that an old viewer's helper still delivers commands. Another
+regression confirms action dispatch imports no curses, SQLite or HTTP adapter.
+A disposable pre-refactor viewer was also left running while its checkout files
+were replaced. Its existing synchronous shortcut binding accepted rename text in
+the same PTY write, then started a new leaf helper. Old-viewer exit and new-viewer
+reopen preserved shell PIDs/cwd, split/name/attachment state, and the external
+fixture's pane PID/cwd/layout (fixed window size excluded ordinary attach resizing).
+
+A locally built wheel was installed without dependencies into a disposable Python
+3.13 environment; a real PTY exercised its console launcher, new tab, split, action
+and attachment helpers, and clean exit with ordinary shells retained. No registry
+publication or user installation was performed. Full source suites used macOS,
+Python 3.14 and tmux 3.7c; Linux/SSH and native Ghostty GUI coverage remain separate.
+
+See [architecture and lifecycle ownership](ARCHITECTURE.md).
+
+## Original verified baseline — 2026-09-08
 
 The baseline at `4cd4ec9` passed **83 unit/integration tests**, Ruff lint and
 formatting, and plugin shell syntax checks through `make check`. All seven real
@@ -44,8 +70,8 @@ For a macOS Ghostty installation at its default location:
 
 ```sh
 TERMINFO=/Applications/Ghostty.app/Contents/Resources/terminfo \
-  python3 experiments/workspace_viewer/smoke_inline_rename.py
-python3 experiments/workspace_viewer/smoke_windows.py \
+  python3 -m tests.integration.smoke_inline_rename
+python3 -m tests.integration.smoke_windows \
   --ghostty-terminfo /Applications/Ghostty.app/Contents/Resources/terminfo
 ```
 

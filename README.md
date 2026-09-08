@@ -113,7 +113,7 @@ To try sample layouts, run `./preview --terminal`, or `./preview` with macOS
 Ghostty. It creates a separate sample library under `.backbone/ui-preview/demo/`
 in the checkout, with disposable shell attachments. No live agents are used.
 See the [sample guide](docs/UI_PREVIEW.md) and
-[full controls and persistence guide](experiments/workspace_viewer/README.md).
+[full controls and persistence guide](docs/GUIDE.md).
 
 ## Install the launcher or load with TPM
 
@@ -212,6 +212,8 @@ Tests use private tmux sockets and disposable shells. They exercise mouse and
 keyboard input, attachment, concurrent edits, resizing and persistence. The
 [acceptance report](docs/ACCEPTANCE.md) distinguishes tested platforms and remaining
 limits. Nested tmux can affect redraws, sizing, selection, clipboard and scrollback.
+
+For code responsibilities and ownership, see [architecture](docs/ARCHITECTURE.md).
 
 The imported MIT notice is retained in [LICENSE](LICENSE).
 See [provenance](docs/PROVENANCE.md) and the [product contract](docs/INITIAL_TASK.md).
