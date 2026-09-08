@@ -24,6 +24,8 @@ def launch_command(
     cwd: Path | None = None,
 ) -> list[str]:
     """Build a reviewable launch command without opening apps or changing files."""
+    from .theme import theme_path
+
     cwd = (cwd or Path.cwd()).resolve()
     options = viewer_parser().parse_args(arguments)
     keymap = effective_keymap(options, cwd=cwd)
@@ -45,6 +47,8 @@ def launch_command(
         "--shortcut-hints=command",
         "--keymap-state",
         keymap.to_toml(),
+        "--theme",
+        str(theme_path(path=options.theme, cwd=cwd)),
     ]
     if options.backbone:
         backbone_dir = (

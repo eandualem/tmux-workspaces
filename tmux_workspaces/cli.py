@@ -71,6 +71,10 @@ def parser() -> argparse.ArgumentParser:
     # Transport the already validated map across tmux/LaunchServices environments.
     # New surfaces in the same Ghostty instance must match its fixed profile.
     result.add_argument("--keymap-state", help=argparse.SUPPRESS)
+    result.add_argument(
+        "--theme", type=Path, help="viewer color TOML (overrides environment/default path)"
+    )
+    result.add_argument("--terminal-colors", type=int, help=argparse.SUPPRESS)
     result.add_argument("--viewer-socket", help=argparse.SUPPRESS)
     result.add_argument("--instance-dir", type=Path, help=argparse.SUPPRESS)
     result.add_argument("--agent", default="", help=argparse.SUPPRESS)

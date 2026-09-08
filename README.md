@@ -63,6 +63,16 @@ workspace. Double-click the active tab name or the workspace name at the top to
 edit in place: **Enter** saves and **Escape** cancels. Right-click those names or
 workspace buttons for their options. See [inline names](docs/INLINE_RENAME.md).
 
+## Viewer colors
+
+Choose **Colors…** in the sidebar, or focus the sidebar with **Ctrl-g s** and
+press **t**, to edit and preview viewer colors. **Apply** saves, **Cancel** restores
+the current colors, and **Restore defaults** previews the shipped appearance.
+Colors use a user configuration file; select another with `--theme PATH`.
+Fonts, font size and shell program colors stay under terminal control.
+See the [theme guide](docs/THEMES.md) for palette fallbacks, file precedence and
+concurrent-edit behavior.
+
 ## Attach the sessions you already have
 
 Select a pane, choose **Attach session…**, and pick an existing tmux session.

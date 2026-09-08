@@ -18,6 +18,8 @@ from .model import LayoutConflict, Model, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
 from .source import Source
+from .theme import DEFAULT_THEME, ROLE_LABELS, ThemeError, ThemeFile, load_theme, theme_path
+from .theme_editor import FIELD_HINT, ThemeEditor, failed, failure, fit_labels, hint
 
 
 def visible(text: str) -> str:
@@ -34,11 +36,17 @@ class Sidebar:
         display: Display,
         actions: Actions,
         shortcut_hints: str = "prefix",
+        theme_path=None,
+        terminal_colors: int | None = None,
     ):
         self.screen, self.model, self.store = screen, model, store
         self.source, self.display = source, display
         self.actions = actions
         self.shortcut_hints = shortcut_hints
+        # Colors are read once in run(); construction touches no user file.
+        self.theme_path, self.terminal_colors = theme_path, terminal_colors
+        self.colors, self.theme, self.palette = 8, None, None
+        self.theme_editor: ThemeEditor | None = None
         self.keymap = display.keymap
         self.hits: list[tuple[int, int, int, Callable]] = []
         self.context_hits: list[tuple[int, int, int, Callable]] = []
@@ -75,6 +83,51 @@ class Sidebar:
     def selected(self) -> int:
         """Index of the active menu row within those options."""
         return self.selection.index
+
+    def style(self, role: str) -> int:
+        """Attributes for a semantic role. Pairs are installed, never per frame."""
+        return self.palette.style(role) if self.palette else 0
+
+    def describe(self, role: str) -> str:
+        """What a role will actually render as; empty until a palette installs."""
+        return self.palette.describe(role) if self.palette else ""
+
+    def message_style(self, message: str, notice: bool) -> int:
+        """Failures add bold, so severity survives a reduced or reversed palette."""
+        return self.style("accent" if notice else "muted") | (
+            curses.A_BOLD if failed(message) else 0
+        )
+
+    def install(self, theme) -> None:
+        """Show a theme in place: four pair updates, no reopen and no redraw loop."""
+        palette = theme.resolve(self.colors)
+        palette.install(curses)
+        self.theme, self.palette, self.last_frame = theme, palette, None
+        # The role names the sidebar's own base, so its empty cells and the
+        # cleared frame carry the configured background rather than the
+        # terminal's, which is only visible once someone configures one.
+        with contextlib.suppress(curses.error):
+            self.screen.bkgdset(" ", palette.style("normal"))
+
+    def setup_theme(self) -> None:
+        """Read the user's colors once. An unusable file keeps working colors."""
+        curses.start_color()
+        # The outer client bounds what the user can see; this terminal bounds
+        # what init_pair will accept. Neither alone is safe.
+        ceiling = getattr(curses, "COLORS", 0) or 8
+        self.colors = min(self.terminal_colors or ceiling, ceiling)
+        loaded = load_theme(self.theme_path)
+        self.theme_path = loaded.path
+        if loaded.diagnostic:
+            self.message = failure(visible(loaded.diagnostic))[:100]
+        try:
+            self.install(loaded.theme)
+        except ThemeError as error:
+            # Colors must never stop the workspace layer: fall back to the
+            # shipped theme, and to the terminal's own colors if even that fails.
+            self.message = failure(visible(str(error)))[:100]
+            with contextlib.suppress(ThemeError):
+                self.install(DEFAULT_THEME)
 
     def save(self) -> None:
         try:
@@ -165,21 +218,116 @@ class Sidebar:
         self.show()
 
     def draw_inline(self, row: int, x: int, width: int) -> tuple[int, int]:
-        text, column = self.inline_editor.viewport(width)
-        style = curses.color_pair(2) | (
-            curses.A_REVERSE if self.inline_editor.selected else curses.A_UNDERLINE
+        return self.draw_field(self.inline_editor, row, x, width)
+
+    def open_theme(self) -> None:
+        """Edit the viewer's semantic colors: same route by click or by key."""
+        if not self.leave_theme():
+            return
+        colors = ThemeFile(theme_path(self.theme_path))
+        # Reading now records what is on disk, so an edit made while the editor
+        # is open is reported as a conflict instead of being overwritten.
+        loaded = colors.read()
+        self.open_menu("theme")
+        working = self.theme or DEFAULT_THEME
+        self.theme_editor = ThemeEditor(
+            working,
+            colors.write,
+            self.install,
+            DEFAULT_THEME,
+            labels=ROLE_LABELS,
+            writable=colors.writable(),
         )
+        if loaded.diagnostic:
+            self.theme_editor.message = failure(visible(loaded.diagnostic))[:100]
+        elif loaded.theme != working and self.theme_editor.preview(loaded.theme):
+            # Someone saved other colors since this viewer read the file. Show
+            # them, so Apply cannot replace values the user never saw. Cancel
+            # still restores the colors the viewer is running.
+            self.theme_editor.message = "Saved colors shown"
+
+    def theme_action(self, action: Callable, *args) -> None:
+        action(*args)
+        editor = self.theme_editor
+        if editor and editor.closed:
+            # The editor closed, so its colors are installed: Apply saved them
+            # and Cancel put back the ones it opened with.
+            self.theme_editor = None
+            self.show()
+            self.message = "Colors saved" if editor.saved else ""
+
+    def draw_field(self, editor, row: int, x: int, width: int) -> tuple[int, int]:
+        text, column = editor.viewport(width)
+        style = self.style("active") | (curses.A_REVERSE if editor.selected else curses.A_UNDERLINE)
         self.put(row, x, text + " " * (width - cells(text)), style, width)
         return row, x + column
 
+    def draw_theme(self, height: int, width: int) -> tuple[int, int] | None:
+        editor = self.theme_editor
+        rows = editor.rows()
+        self.put(3, 1, FIELD_HINT if editor.field else hint(width - 2), self.style("accent"))
+        start, cursor = 4, None
+        available = max(1, height - start - 6)
+        offset = max(0, min(editor.index, len(rows) - available))
+        if editor.index >= offset + available:
+            offset = editor.index - available + 1
+        value_width = max(6, (width - 6) // 2)
+        column = width - value_width - 1
+        # One column of air between a truncated label and its value.
+        label_width = max(1, column - 1)
+        labels = fit_labels(rows, max(1, label_width - 2))
+        for index in range(offset, min(len(rows), offset + available)):
+            row = start + index - offset
+            value, active = rows[index][2], rows[index][3]
+            if len(value) > value_width:
+                value = value[: max(0, value_width - 1)] + "…"
+            # One styled run per row, so a selected row highlights as a whole.
+            name = f"{'▶' if active else ' '} {labels[index]}".ljust(column)
+            self.button(
+                row,
+                name + value,
+                lambda index=index: self.theme_action(editor.edit, index),
+                x=0,
+                width=width - 1,
+                active=active,
+            )
+            if active and editor.field:
+                cursor = self.draw_field(editor.field, row, column, value_width)
+        half = (width - 3) // 2
+        self.button(height - 4, "Apply", lambda: self.theme_action(editor.apply), width=half)
+        self.button(height - 4, "Cancel", lambda: self.theme_action(editor.cancel), x=1 + half)
+        self.button(height - 3, "Restore defaults", lambda: self.theme_action(editor.defaults))
+        message = editor.message or self.describe(editor.target[0])
+        self.put(height - 2, 1, message, self.message_style(message, bool(editor.message)))
+        return cursor
+
+    def leave_theme(self) -> bool:
+        """Close the color editor if one is open, restoring the colors it opened
+        with. False means the terminal refused that restore, so the editor and
+        its reason stay on screen and the caller must not proceed."""
+        if self.theme_editor:
+            self.theme_editor.cancel()
+            if not self.theme_editor.closed:
+                return False
+            self.theme_editor = None
+            if self.menu == "theme":
+                # The screen belongs to the editor, so it goes when the editor
+                # does, whether or not the caller opens something else.
+                self.menu = None
+        return True
+
     def close_menu(self) -> None:
         """Drop an open menu without moving the keyboard away from its pane."""
+        if not self.leave_theme():
+            return
         self.menu, self.query = None, ""
         self.selection.reset()
         self.replace_name = False
         self.attach_target = None
 
     def show(self) -> None:
+        if not self.leave_theme():
+            return
         self.clear_inline()
         self.close_menu()
         self.save()
@@ -224,6 +372,8 @@ class Sidebar:
             self.open_menu("workspace")
 
     def open_menu(self, name: str, pending: str = "") -> None:
+        if not self.leave_theme():
+            return
         self.clear_inline()
         self.remember()
         self.menu, self.pending, self.query = name, pending, ""
@@ -322,6 +472,11 @@ class Sidebar:
                 self.mouse(x, y, curses.BUTTON1_PRESSED)
             return
         self.clear_inline()
+        if name == "quit":
+            self.quit()
+            return
+        if not self.leave_theme():
+            return
         if name.startswith("attach-pane:"):
             _, tab_id, leaf_id = name.split(":")
             self.attach_pane(tab_id, leaf_id)
@@ -357,7 +512,6 @@ class Sidebar:
             "previous-workspace": lambda: self.next_workspace(-1),
             "rename-workspace": lambda: self.rename("rename-workspace"),
             "sidebar": self.focus_sidebar,
-            "quit": self.quit,
             "close-pane": self.close_pane,
             "close-tab": self.close_tab,
         }
@@ -466,7 +620,7 @@ class Sidebar:
     ) -> None:
         columns = self.screen.getmaxyx()[1]
         width = width or columns - x - 1
-        self.put(y, x, text.ljust(width), curses.color_pair(2 if active else 1), width)
+        self.put(y, x, text.ljust(width), self.style("active" if active else "normal"), width)
         self.hits.append((y, x, x + width, action))
         if context:
             self.context_hits.append((y, x, x + width, context))
@@ -534,6 +688,7 @@ class Sidebar:
                 ("New workspace", lambda: self.rename("new-workspace")),
                 ("Rename workspace", lambda: self.rename("rename-workspace")),
                 ("Delete empty workspace", self.delete_workspace),
+                ("Colors…", self.open_theme),
             ]
         return []
 
@@ -590,7 +745,7 @@ class Sidebar:
 
     def activate(self) -> None:
         """Run the active menu row. Nothing is activated by guesswork."""
-        if not self.menu or self.menu in {"name", "inline-name"} or not self.roomy():
+        if not self.menu or self.menu in {"name", "inline-name", "theme"} or not self.roomy():
             return
         self.menu_rows(drawn=False)
         entry = self.selection.entry()
@@ -639,7 +794,7 @@ class Sidebar:
         # A frame too small for the menu paints a warning instead, so it displays
         # no row and must not leave one armed for Enter.
         rows, start = ([], 0)
-        if self.menu and self.menu != "inline-name":
+        if self.menu and self.menu not in {"inline-name", "theme"}:
             if self.roomy():
                 rows, start = self.menu_rows(agents)
             else:
@@ -662,6 +817,7 @@ class Sidebar:
             self.tab_offset,
             self.message,
             self.display.small,
+            repr(self.theme_editor),
         )
         if frame == self.last_frame:
             return
@@ -674,7 +830,7 @@ class Sidebar:
         self.hits.clear()
         self.context_hits.clear()
         if not self.roomy():
-            self.put(0, 0, "Enlarge terminal")
+            self.put(0, 0, "Enlarge terminal", self.style("normal"))
             self.button(2, "Exit viewer", self.quit)
             self.screen.refresh()
             return
@@ -687,6 +843,11 @@ class Sidebar:
                 "tab": "Tab options",
                 "workspace": "Workspace options",
                 "name": "Type a name",
+                "theme": (
+                    "Viewer colors · preview"
+                    if self.theme_editor and self.theme_editor.changed
+                    else "Viewer colors"
+                ),
                 "shortcuts": (
                     "Terminal profile keys"
                     if self.shortcut_hints == "command"
@@ -695,7 +856,7 @@ class Sidebar:
                 "prefix-shortcuts": f"{tmux_key_label(self.keymap.prefix)}, then…",
                 "command-shortcuts": "Terminal profile keys",
             }
-            self.put(2, 1, titles[self.menu], curses.A_BOLD)
+            self.put(2, 1, titles[self.menu], self.style("normal") | curses.A_BOLD)
             if self.menu == "command-shortcuts" or (
                 self.menu == "shortcuts" and self.shortcut_hints == "command"
             ):
@@ -703,14 +864,16 @@ class Sidebar:
                     3,
                     1,
                     "Requires terminal profile",
-                    curses.color_pair(3),
+                    self.style("accent"),
                 )
             if self.menu in {"name", "agents"}:
-                self.put(3, 1, "> ", curses.color_pair(2))
-                style = curses.color_pair(2) | (curses.A_REVERSE if self.replace_name else 0)
+                self.put(3, 1, "> ", self.style("active"))
+                style = self.style("active") | (curses.A_REVERSE if self.replace_name else 0)
                 self.put(3, 3, self.query[-(width - 5) :], style)
             if self.menu == "name":
                 self.button(5, "Save name", self.accept_name)
+            elif self.menu == "theme":
+                cursor = self.draw_theme(height, width)
             else:
                 for row, entry in enumerate(rows, start):
                     self.button(
@@ -721,16 +884,20 @@ class Sidebar:
                     )
                 if not rows:
                     self.put(
-                        start, 1, "No matching sessions" if self.menu == "agents" else "No entries"
+                        start,
+                        1,
+                        "No matching sessions" if self.menu == "agents" else "No entries",
+                        self.style("normal"),
                     )
                 self.button(height - 2, "↑", lambda: self.scroll(-1), width=5)
                 self.button(height - 2, "↓", lambda: self.scroll(1), x=8, width=5)
                 if width >= 24:
-                    self.put(height - 2, 15, "↵ open · Esc", curses.color_pair(3))
+                    self.put(height - 2, 15, "↵ open · Esc", self.style("accent"))
         else:
             workspace_edit = self.inline_editor and self.inline_target[1] is None
             self.name_hits.append((0, 1, width - 7, "workspace:" + self.model.space["id"]))
-            self.put(0, 1, self.model.space["name"], curses.A_BOLD, width - 8)
+            header = self.style("normal") | curses.A_BOLD
+            self.put(0, 1, self.model.space["name"], header, width - 8)
             if workspace_edit:
                 cursor = self.draw_inline(0, 1, width - 8)
             self.context_hits.append(
@@ -742,7 +909,7 @@ class Sidebar:
                 1,
                 1,
                 hint if workspace_edit else "─" * (width - 2),
-                curses.color_pair(3 if workspace_edit else 4),
+                self.style("accent" if workspace_edit else "muted"),
             )
             tab = self.model.tab
             tabs = self.model.space["tabs"]
@@ -773,7 +940,7 @@ class Sidebar:
                     row,
                     width - len(count) - 2,
                     count,
-                    curses.color_pair(2 if active else 4),
+                    self.style("active" if active else "muted"),
                 )
                 self.name_hits.append((row, len(prefix), len(prefix) + room, item["id"]))
                 tab_edit = active and self.inline_editor and self.inline_target[1] == item["id"]
@@ -801,15 +968,15 @@ class Sidebar:
                     label = "Shell"
                 if tab_edit:
                     label = hint
-                self.put(row, 1 if tab_edit else 3, label, curses.color_pair(3))
+                self.put(row, 1 if tab_edit else 3, label, self.style("accent"))
                 self.hits.append((row, 0, width - 1, action))
                 self.context_hits.append((row, 0, width - 1, context))
                 row += 1
             if not tabs:
-                self.put(2, 1, "No tabs yet", curses.color_pair(4))
+                self.put(2, 1, "No tabs yet", self.style("muted"))
                 self.button(3, "Open a terminal +", self.new_tab)
             half = (width - 2) // 2
-            self.put(bottom - 1, 1, "─" * (width - 2), curses.color_pair(4))
+            self.put(bottom - 1, 1, "─" * (width - 2), self.style("muted"))
             if len(tabs) > available:
                 self.button(bottom - 1, "↑ Tabs", lambda: self.scroll(-1), width=half)
                 self.button(bottom - 1, "↓ Tabs", lambda: self.scroll(1), x=1 + half)
@@ -819,23 +986,22 @@ class Sidebar:
             self.button(bottom + 1, label, self.toggle_focus, width=half)
             self.button(bottom + 1, "Next →", self.next_pane, x=1 + half)
             self.button(bottom + 2, "Attach session…", lambda: self.open_menu("agents"))
-            self.put(bottom + 2, 1, "Attach session…", curses.color_pair(3))
+            self.put(bottom + 2, 1, "Attach session…", self.style("accent"))
             self.button(bottom + 3, "Tab actions…", lambda: self.open_menu("tab"))
             self.button(
                 bottom + 4, "Shortcuts", lambda: self.open_menu("shortcuts"), width=width - 8
             )
             self.button(bottom + 4, "Exit", self.quit, x=width - 6, width=5)
-            self.put(bottom + 5, 1, "─" * (width - 2), curses.color_pair(4))
-            self.button(bottom + 6, "Workspaces…", lambda: self.open_menu("workspace"))
+            self.put(bottom + 5, 1, "─" * (width - 2), self.style("muted"))
+            self.button(bottom + 6, "Workspaces…", lambda: self.open_menu("workspace"), width=half)
+            self.button(bottom + 6, "Colors…", self.open_theme, x=1 + half)
             self.workspace_buttons(bottom + 7, width)
-            self.put(
-                bottom + 8,
-                1,
+            status = (
                 error
                 or self.message
-                or ("Narrow: focus view" if self.display.small and tab else "Layouts saved"),
-                curses.color_pair(3 if error or self.message else 4),
+                or ("Narrow: focus view" if self.display.small and tab else "Layouts saved")
             )
+            self.put(bottom + 8, 1, status, self.message_style(status, bool(error or self.message)))
         if cursor:
             with contextlib.suppress(curses.error):
                 curses.curs_set(1)
@@ -844,7 +1010,9 @@ class Sidebar:
 
     def scroll(self, amount: int) -> None:
         self.clear_inline()
-        if self.menu:
+        if self.theme_editor:
+            self.theme_action(self.theme_editor.move, amount)
+        elif self.menu:
             self.selection.scroll(amount)
         else:
             self.tab_offset = max(0, self.tab_offset + amount)
@@ -894,10 +1062,14 @@ class Sidebar:
                 self.last_name_click = None
             else:
                 self.inline_editor.key(key)
+        elif self.menu == "theme":
+            self.theme_action(self.theme_editor.key, key)
         elif key == "\x1b":
             self.show()
         elif self.menu:
             self.menu_input(key)
+        elif key == "t":
+            self.open_theme()
         elif key == curses.KEY_UP:
             self.scroll(-1)
         elif key == curses.KEY_DOWN:
@@ -957,16 +1129,7 @@ class Sidebar:
 
     def run(self) -> None:
         curses.curs_set(0)
-        curses.start_color()
-        curses.use_default_colors()
-        curses.init_pair(1, -1, -1)
-        curses.init_pair(
-            2,
-            231 if curses.COLORS >= 256 else curses.COLOR_WHITE,
-            238 if curses.COLORS >= 256 else curses.COLOR_BLUE,
-        )
-        curses.init_pair(4, 245 if curses.COLORS >= 256 else curses.COLOR_WHITE, -1)
-        curses.init_pair(3, 108 if curses.COLORS >= 256 else curses.COLOR_CYAN, -1)
+        self.setup_theme()
         curses.mouseinterval(0)
         curses.mousemask(curses.ALL_MOUSE_EVENTS)
         self.screen.keypad(True)
