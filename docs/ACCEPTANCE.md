@@ -63,10 +63,13 @@ continue to launch ordinary login shells. Normal exit and delayed detach succeed
 unexpected private-server loss still fails.
 
 The navigation budgets and the runs that met them are described in
-[PERFORMANCE.md](PERFORMANCE.md), together with the paired comparison showing that
-later theme, keyboard, refresh and packaging work did not slow switching. PTY
-readiness and routing do not prove native Ghostty paint, actual SSH transport, or
-WSL behavior.
+[PERFORMANCE.md](PERFORMANCE.md), together with the paired comparison showing no
+overall slowdown from the later theme, keyboard, refresh and packaging work: seven
+of eight paths improved at the median, and four-pane shortcut-workspace rose 8.9%
+there while improving at p95. PTY readiness and routing do not prove native
+Ghostty paint, actual SSH transport, or WSL behavior. The manual click-and-typing
+acceptance pass in [PERFORMANCE.md](PERFORMANCE.md#human-acceptance-on-the-real-terminal)
+is the owner's, and is recorded separately from these measurements.
 
 
 ## Hosted terminal coverage — 2026-09-08
@@ -271,9 +274,10 @@ The observer and a native terminal GUI were outside that scope.
 
 These short samples on one development host establish an initial observation,
 not a cross-platform performance guarantee or evidence that adding panes lowers
-CPU use. Coarse CPU accounting and host activity can affect the figures. A
-repeatable benchmark with longer samples, separate mouse/shortcut measurements
-and explicit readiness criteria remains work to complete before public release.
+CPU use. Coarse CPU accounting and host activity can affect the figures. The
+repeatable benchmark that followed supplies longer samples, separate mouse and
+shortcut measurements and explicit readiness criteria; idle CPU still lacks a
+measured Linux baseline and any figure from a machine other than this one.
 
 ## User keymap verification
 

@@ -242,9 +242,10 @@ menus, viewer themes and explicit refresh — so the release head was re-measure
 against `4d3d213` directly. Runs alternated between the two revisions so that host
 load fell on both equally, three runs each, identical benchmark source and options.
 Pooled over ninety events per path, the release head was faster at the median on
-seven of eight paths, by 1.2% to 25.8%. The single median regression, four-pane
-shortcut-workspace at +8.9%, came with a 5.3% p95 improvement. The later work did
-not slow navigation.
+seven of eight paths, by 1.2% to 25.8%. One path moved the other way: four-pane
+shortcut-workspace rose 8.9% at the median, while its p95 fell 5.3%. Taken
+together the later work did not slow navigation overall, and that single path is
+the exception to watch if four-pane workspace switching is changed again.
 
 That comparison ran on a host under heavy competing load, where **neither**
 revision meets the budgets: it establishes the absence of a regression, not
@@ -255,9 +256,23 @@ rests on the quiet-host runs above.
 
 Every figure is a PTY measurement on Apple silicon. It is not native Ghostty
 paint, not a frame-completion time, not an SSH or WSL measurement, and not a
-result for slower or loaded machines. Readiness and routing probes do not by
-themselves prove that typing immediately alongside a click is safe; the PTY
-same-write and burst suites cover that case, and the owner's observation of the
-running application covers the visual behavior the numbers cannot describe.
-Re-run the [human acceptance procedure](#human-acceptance-on-the-real-terminal)
-when navigation, rendering or attachment code changes materially.
+result for slower or loaded machines.
+
+Of the [human acceptance procedure](#human-acceptance-on-the-real-terminal), the
+parts a fixture can perform are covered by automation. Every run types a unique
+marker through the same input path after each navigation and verifies it reached
+only the intended shell, and each fixture also exercises resize and an attached
+session going offline and reconnecting. The PTY same-write and burst suites cover
+typing immediately alongside a gesture, which readiness probes alone cannot
+establish.
+
+What automation cannot supply is step 1: watching the selection and the
+destination together on a real terminal for a highlight flash, a missing name, a
+transient layout expansion or a visibly late selection. The owner has reported
+switching as smooth and the earlier highlight and transition artifact as gone.
+That is the observation the numbers cannot describe, but it is not the full
+recorded pass — twenty alternations by click and then by shortcut, at one and
+four panes, with the terminal, version, dimensions and connection recorded. Run
+that pass on the terminal you intend to support before making a performance claim
+to other people, and re-run it whenever navigation, rendering or attachment code
+changes materially.
