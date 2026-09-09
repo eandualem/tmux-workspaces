@@ -228,10 +228,12 @@ with one- and four-pane layouts. These were short, ten-second samples on one
 development host, including the viewer's tmux servers, shells and helper processes.
 See the [measurement scope and limits](docs/ACCEPTANCE.md#idle-cpu-baseline).
 
-**Switching performance remains a public-release gate.** Reducing rendering and
-tmux command costs needs measured improvement for both clicks and shortcuts.
-The main viewer interpreter stays alive and skips unchanged frames; action and
-attachment helpers can still start during interaction.
+Tab and workspace switching met its **150 ms median / 250 ms p95** budget on every
+one- and four-pane path, by click and by shortcut, across three runs on an idle
+development machine. The main viewer interpreter stays alive and skips unchanged
+frames; action and attachment helpers can still start during interaction. These
+are PTY measurements from one host, not a guarantee for a loaded or slower one.
+See the [gate result and its limits](docs/PERFORMANCE.md#release-gate-result).
 
 ## Verify
 

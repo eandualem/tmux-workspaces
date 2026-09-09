@@ -62,11 +62,11 @@ checks shell handoff independently of system profile overrides; other suites
 continue to launch ordinary login shells. Normal exit and delayed detach succeed;
 unexpected private-server loss still fails.
 
-The isolated repeated performance comparison and remaining four-pane budgets are
-described in [PERFORMANCE.md](PERFORMANCE.md). PTY readiness and routing do not
-prove native Ghostty paint, actual SSH transport, or WSL behavior. The public
-performance gate remains open pending its remaining measurements and manual
-acceptance procedure.
+The navigation budgets and the runs that met them are described in
+[PERFORMANCE.md](PERFORMANCE.md), together with the paired comparison showing that
+later theme, keyboard, refresh and packaging work did not slow switching. PTY
+readiness and routing do not prove native Ghostty paint, actual SSH transport, or
+WSL behavior.
 
 
 ## Hosted terminal coverage — 2026-09-08
@@ -326,10 +326,10 @@ shortcut capture or native GUI parity.
   Shared writable clients can affect the same session's size in another window.
 - Layout changes rebuild content attachment clients. The main viewer process is
   persistent and skips identical frames, but Python action helpers start per
-  keyboard action and leaf wrappers start when content is rebuilt. Reducing render
-  and tmux command costs is a public-release gate. Repeated measurements must
-  demonstrate better tab/workspace switching for both clicks and shortcuts while
-  preserving shell ownership, input ordering and layout stability.
+  keyboard action and leaf wrappers start when content is rebuilt. Repeated
+  measurements met the switching budgets for both clicks and shortcuts while
+  preserving shell ownership, input ordering and layout stability. They were taken
+  on one idle development machine; a loaded or slower host will be slower.
 - Narrow terminals temporarily show one pane while retaining the saved tree.
   There is no physical-display identity or per-display arrangement storage.
 - Processes survive viewer exit while their tmux server lives. They cannot survive
