@@ -3,7 +3,7 @@
 **A workspace layer for tmux.** Group terminals by purpose, name their tabs, keep
 a split layout in each one, and come back to the same arrangement tomorrow.
 
-```
+```text
 ┌────────────────────────────┬───────────────────────────────────┐
 │ Workspace 1          [ + ] │ $ pytest -q                       │
 │ ────────────────────────── │ ......................            │
