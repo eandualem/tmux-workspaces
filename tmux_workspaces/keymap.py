@@ -21,7 +21,13 @@ MAX_KEYMAP_BYTES = 64 * 1024
 MAX_BINDINGS_PER_ACTION = 32
 ACTION_CODES = MappingProxyType(
     {action: entry[2] for action, entry in DIRECT_SHORTCUTS.items()}
-    | {"workspaces": 9018, "quit": 9019, "tab-options": 9051, "workspace-options": 9052}
+    | {
+        "workspaces": 9018,
+        "quit": 9019,
+        "refresh-viewer": 9050,
+        "tab-options": 9051,
+        "workspace-options": 9052,
+    }
 )
 ACTION_LABELS = MappingProxyType(
     {
@@ -45,6 +51,7 @@ ACTION_LABELS = MappingProxyType(
         "close-pane": "Close pane",
         "close-tab": "Close tab",
         "sidebar": "Focus navigation",
+        "refresh-viewer": "Refresh viewer",
         "quit": "Exit viewer",
     }
     | {f"select-tab-{n}": f"Select tab {n}" for n in range(1, 10)}
@@ -56,7 +63,7 @@ _ACTION_ORDER = tuple(ACTION_LABELS)
 # it kept working before these menus existed. An unconfigured default here gives
 # that key up rather than refusing to load; anything the user assigned to these
 # actions is theirs and still collides like every other explicit binding.
-YIELDING_DEFAULTS = frozenset({"tab-options", "workspace-options"})
+YIELDING_DEFAULTS = frozenset({"tab-options", "workspace-options", "refresh-viewer"})
 _NAMED_KEYS = {
     key.lower(): key
     for key in (
@@ -387,18 +394,17 @@ class Keymap:
 DEFAULT_KEYMAP = Keymap.from_dict({})
 
 
-def load_keymap(
+def keymap_source(
     path: Path | str | None = None,
     *,
-    disabled: bool = False,
     environ: Mapping[str, str] | None = None,
     cwd: Path | None = None,
-) -> Keymap:
-    """Read once at launch; only an absent implicit default is silently ignored."""
-    if disabled:
-        if path is not None:
-            raise ValueError("an explicit keymap path cannot be combined with disabled keymaps")
-        return DEFAULT_KEYMAP
+) -> tuple[Path, bool]:
+    """Resolve which file a launch reads, and whether that selection was explicit.
+
+    Relaunching a viewer preserves this selection rather than the map it produced,
+    so an edited file can be re-read and validated before the current one closes.
+    """
     env = os.environ if environ is None else environ
     explicit = path is not None or bool(env.get("TMUX_WORKSPACES_KEYMAP"))
     if path is None:
@@ -412,6 +418,22 @@ def load_keymap(
         selected = Path(env.get("HOME") or Path.home()) / str(selected)[2:]
     if not selected.is_absolute():
         selected = (Path.cwd() if cwd is None else Path(cwd)) / selected
+    return selected, explicit
+
+
+def load_keymap(
+    path: Path | str | None = None,
+    *,
+    disabled: bool = False,
+    environ: Mapping[str, str] | None = None,
+    cwd: Path | None = None,
+) -> Keymap:
+    """Read once at launch; only an absent implicit default is silently ignored."""
+    if disabled:
+        if path is not None:
+            raise ValueError("an explicit keymap path cannot be combined with disabled keymaps")
+        return DEFAULT_KEYMAP
+    selected, explicit = keymap_source(path, environ=environ, cwd=cwd)
     try:
         with selected.open("rb") as stream:
             payload = stream.read(MAX_KEYMAP_BYTES + 1)

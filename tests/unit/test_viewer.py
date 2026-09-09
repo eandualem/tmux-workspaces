@@ -7,11 +7,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tmux_workspaces.application import launch
 from tmux_workspaces.attachments import attachment_hosts_viewer
 from tmux_workspaces.cli import default_data_dir, default_source_socket, parser
 from tmux_workspaces.display import Display
 from tmux_workspaces.model import Model
+from tmux_workspaces.supervisor import supervise
 from tmux_workspaces.targets import session_target
 from tmux_workspaces.tmux import clean_env
 
@@ -41,7 +41,7 @@ class LauncherTests(unittest.TestCase):
                 self.subTest(arguments=arguments),
                 self.assertRaisesRegex(ValueError, "--backbone"),
             ):
-                launch(parser().parse_args(arguments))
+                supervise(parser().parse_args(arguments))
         args = parser().parse_args([])
         self.assertFalse(args.backbone)
         self.assertIsNone(args.backbone_data_dir)

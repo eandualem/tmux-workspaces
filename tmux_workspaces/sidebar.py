@@ -38,6 +38,7 @@ class Sidebar:
         shortcut_hints: str = "prefix",
         theme_path=None,
         terminal_colors: int | None = None,
+        relaunch=None,
     ):
         self.screen, self.model, self.store = screen, model, store
         self.source, self.display = source, display
@@ -47,6 +48,15 @@ class Sidebar:
         self.theme_path, self.terminal_colors = theme_path, terminal_colors
         self.colors, self.theme, self.palette = 8, None, None
         self.theme_editor: ThemeEditor | None = None
+
+        # Absent outside a launched window; refresh then reports its own limit
+        # instead of closing a viewer that nothing would reopen.
+        self.relaunch = relaunch
+        self.refresh_problem: str | None = None
+        self.refresh_command: str | None = None
+        self.command_offset = 0
+        # Shown inside a menu, where the ordinary status line is not drawn.
+        self.menu_message = ""
         self.keymap = display.keymap
         self.hits: list[tuple[int, int, int, Callable]] = []
         self.context_hits: list[tuple[int, int, int, Callable]] = []
@@ -322,6 +332,7 @@ class Sidebar:
             return
         self.menu, self.query = None, ""
         self.selection.reset()
+        self.menu_message = ""
         self.replace_name = False
         self.attach_target = None
 
@@ -378,6 +389,7 @@ class Sidebar:
         self.remember()
         self.menu, self.pending, self.query = name, pending, ""
         self.selection.reset()
+        self.menu_message = ""
         self.replace_name = False
         tab, pane = self.model.tab, self.model.pane
         # Tab options own Return pane to shell, so they bind the same target as
@@ -471,6 +483,11 @@ class Sidebar:
             if x < width and y < height:
                 self.mouse(x, y, curses.BUTTON1_PRESSED)
             return
+        if name == "refresh-viewer":
+            # Replacing this viewer is deliberate, so an unfinished in-place
+            # rename is neither discarded nor silently saved on the way there.
+            self.refresh_viewer()
+            return
         self.clear_inline()
         if name == "quit":
             self.quit()
@@ -516,6 +533,72 @@ class Sidebar:
             "close-tab": self.close_tab,
         }
         actions[name]()
+
+    def refresh_viewer(self) -> None:
+        if self.theme_editor:
+            self.theme_editor.message = "Apply or cancel the color edit first"
+            return
+        if self.inline_editor or self.menu == "name":
+            # A pending name is unsaved work; never discard it on the way to
+            # replacing the window it is being typed in.
+            self.message = self.menu_message = "Finish or cancel the name edit first"
+            return
+        # A window that can only be reopened by hand says so immediately.
+        # Everything else is checked once, on confirmation, so opening this
+        # menu never runs a probe the shortcut would be waiting on.
+        if self.relaunch is None:
+            self.refresh_problem, self.refresh_command = "Refresh is unavailable here", None
+        else:
+            self.refresh_problem = self.relaunch.check() if self.relaunch.manual_reopen else None
+            self.refresh_command = self.relaunch.manual_command()
+        self.command_offset = 0
+        self.open_menu("refresh")
+
+    def refresh_navigation(self) -> dict:
+        """This window's own selection, so a replacement never adopts a peer's."""
+        tab = self.model.tab
+        return {
+            "workspace": self.model.space["id"],
+            "tab": tab["id"] if tab else "",
+            "leaf": tab["focus"] if tab else "",
+            "focus": bool(self.model.state["focus"]),
+        }
+
+    def confirm_refresh(self) -> None:
+        """Replace only this viewer, and only once its own edits are stored."""
+        if self.relaunch is None:
+            self.menu = None
+            self.message = "Refresh is unavailable in this window"
+            return
+        if self.relaunch.requested:
+            # A second confirmation of the same request is not a second viewer.
+            self.message = self.menu_message = "Refresh already requested"
+            return
+        self.remember()
+        try:
+            self.save()
+        except LayoutConflict as exc:
+            # Nothing has been torn down; the viewer stays usable and current.
+            self.menu = None
+            self.message = visible(str(exc))[:100]
+            return
+        # Re-check: the launcher or the keymap file can change while the
+        # confirmation is open, and only a valid one may close this window.
+        problem = self.relaunch.check()
+        if problem:
+            self.refresh_problem = problem
+            self.refresh_command = self.relaunch.manual_command()
+            self.message = visible(problem)[:100]
+            return
+        if not self.relaunch.submit(self.refresh_navigation()):
+            self.message = self.menu_message = (
+                "Refresh already requested"
+                if self.relaunch.requested
+                else "Could not record the refresh request"
+            )
+            return
+        self.message = "Refreshing viewer…"
+        self.running = False
 
     def toggle_focus(self) -> None:
         self.remember()
@@ -646,13 +729,19 @@ class Sidebar:
         if command_shortcuts:
             return [
                 *self.shortcut_options(command=True),
+                ("Refresh viewer…", self.refresh_viewer),
                 ("Prefix shortcuts…", lambda: self.open_menu("prefix-shortcuts")),
             ]
         if self.menu in {"shortcuts", "prefix-shortcuts"}:
             return [
                 *self.shortcut_options(command=False),
+                ("Refresh viewer…", self.refresh_viewer),
                 ("Terminal profile keys…", lambda: self.open_menu("command-shortcuts")),
             ]
+        if self.menu == "refresh":
+            if not self.refresh_problem:
+                return [("Refresh viewer now", self.confirm_refresh)]
+            return []
         if self.menu == "agents":
             return [
                 (name, lambda name=name: self.attach(name))
@@ -730,7 +819,11 @@ class Sidebar:
         """
         if agents is None:
             agents = self.source.snapshot()[0]
-        start = 5 if self.menu == "agents" else 4
+        start = (
+            5
+            if self.menu == "agents"
+            else 4 + max(0, len(self.notes(self.screen.getmaxyx()[1])) - 1)
+        )
         available = max(1, self.screen.getmaxyx()[0] - start - 3)
         rows = self.selection.show(self.menu_entries(agents), available, drawn=drawn)
         return rows, start
@@ -755,6 +848,44 @@ class Sidebar:
             # The chosen entry is gone, or arrived after the frame the user acted
             # on. Either way its neighbour is a different target: ask again.
             self.message = "Entries changed; choose again"
+
+    def command_lines(self) -> list[str]:
+        """Read-only reopening text, separate from selectable menu actions."""
+        if self.menu != "refresh" or not self.refresh_problem:
+            return []
+        return textwrap.wrap(
+            self.refresh_command or "",
+            width=max(1, self.screen.getmaxyx()[1] - 2),
+            break_on_hyphens=False,
+        )
+
+    def command_rows(self, start: int) -> list[str]:
+        lines = self.command_lines()
+        available = max(1, self.screen.getmaxyx()[0] - start - 3)
+        self.command_offset = min(max(0, self.command_offset), max(0, len(lines) - available))
+        return lines[self.command_offset : self.command_offset + available]
+
+    def notes(self, width: int) -> tuple[str, ...]:
+        """Menu limits shown above the options; description only, never clickable."""
+        if self.menu == "command-shortcuts" or (
+            self.menu == "shortcuts" and self.shortcut_hints == "command"
+        ):
+            return ("Requires terminal profile",)
+        if self.menu != "refresh":
+            return ()
+        manual = bool(self.relaunch and getattr(self.relaunch, "manual_reopen", False))
+        if self.relaunch is None:
+            lines = ("Refresh is unavailable in this window.",)
+        elif self.refresh_problem and not manual:
+            lines = (self.refresh_problem, "Nothing was closed.")
+        else:
+            lines = self.relaunch.notes()
+        lines = (*lines, "Esc close" if self.refresh_problem else "Enter refresh · Esc cancel")
+        wrapped = []
+        for line in lines:
+            wrapped += textwrap.wrap(line, width=max(1, width - 2), break_on_hyphens=False)
+        # Keep room for the option row and the scroll controls on short screens.
+        return tuple(wrapped[: max(1, self.screen.getmaxyx()[0] - 9)])
 
     def tab_capacity(self) -> int:
         # One row per tab, plus one detail row for the active tab.
@@ -799,6 +930,7 @@ class Sidebar:
                 rows, start = self.menu_rows(agents)
             else:
                 self.selection.hide()
+        command_rows = self.command_rows(start)
         # Skip identical frames: idle sidebar does not repaint the terminal.
         frame = (
             repr(self.model.state),
@@ -816,6 +948,8 @@ class Sidebar:
             [entry.key for entry in rows],
             self.tab_offset,
             self.message,
+            self.menu_message,
+            command_rows,
             self.display.small,
             repr(self.theme_editor),
         )
@@ -848,6 +982,7 @@ class Sidebar:
                     if self.theme_editor and self.theme_editor.changed
                     else "Viewer colors"
                 ),
+                "refresh": "Refresh viewer",
                 "shortcuts": (
                     "Terminal profile keys"
                     if self.shortcut_hints == "command"
@@ -857,15 +992,9 @@ class Sidebar:
                 "command-shortcuts": "Terminal profile keys",
             }
             self.put(2, 1, titles[self.menu], self.style("normal") | curses.A_BOLD)
-            if self.menu == "command-shortcuts" or (
-                self.menu == "shortcuts" and self.shortcut_hints == "command"
-            ):
-                self.put(
-                    3,
-                    1,
-                    "Requires terminal profile",
-                    self.style("accent"),
-                )
+            notes = self.notes(width)
+            for index, line in enumerate(notes):
+                self.put(3 + index, 1, line, self.style("accent"))
             if self.menu in {"name", "agents"}:
                 self.put(3, 1, "> ", self.style("active"))
                 style = self.style("active") | (curses.A_REVERSE if self.replace_name else 0)
@@ -875,6 +1004,8 @@ class Sidebar:
             elif self.menu == "theme":
                 cursor = self.draw_theme(height, width)
             else:
+                for row, line in enumerate(command_rows, start):
+                    self.put(row, 1, line, self.style("normal"))
                 for row, entry in enumerate(rows, start):
                     self.button(
                         row,
@@ -882,7 +1013,7 @@ class Sidebar:
                         entry.action,
                         active=self.offset + row - start == self.selected,
                     )
-                if not rows:
+                if not rows and self.menu != "refresh":
                     self.put(
                         start,
                         1,
@@ -892,7 +1023,10 @@ class Sidebar:
                 self.button(height - 2, "↑", lambda: self.scroll(-1), width=5)
                 self.button(height - 2, "↓", lambda: self.scroll(1), x=8, width=5)
                 if width >= 24:
-                    self.put(height - 2, 15, "↵ open · Esc", self.style("accent"))
+                    hint = "read · Esc" if command_rows else "↵ open · Esc"
+                    self.put(height - 2, 15, hint, self.style("accent"))
+            if self.menu_message:
+                self.put(height - 1, 1, self.menu_message, self.style("accent"))
         else:
             workspace_edit = self.inline_editor and self.inline_target[1] is None
             self.name_hits.append((0, 1, width - 7, "workspace:" + self.model.space["id"]))
@@ -1012,6 +1146,8 @@ class Sidebar:
         self.clear_inline()
         if self.theme_editor:
             self.theme_action(self.theme_editor.move, amount)
+        elif self.command_lines():
+            self.command_offset = max(0, self.command_offset + amount)
         elif self.menu:
             self.selection.scroll(amount)
         else:
@@ -1095,6 +1231,20 @@ class Sidebar:
         """Keyboard handling for an open menu: navigate, activate, then filter."""
         if key == curses.KEY_RESIZE:
             return
+        if self.command_lines():
+            steps = {
+                curses.KEY_UP: -1,
+                curses.KEY_DOWN: 1,
+                "\x10": -1,
+                "\x0e": 1,
+                curses.KEY_PPAGE: -max(1, self.screen.getmaxyx()[0] - 9),
+                curses.KEY_NPAGE: max(1, self.screen.getmaxyx()[0] - 9),
+                curses.KEY_HOME: -len(self.command_lines()),
+                curses.KEY_END: len(self.command_lines()),
+            }
+            if key in steps and self.roomy():
+                self.scroll(steps[key])
+            return
         step = self.navigation(key)
         if step is not None:
             # Navigation is read before typing so the chooser's filter field can
@@ -1127,6 +1277,21 @@ class Sidebar:
             return
         self.selection.first()
 
+    def apply_pending(self) -> bool:
+        """Apply queued gestures until one ends this window, then only release them.
+
+        The first confirmed refresh (or exit) wins: gestures already waiting
+        would otherwise change tabs or close shells after the window's final
+        save. Their senders are still acknowledged, so no shortcut hangs.
+        """
+        for action in self.actions.pending():
+            if not self.running:
+                continue
+            with self.display.snapshot_scope():
+                self.action(action)
+                self.draw()
+        return self.running
+
     def run(self) -> None:
         curses.curs_set(0)
         self.setup_theme()
@@ -1141,10 +1306,8 @@ class Sidebar:
         next_poll = 0.0
         while self.running:
             try:
-                for action in self.actions.pending():
-                    with self.display.snapshot_scope():
-                        self.action(action)
-                        self.draw()
+                if not self.apply_pending():
+                    break
                 now = time.monotonic()
                 if now >= next_poll:
                     with self.display.snapshot_scope():

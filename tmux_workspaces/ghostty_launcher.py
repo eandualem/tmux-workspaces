@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .cli import default_source_socket, effective_keymap
 from .cli import parser as viewer_parser
+from .keymap import keymap_source
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_APP = Path("/Applications/Ghostty.app")
@@ -50,6 +51,17 @@ def launch_command(
         "--theme",
         str(theme_path(path=options.theme, cwd=cwd)),
     ]
+    # Keys are frozen for this instance, but where they came from still matters:
+    # a viewer here can only be reopened through this launcher, and the command
+    # it offers has to name the same file and application again.
+    if not options.no_keymap:
+        selected, explicit = keymap_source(options.keymap, cwd=cwd)
+        # An application started this way does not inherit the environment that
+        # chose the file, so name it either way: explicitly when it was asked
+        # for, and as an optional default otherwise.
+        viewer_args += ["--keymap" if explicit else "--keymap-source", str(selected)]
+    if app.expanduser().resolve() != DEFAULT_APP:
+        viewer_args += ["--ghostty-app", str(app.expanduser().resolve())]
     if options.backbone:
         backbone_dir = (
             options.backbone_data_dir

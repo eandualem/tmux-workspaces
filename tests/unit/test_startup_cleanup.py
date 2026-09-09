@@ -81,7 +81,7 @@ class StartupCleanupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             args = parser().parse_args(
-                ["--no-keymap", "--demo", "--data-dir", str(root / "library")]
+                ["_window", "--no-keymap", "--demo", "--data-dir", str(root / "library" / "demo")]
             )
             own_view, own_demo = Mock(), Mock()
             own_view.run.side_effect = OSError("viewer teardown failed")
@@ -99,7 +99,7 @@ class StartupCleanupTests(unittest.TestCase):
                 patch.object(application.subprocess, "run") as command,
             ):
                 with self.assertRaises(RuntimeError) as raised:
-                    application.launch(args)
+                    application.window_main(args)
                 self.assertIs(raised.exception, failure)
                 self.assertIn("viewer teardown failed", failure.__notes__[0])
                 own_view.run.assert_called_once_with("kill-server", check=False)

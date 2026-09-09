@@ -131,7 +131,7 @@ class StartupBoundaryTests(unittest.TestCase):
                 if existing:
                     library.mkdir()
                     (library / "layouts.db").write_bytes(b"untouched fixture bytes")
-                args = parser().parse_args(["--no-keymap", "--data-dir", str(library)])
+                args = parser().parse_args(["_window", "--no-keymap", "--data-dir", str(library)])
                 with (
                     patch.object(
                         application, "check_startup", side_effect=RuntimeError("unsupported")
@@ -140,7 +140,7 @@ class StartupBoundaryTests(unittest.TestCase):
                     patch.object(application, "socket_path") as sockets,
                 ):
                     with self.assertRaisesRegex(RuntimeError, "unsupported"):
-                        application.launch(args)
+                        application.window_main(args)
                     store.assert_not_called()
                     sockets.assert_not_called()
                 if existing:

@@ -1,3 +1,4 @@
+import contextlib
 import copy
 import curses
 import os
@@ -6,10 +7,53 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
-from tmux_workspaces.keymap import DEFAULT_KEYMAP, Keymap
+from tmux_workspaces.keymap import DEFAULT_KEYMAP, Keymap, tmux_key_label
 from tmux_workspaces.model import LayoutConflict, Model, leaves
 from tmux_workspaces.sidebar import Sidebar
 from tmux_workspaces.theme import DEFAULT_THEME, load_theme
+
+
+class FakeRelaunch:
+    """Stand in for the launcher's request without closing anything."""
+
+    def __init__(self, problem=None, lines=("Restarts this viewer only.",)):
+        self.problem, self.lines = problem, lines
+        self.manual_reopen = False
+        self.command = None
+        self.requested = False
+        self.submitted = []
+
+    def notes(self):
+        return self.lines
+
+    def check(self):
+        return self.problem
+
+    def manual_command(self):
+        return self.command
+
+    def submit(self, navigation):
+        if self.requested:
+            return False
+        self.requested = True
+        self.submitted.append(navigation)
+        return True
+
+
+class FakeActions:
+    """Queued shortcut senders, acknowledged exactly like the real receiver."""
+
+    def __init__(self, queued=()):
+        self.queued = list(queued)
+        self.acknowledged = []
+
+    def pending(self):
+        while self.queued:
+            action = self.queued.pop(0)
+            try:
+                yield action
+            finally:
+                self.acknowledged.append(action)
 
 
 class SidebarTests(unittest.TestCase):
@@ -21,14 +65,22 @@ class SidebarTests(unittest.TestCase):
         self.source = Mock(socket="/unused/source.sock", persistent_socket=True)
         self.source.snapshot.return_value = ({}, "")
         self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
+        self.display.snapshot_scope.return_value = contextlib.nullcontext()
         self.display.focused_leaf.return_value = self.model.tab["focus"]
 
         def render(tab, focus):
             self.display.focused_leaf.return_value = tab["focus"] if tab else None
 
         self.display.render.side_effect = render
+        self.relaunch = FakeRelaunch()
         self.sidebar = Sidebar(
-            self.screen, self.model, self.store, self.source, self.display, Mock()
+            self.screen,
+            self.model,
+            self.store,
+            self.source,
+            self.display,
+            Mock(),
+            relaunch=self.relaunch,
         )
         colors = patch("tmux_workspaces.sidebar.curses.color_pair", return_value=0)
         colors.start()
@@ -363,6 +415,199 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.action("new-workspace")
         self.assertFalse(self.sidebar.replace_name)
         self.assertEqual(self.sidebar.query, "")
+
+    def drawn(self):
+        return [
+            (call.args[0], call.args[1], call.args[2]) for call in self.screen.addnstr.mock_calls
+        ]
+
+    def test_refresh_confirms_before_replacing_and_cancelling_changes_nothing(self):
+        self.sidebar.action("refresh-viewer")
+        self.assertEqual(self.sidebar.menu, "refresh")
+        self.sidebar.draw()
+        rows = self.drawn()
+        self.assertIn((2, 1, "Refresh viewer"), rows)
+        self.assertIn((3, 1, "Restarts this viewer only."), rows)
+        option = next(row for row in rows if row[2].startswith("Refresh viewer now"))
+        self.assertIn(
+            (option[0], 1, option[1] + len(option[2])), [hit[:3] for hit in self.sidebar.hits]
+        )
+        self.assertIn((4, 1, "Enter refresh · Esc cancel"), rows)
+        # Back leaves the viewer running with nothing requested.
+        dict(self.sidebar._options({}))
+        self.sidebar.input("\x1b")
+        self.assertIsNone(self.sidebar.menu)
+        self.assertTrue(self.sidebar.running)
+        self.assertFalse(self.relaunch.requested)
+        self.assertEqual(self.relaunch.submitted, [])
+
+    def test_confirmed_refresh_saves_first_and_requests_one_replacement(self):
+        self.model.add_tab("Second tab")
+        self.sidebar.action("refresh-viewer")
+        confirm = dict(self.sidebar._options({}))["Refresh viewer now"]
+        # Enter confirms too, so the action never needs the mouse.
+        self.sidebar.draw()
+        self.sidebar.input("\n")
+        self.store.save.assert_called_with(self.model)
+        self.assertFalse(self.sidebar.running)
+        self.assertEqual(
+            self.relaunch.submitted,
+            [
+                {
+                    "workspace": self.model.space["id"],
+                    "tab": self.model.tab["id"],
+                    "leaf": self.model.tab["focus"],
+                    "focus": False,
+                }
+            ],
+        )
+        # A duplicate click on the same confirmation is not a second viewer.
+        confirm()
+        self.assertEqual(len(self.relaunch.submitted), 1)
+        self.assertEqual(self.sidebar.message, "Refresh already requested")
+
+    def test_refresh_keeps_the_viewer_when_saving_or_validation_fails(self):
+        self.store.save.side_effect = LayoutConflict("Layout changed in another window")
+        self.sidebar.action("refresh-viewer")
+        dict(self.sidebar._options({}))["Refresh viewer now"]()
+        self.assertTrue(self.sidebar.running)
+        self.assertFalse(self.relaunch.requested)
+        self.assertIn("another window", self.sidebar.message)
+        self.assertIsNone(self.sidebar.menu)
+
+        # The confirmation itself is what checks, so a file broken while the
+        # menu was open still cannot close this window.
+        self.store.save.side_effect = None
+        self.sidebar.action("refresh-viewer")
+        confirm = dict(self.sidebar._options({}))["Refresh viewer now"]
+        self.relaunch.problem = "keymap /tmp/keymap.toml: unsupported tmux key 'zz'"
+        confirm()
+        self.assertTrue(self.sidebar.running)
+        self.assertEqual(self.relaunch.submitted, [])
+        self.assertIn("unsupported tmux key", self.sidebar.message)
+
+    def test_a_broken_launcher_is_reported_on_confirmation_without_closing(self):
+        self.relaunch.problem = "Cannot reopen: /checkout/run is missing"
+        self.sidebar.action("refresh-viewer")
+        self.assertEqual(self.sidebar.menu, "refresh")
+        # Opening the menu never probes; the confirmation does, exactly once.
+        self.assertIsNone(self.sidebar.refresh_problem)
+        self.sidebar.draw()
+        self.sidebar.input("\n")
+        self.assertTrue(self.sidebar.running)
+        self.assertEqual(self.relaunch.submitted, [])
+        self.sidebar.draw()
+        rows = [text for _row, _x, text in self.drawn()]
+        self.assertIn("/checkout/run is missing", rows)
+        self.assertIn("Nothing was closed.", rows)
+        self.assertNotIn("Refresh viewer now", dict(self.sidebar._options({})))
+
+    def test_a_window_with_fixed_terminal_keys_shows_the_command_to_reopen_it(self):
+        self.relaunch.manual_reopen = True
+        self.relaunch.problem = "This window is reopened by hand"
+        self.relaunch.lines = ("This window's keys were fixed.", "Start it again with:")
+        self.relaunch.command = "/checkout/ghostty --data-dir '/lib rary'"
+        self.sidebar.action("refresh-viewer")
+        options = list(dict(self.sidebar._options({})))
+        self.assertNotIn("Refresh viewer now", options)
+        self.assertEqual(options, [])
+        self.assertEqual(" ".join(self.sidebar.command_lines()), self.relaunch.command)
+        self.sidebar.draw()
+        rows = [text for _row, _x, text in self.drawn()]
+        self.assertIn("This window's keys were", rows)
+        self.assertIn("Esc close", rows)
+        # The instruction rows are inert: nothing is torn down by reading them.
+        for _label, action in self.sidebar._options({}):
+            action()
+        self.assertTrue(self.sidebar.running)
+        self.assertEqual(self.relaunch.submitted, [])
+
+    def test_reopen_command_is_read_only_and_scrolls_without_selecting_fragments(self):
+        self.relaunch.manual_reopen = True
+        self.relaunch.problem = "Reopen this terminal"
+        self.relaunch.command = "run " + " ".join(f"segment{i:02d}" for i in range(80))
+        self.sidebar.action("refresh-viewer")
+        self.screen.getmaxyx.return_value = (20, 28)
+        self.sidebar.draw()
+        first = self.sidebar.command_rows(self.sidebar.menu_rows()[1])
+        self.assertIn("segment00", " ".join(first))
+        self.assertIsNone(self.sidebar.selection.entry())
+        self.assertEqual(self.sidebar._options({}), [])
+        self.sidebar.input(curses.KEY_END)
+        self.sidebar.draw()
+        last = self.sidebar.command_rows(self.sidebar.menu_rows()[1])
+        self.assertIn("segment79", " ".join(last))
+        self.assertNotEqual(first, last)
+        self.sidebar.input("\n")
+        self.assertTrue(self.sidebar.running)
+        self.assertEqual(self.relaunch.submitted, [])
+        self.sidebar.input(curses.KEY_HOME)
+        self.sidebar.draw()
+        self.assertEqual(self.sidebar.command_rows(self.sidebar.menu_rows()[1]), first)
+        # No text row is a button; only Back and the scroll controls are hit-tested.
+        self.assertEqual(len(self.sidebar.hits), 3)
+
+    def test_refresh_defers_to_an_open_name_edit_and_to_an_unlaunched_viewer(self):
+        self.sidebar.draw()
+        self.sidebar.click_name(self.model.tab["id"], 3, 2, double=True)
+        self.assertIsNotNone(self.sidebar.inline_editor)
+        self.sidebar.action("refresh-viewer")
+        self.assertIsNotNone(self.sidebar.inline_editor)
+        self.assertEqual(self.sidebar.menu, "inline-name")
+        self.assertFalse(self.relaunch.requested)
+        self.assertEqual(self.sidebar.message, "Finish or cancel the name edit first")
+        self.sidebar.input("\x1b")
+
+        self.sidebar.relaunch = None
+        self.sidebar.action("refresh-viewer")
+        self.assertEqual(self.sidebar._options({}), [])
+        self.sidebar.input("\n")
+        self.assertTrue(self.sidebar.running)
+        self.assertEqual(self.sidebar.refresh_problem, "Refresh is unavailable here")
+
+    def test_refresh_refuses_while_a_name_menu_is_open_and_says_so_there(self):
+        self.sidebar.action("rename-tab")
+        self.assertEqual(self.sidebar.menu, "name")
+        self.sidebar.action("refresh-viewer")
+        self.assertEqual(self.sidebar.menu, "name")
+        self.assertFalse(self.relaunch.requested)
+        self.sidebar.draw()
+        self.assertIn(
+            "Finish or cancel the name edit first", [text for _r, _x, text in self.drawn()]
+        )
+
+    def test_gestures_queued_behind_a_confirmed_refresh_are_released_not_applied(self):
+        self.model.add_tab("Second tab")
+        actions = FakeActions(["close-tab", "new-tab", "quit"])
+        self.sidebar.actions = actions
+        self.sidebar.action("refresh-viewer")
+        self.sidebar.draw()
+        self.sidebar.input("\n")
+        self.assertFalse(self.sidebar.running)
+        self.assertEqual(len(self.relaunch.submitted), 1)
+        tabs = copy.deepcopy(self.model.space["tabs"])
+
+        self.assertFalse(self.sidebar.apply_pending())
+        self.assertEqual(self.model.space["tabs"], tabs)
+        self.display.shells.close.assert_not_called()
+        # Every waiting shortcut is still released, so none of them hangs.
+        self.assertEqual(actions.acknowledged, ["close-tab", "new-tab", "quit"])
+
+    def test_queued_gestures_before_a_refresh_still_apply(self):
+        actions = FakeActions(["new-tab"])
+        self.sidebar.actions = actions
+        self.assertTrue(self.sidebar.apply_pending())
+        self.assertEqual(len(self.model.space["tabs"]), 2)
+        self.assertEqual(actions.acknowledged, ["new-tab"])
+
+    def test_refresh_reaches_the_confirmation_from_the_shortcut_list(self):
+        options = dict(self.sidebar.shortcut_options(command=False))
+        label = next(text for text in options if "Refresh viewer" in text)
+        self.assertIn("Ctrl-g", tmux_key_label(DEFAULT_KEYMAP.prefix))
+        self.assertTrue(label.startswith("f "))
+        options[label]()
+        self.assertEqual(self.sidebar.menu, "refresh")
+        self.assertFalse(self.relaunch.requested)
 
 
 class KeyboardMenuTests(SidebarTests):
@@ -853,6 +1098,24 @@ class ThemeMenuTests(unittest.TestCase):
         self.sidebar.input("t")
         self.assertEqual(self.sidebar.menu, "theme")
         self.assertIsNot(self.sidebar.theme_editor, editor)
+
+    def test_refresh_keeps_an_open_color_draft_until_apply_or_cancel(self):
+        self.sidebar.input("t")
+        self.sidebar.input("\n")
+        self.type("blue")
+        self.sidebar.input("\n")
+        editor = self.sidebar.theme_editor
+        preview = self.sidebar.theme
+        self.sidebar.relaunch = Mock()
+        self.sidebar.action("refresh-viewer")
+        self.assertIs(self.sidebar.theme_editor, editor)
+        self.assertEqual(self.sidebar.theme, preview)
+        self.assertEqual(self.sidebar.menu, "theme")
+        self.assertIn("Apply or cancel", editor.message)
+        self.sidebar.relaunch.submit.assert_not_called()
+        self.assertTrue(self.sidebar.running)
+        self.sidebar.input("\x1b")
+        self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
 
     def test_every_role_and_action_is_drawn_with_a_non_color_marker(self):
         self.sidebar.input("t")
