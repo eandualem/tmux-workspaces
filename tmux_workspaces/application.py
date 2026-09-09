@@ -125,6 +125,7 @@ def sidebar_main(args) -> int:
                         theme_path=args.theme,
                         terminal_colors=args.terminal_colors,
                         relaunch=request,
+                        keymap_path=args.keymap or args.keymap_source,
                     ).run()
                 )
             except curses.error as error:

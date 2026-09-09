@@ -12,11 +12,14 @@ from collections.abc import Callable
 from .controls import Actions, mouse_action
 from .display import Display
 from .events import InputEvents
-from .keymap import ACTION_LABELS, tmux_key_label
+from .keymap import ACTION_LABELS, DEFAULT_KEYMAP, KeymapFile, tmux_key_label
 from .menu import Entry, Selection
 from .model import LayoutConflict, Model, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
+from .shortcut_editor import CAPTURE_HINT, CONFIRM_HINT, ShortcutEditor
+from .shortcut_editor import FIELD_HINT as KEY_FIELD_HINT
+from .shortcut_editor import hint as shortcut_hint
 from .source import Source
 from .theme import DEFAULT_THEME, ROLE_LABELS, ThemeError, ThemeFile, load_theme, theme_path
 from .theme_editor import FIELD_HINT, ThemeEditor, failed, failure, fit_labels, hint
@@ -39,6 +42,7 @@ class Sidebar:
         theme_path=None,
         terminal_colors: int | None = None,
         relaunch=None,
+        keymap_path=None,
     ):
         self.screen, self.model, self.store = screen, model, store
         self.source, self.display = source, display
@@ -48,6 +52,11 @@ class Sidebar:
         self.theme_path, self.terminal_colors = theme_path, terminal_colors
         self.colors, self.theme, self.palette = 8, None, None
         self.theme_editor: ThemeEditor | None = None
+        # The file a shortcut edit would write. Absent means the viewer
+        # inherited a map rather than reading one, so Save has no implicit
+        # destination and the editor says so instead of guessing a path.
+        self.keymap_path = keymap_path
+        self.shortcut_editor: ShortcutEditor | None = None
 
         # Absent outside a launched window; refresh then reports its own limit
         # instead of closing a viewer that nothing would reopen.
@@ -255,6 +264,106 @@ class Sidebar:
             # them, so Apply cannot replace values the user never saw. Cancel
             # still restores the colors the viewer is running.
             self.theme_editor.message = "Saved colors shown"
+
+    def open_shortcut_editor(self) -> None:
+        """Open the shortcut editor over the keymap this viewer is running."""
+        if self.shortcut_editor:
+            return
+        if self.keymap_path is None:
+            # An inherited snapshot has no file behind it. Writing the implicit
+            # default path would create a map the user never chose and silently
+            # freeze the keys they are using, so refuse and name the option.
+            self.menu_message = failure(
+                "this viewer inherited its shortcuts; start it with --keymap FILE to edit them"
+            )
+            return
+        keys = KeymapFile(self.keymap_path)
+        # Reading now records what is on disk, so an edit made while the editor
+        # is open is reported as a conflict instead of being overwritten.
+        loaded = keys.read()
+        working = self.keymap
+        self.open_menu("edit-shortcuts")
+        self.shortcut_editor = ShortcutEditor(
+            working,
+            keys.write,
+            DEFAULT_KEYMAP,
+            self.keymap_path,
+            writable=keys.writable(),
+            lossy=not keys.rewrites_cleanly(loaded.keymap),
+        )
+        if loaded.diagnostic:
+            self.shortcut_editor.message = failure(visible(loaded.diagnostic))[:100]
+        elif loaded.keymap != working:
+            # Someone saved other shortcuts since this viewer read the file.
+            # Say so rather than letting Save replace keys the user never saw.
+            self.shortcut_editor.message = "The saved file differs from the keys running here"
+        elif self.shortcut_editor.lossy:
+            self.shortcut_editor.message = "Saving rewrites the file; comments are not kept"
+
+    def shortcut_action(self, action: Callable, *args) -> None:
+        action(*args)
+        editor = self.shortcut_editor
+        if editor and editor.closed:
+            self.shortcut_editor = None
+            self.show()
+            self.message = editor.effect() if editor.saved else ""
+
+    def draw_shortcuts(self, height: int, width: int) -> tuple[int, int] | None:
+        editor = self.shortcut_editor
+        rows = editor.rows()
+        if editor.pending is not None:
+            guide = CONFIRM_HINT
+        elif editor.capturing:
+            guide = CAPTURE_HINT
+        elif editor.field:
+            guide = KEY_FIELD_HINT
+        else:
+            guide = shortcut_hint(width - 2)
+        self.put(3, 1, guide, self.style("accent"))
+        start, cursor = 4, None
+        available = max(1, height - start - 6)
+        offset = max(0, min(editor.index, len(rows) - available))
+        if editor.index >= offset + available:
+            offset = editor.index - available + 1
+        value_width = max(6, (width - 6) // 2)
+        column = width - value_width - 1
+        for index in range(offset, min(len(rows), offset + available)):
+            row = start + index - offset
+            label, section, value, active, changed = rows[index]
+            if len(value) > value_width:
+                value = value[: max(0, value_width - 1)] + "…"
+            # The section word disambiguates two rows that name one action, and
+            # the marker shows which rows a Save would actually write.
+            name = f"{'▶' if active else ' '} {'*' if changed else ''}{label} ({section})"
+            name = name[: max(1, column)].ljust(column)
+            self.button(
+                row,
+                name + value,
+                lambda index=index: self.shortcut_action(editor.edit, index),
+                x=0,
+                width=width - 1,
+                active=active,
+            )
+            if active and editor.field:
+                cursor = self.draw_field(editor.field, row, column, value_width)
+        half = (width - 3) // 2
+        self.button(height - 4, "Apply", lambda: self.shortcut_action(editor.apply), width=half)
+        self.button(height - 4, "Cancel", lambda: self.shortcut_action(editor.cancel), x=1 + half)
+        self.button(height - 3, "Restore default", lambda: self.shortcut_action(editor.restore))
+        message = editor.message or str(editor.destination)
+        self.put(height - 2, 1, message, self.message_style(message, bool(editor.message)))
+        return cursor
+
+    def leave_shortcuts(self) -> bool:
+        """Close the shortcut editor if one is open, discarding staged changes."""
+        if self.shortcut_editor:
+            self.shortcut_editor.cancel()
+            if not self.shortcut_editor.closed:
+                return False
+            self.shortcut_editor = None
+            if self.menu == "edit-shortcuts":
+                self.menu = None
+        return True
 
     def theme_action(self, action: Callable, *args) -> None:
         action(*args)
@@ -538,6 +647,9 @@ class Sidebar:
         if self.theme_editor:
             self.theme_editor.message = "Apply or cancel the color edit first"
             return
+        if self.shortcut_editor:
+            self.shortcut_editor.message = "Apply or cancel the shortcut edit first"
+            return
         if self.inline_editor or self.menu == "name":
             # A pending name is unsaved work; never discard it on the way to
             # replacing the window it is being typed in.
@@ -729,12 +841,14 @@ class Sidebar:
         if command_shortcuts:
             return [
                 *self.shortcut_options(command=True),
+                ("Edit shortcuts…", self.open_shortcut_editor),
                 ("Refresh viewer…", self.refresh_viewer),
                 ("Prefix shortcuts…", lambda: self.open_menu("prefix-shortcuts")),
             ]
         if self.menu in {"shortcuts", "prefix-shortcuts"}:
             return [
                 *self.shortcut_options(command=False),
+                ("Edit shortcuts…", self.open_shortcut_editor),
                 ("Refresh viewer…", self.refresh_viewer),
                 ("Terminal profile keys…", lambda: self.open_menu("command-shortcuts")),
             ]
@@ -838,7 +952,11 @@ class Sidebar:
 
     def activate(self) -> None:
         """Run the active menu row. Nothing is activated by guesswork."""
-        if not self.menu or self.menu in {"name", "inline-name", "theme"} or not self.roomy():
+        if (
+            not self.menu
+            or self.menu in {"name", "inline-name", "theme", "edit-shortcuts"}
+            or not self.roomy()
+        ):
             return
         self.menu_rows(drawn=False)
         entry = self.selection.entry()
@@ -925,7 +1043,7 @@ class Sidebar:
         # A frame too small for the menu paints a warning instead, so it displays
         # no row and must not leave one armed for Enter.
         rows, start = ([], 0)
-        if self.menu and self.menu not in {"inline-name", "theme"}:
+        if self.menu and self.menu not in {"inline-name", "theme", "edit-shortcuts"}:
             if self.roomy():
                 rows, start = self.menu_rows(agents)
             else:
@@ -952,6 +1070,7 @@ class Sidebar:
             command_rows,
             self.display.small,
             repr(self.theme_editor),
+            repr(self.shortcut_editor),
         )
         if frame == self.last_frame:
             return
@@ -990,6 +1109,11 @@ class Sidebar:
                 ),
                 "prefix-shortcuts": f"{tmux_key_label(self.keymap.prefix)}, then…",
                 "command-shortcuts": "Terminal profile keys",
+                "edit-shortcuts": (
+                    "Edit shortcuts · unsaved"
+                    if self.shortcut_editor and self.shortcut_editor.changed
+                    else "Edit shortcuts"
+                ),
             }
             self.put(2, 1, titles[self.menu], self.style("normal") | curses.A_BOLD)
             notes = self.notes(width)
@@ -1003,6 +1127,8 @@ class Sidebar:
                 self.button(5, "Save name", self.accept_name)
             elif self.menu == "theme":
                 cursor = self.draw_theme(height, width)
+            elif self.menu == "edit-shortcuts":
+                cursor = self.draw_shortcuts(height, width)
             else:
                 for row, line in enumerate(command_rows, start):
                     self.put(row, 1, line, self.style("normal"))
@@ -1146,6 +1272,8 @@ class Sidebar:
         self.clear_inline()
         if self.theme_editor:
             self.theme_action(self.theme_editor.move, amount)
+        elif self.shortcut_editor:
+            self.shortcut_action(self.shortcut_editor.move, amount)
         elif self.command_lines():
             self.command_offset = max(0, self.command_offset + amount)
         elif self.menu:
@@ -1200,6 +1328,11 @@ class Sidebar:
                 self.inline_editor.key(key)
         elif self.menu == "theme":
             self.theme_action(self.theme_editor.key, key)
+        elif self.menu == "edit-shortcuts":
+            # Every key belongs to the editor while it is open, including the
+            # ones that would otherwise run an action: capture must be able to
+            # bind them without triggering them.
+            self.shortcut_action(self.shortcut_editor.key, key)
         elif key == "\x1b":
             self.show()
         elif self.menu:
