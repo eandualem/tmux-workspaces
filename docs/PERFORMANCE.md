@@ -1,11 +1,12 @@
 # Performance measurement
 
-Switching performance is a public-release gate. Before optimization, the target
-for **each** one- and four-pane tab/workspace navigation path is **p50 ≤ 150 ms
-and p95 ≤ 250 ms**, for both clicks and direct shortcuts. These are engineering
-acceptance budgets, not a claim about the current version. Meet them for both
-shell-client readiness and the routed-input acknowledgement in repeated untraced
-runs. Timing is deliberately not asserted by ordinary unit tests.
+Switching performance was the public-release gate. The target for **each** one-
+and four-pane tab/workspace navigation path is **p50 ≤ 150 ms and p95 ≤ 250 ms**,
+for both clicks and direct shortcuts, met for both shell-client readiness and the
+routed-input acknowledgement in repeated untraced runs. These are engineering
+acceptance budgets, not a guarantee about any particular machine. Three quiet-host
+runs met them; [the result](#release-gate-result) records what that does and does
+not establish. Timing is deliberately not asserted by ordinary unit tests.
 
 ## Run on disposable terminals
 
@@ -127,10 +128,11 @@ path you intend to support. Test both a single pane and a four-pane layout:
    observed behavior and all benchmark runs. PTY figures alone cannot certify
    the native display or network path.
 
-Do not close the performance gate merely because a trace is shorter or the
-numbers disappear from the README. It requires measured budget compliance,
-correct input routing, preserved ownership/layout behavior, passing integration
-checks and the observed interaction above.
+Never call the switching budgets met because a trace is shorter or the numbers
+disappear from the README. The claim requires measured budget compliance, correct
+input routing, preserved ownership/layout behavior, passing integration checks and
+the observed interaction above. The same bar applies to any later change that
+alters navigation, rendering or attachment.
 
 ## Existing baseline and limitations
 
@@ -140,8 +142,8 @@ trees and exited children, on Python 3.14.7/tmux 3.7c at 160×38 with
 `xterm-256color`. This is a short sample from one development host, not a scaling
 claim or cross-platform guarantee. The previous switch probe used keyboard input
 only. Its raw timings remain engineering evidence; they are not mouse or native
-paint measurements. Keep before/after navigation results with the performance
-issue until the release gate has been met.
+paint measurements. The before/after navigation results are kept with the
+performance issue.
 
 The repeatable harness was exercised against runtime revision `56357b0` on
 macOS/Darwin 25.6.0, arm64 with ten logical CPUs, Python 3.14.7 and tmux 3.7c.
@@ -151,8 +153,8 @@ navigation events per group, idle measured **0.60–0.90%** for one-pane views a
 ordinary shells respectively, including parked tabs: eleven and twenty-nine owned
 processes stayed stable through the idle samples. Shell identities also survived
 navigation, resize and attachment changes. These are one host's exploratory
-results, not evidence that more panes use less CPU. The navigation gate is still
-open; keep the raw event samples with the engineering issue for comparison.
+results, not evidence that more panes use less CPU. The navigation gate was still
+open at this revision; the raw event samples are kept with the engineering issue.
 
 ## Repeated packaged baseline
 
@@ -173,8 +175,8 @@ native display measurements.
 Valid idle samples had weighted means of 0.797% of one CPU for one pane and
 0.843% for four panes. One of nine one-pane CPU samples was invalidated for
 process-set churn and retained in the raw evidence; all nine four-pane samples
-were valid. No run or latency sample was discarded. Only the one-pane click-tab
-path met both navigation budgets in every run. The performance gate remains open.
+were valid. No run or latency sample was discarded. At this revision, only the
+one-pane click-tab path met both navigation budgets in every run.
 
 An independent same-write gesture-and-typing stress test found an existing mouse
 input loss on the baseline: readiness probes alone do not establish immediate
@@ -222,4 +224,55 @@ The comparison isolates the performance changes and predates integration with
 layout validation, provider isolation, shell context and final lifecycle fixes.
 It must not be presented as a measurement of final main. A small integrated probe
 checks the combined revision separately; it cannot replace the repeated budgets
-or native terminal visual acceptance. The public-release gate remains open.
+or native terminal visual acceptance. The budgets were met at a later revision;
+see [the result](#release-gate-result).
+
+## Release gate result
+
+The budgets were met at geometry-reuse revision `fad3d125`, whose tree is the
+merged `4d3d213`. Three untraced runs on a quiet host, thirty events per path per
+run, passed **every** budget on **every** path — one and four panes, clicks and
+shortcuts, readiness and routed acknowledgement separately. Ninety events per path
+per pane count; all 720 post-readiness routing probes were unique and every shell
+identity survived. Per-run figures and the paired baseline comparison are recorded
+on [the performance gate](https://github.com/eandualem/tmux-workspaces/issues/3).
+
+Considerable work landed afterwards — keymaps, startup checks, packaging, keyboard
+menus, viewer themes and explicit refresh — so the release head was re-measured
+against `4d3d213` directly. Runs alternated between the two revisions so that host
+load fell on both equally, three runs each, identical benchmark source and options.
+Pooled over ninety events per path, the release head was faster at the median on
+seven of eight paths, by 1.2% to 25.8%. One path moved the other way: four-pane
+shortcut-workspace rose 8.9% at the median, while its p95 fell 5.3%. Taken
+together the later work did not slow navigation overall, and that single path is
+the exception to watch if four-pane workspace switching is changed again.
+
+That comparison ran on a host under heavy competing load, where **neither**
+revision meets the budgets: it establishes the absence of a regression, not
+compliance. Do not quote its absolute milliseconds as a result. Budget compliance
+rests on the quiet-host runs above.
+
+### What this does not establish
+
+Every figure is a PTY measurement on Apple silicon. It is not native Ghostty
+paint, not a frame-completion time, not an SSH or WSL measurement, and not a
+result for slower or loaded machines.
+
+Of the [human acceptance procedure](#human-acceptance-on-the-real-terminal), the
+parts a fixture can perform are covered by automation. Every run types a unique
+marker through the same input path after each navigation and verifies it reached
+only the intended shell, and each fixture also exercises resize and an attached
+session going offline and reconnecting. The PTY same-write and burst suites cover
+typing immediately alongside a gesture, which readiness probes alone cannot
+establish.
+
+What automation cannot supply is step 1: watching the selection and the
+destination together on a real terminal for a highlight flash, a missing name, a
+transient layout expansion or a visibly late selection. The owner has reported
+switching as smooth and the earlier highlight and transition artifact as gone.
+That is the observation the numbers cannot describe, but it is not the full
+recorded pass — twenty alternations by click and then by shortcut, at one and
+four panes, with the terminal, version, dimensions and connection recorded. Run
+that pass on the terminal you intend to support before making a performance claim
+to other people, and re-run it whenever navigation, rendering or attachment code
+changes materially.
