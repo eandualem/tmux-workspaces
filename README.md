@@ -1,5 +1,7 @@
 # tmux-workspaces
 
+[![CI](https://github.com/eandualem/tmux-workspaces/actions/workflows/ci.yml/badge.svg)](https://github.com/eandualem/tmux-workspaces/actions/workflows/ci.yml)
+
 **A workspace layer for tmux.** Group terminals by purpose, name their tabs, keep
 a split layout in each one, and come back to the same arrangement tomorrow.
 
