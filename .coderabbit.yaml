@@ -1,0 +1,11 @@
+# Automated review settings.
+#
+# Pull requests target `develop`, which is not the default branch, and auto
+# review is limited to the default branch unless the bases are listed here.
+# Without this every pull request in the normal workflow would go unreviewed.
+version: 2
+reviews:
+  auto_review:
+    enabled: true
+    base_branches:
+      - develop

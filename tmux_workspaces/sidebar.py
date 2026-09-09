@@ -17,7 +17,7 @@ from .menu import Entry, Selection
 from .model import LayoutConflict, Model, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
-from .shortcut_editor import CAPTURE_HINT, CONFIRM_HINT, ShortcutEditor
+from .shortcut_editor import CAPTURE_HINT, CONFIRM_HINT, ShortcutEditor, fit_rows
 from .shortcut_editor import FIELD_HINT as KEY_FIELD_HINT
 from .shortcut_editor import hint as shortcut_hint
 from .source import Source
@@ -331,18 +331,18 @@ class Sidebar:
             offset = editor.index - available + 1
         value_width = max(6, (width - 6) // 2)
         column = width - value_width - 1
+        # Two marker columns and one of air, so a shortened label never touches
+        # the keys beside it and the two markers keep every row aligned.
+        labels = fit_rows(rows, max(1, column - 3))
         for index in range(offset, min(len(rows), offset + available)):
             row = start + index - offset
-            label, section, value, active, changed = rows[index]
+            _label, _section, value, active, changed = rows[index]
             if len(value) > value_width:
                 value = value[: max(0, value_width - 1)] + "…"
-            # The section word disambiguates two rows that name one action, and
-            # the marker shows which rows a Save would actually write.
-            name = f"{'▶' if active else ' '} {'*' if changed else ''}{label} ({section})"
-            name = name[: max(1, column)].ljust(column)
+            name = f"{'▶' if active else ' '}{'*' if changed else ' '}{labels[index]}"
             self.button(
                 row,
-                name + value,
+                name.ljust(column) + value,
                 lambda index=index: self.shortcut_action(editor.edit, index),
                 x=0,
                 width=width - 1,

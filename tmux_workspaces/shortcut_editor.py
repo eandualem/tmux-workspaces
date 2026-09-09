@@ -102,6 +102,45 @@ def captured_key(key, module=curses) -> str:
     return canonical_tmux_key(key)
 
 
+SHORT_SECTIONS = {"bindings": "pfx", "direct": "term"}
+
+
+def fit_rows(rows, width: int) -> list[str]:
+    """Name every row inside `width`, keeping the section word visible.
+
+    Two rows of one action differ only by their section, so that word is the
+    last thing to go: the vocabulary shortens before the action name does, and
+    the action name truncates before the section is touched. Below the width
+    where even the short section word fits, the rows degrade together rather
+    than collapsing onto each other.
+    """
+    for words in (SECTION_LABELS, SHORT_SECTIONS):
+        labels = [f"{label} ({words[section]})" for label, section, *_ in rows]
+        if all(len(text) <= width for text in labels):
+            return labels
+    labels = []
+    for label, section, *_ in rows:
+        word = SHORT_SECTIONS[section]
+        text = f"{label} ({word})"
+        if len(text) <= width:
+            # Only the names that overflow are shortened; a row that fits keeps
+            # its whole action name even when a longer row beside it cannot.
+            labels.append(text)
+            continue
+        keep = width - len(word) - 4
+        if keep >= 1:
+            labels.append(f"{label[:keep]}… ({word})")
+            continue
+        # Narrower than any name can survive. Keep the section rather than the
+        # name: it is what tells this row from its twin, and a column of two
+        # identical labels is worse than a column of anonymous ones. The sidebar
+        # refuses to draw a menu under eighteen columns, so this is a floor
+        # rather than a layout anyone sees.
+        section_only = f"… ({word})"
+        labels.append(section_only if len(section_only) <= width else f"({word})"[:width])
+    return labels
+
+
 def failure(reason: str) -> str:
     """Mark a message as a failure.
 
@@ -189,7 +228,12 @@ class ShortcutEditor:
         return section == "bindings"
 
     def rows(self) -> list[tuple[str, str, str, bool, bool]]:
-        """Action name, section word, keys, selection and change flag per row."""
+        """Action name, section, keys, selection and change flag per row.
+
+        The section is its key, not its display word: the caller chooses how
+        much of that word fits and shortens it, which it cannot do from the
+        long form alone.
+        """
         rows = []
         for index, (section, action) in enumerate(self.targets):
             current = self.keys(section, action)
@@ -197,7 +241,7 @@ class ShortcutEditor:
             rows.append(
                 (
                     ACTION_LABELS[action],
-                    SECTION_LABELS[section],
+                    section,
                     ", ".join(current) or "none",
                     index == self.index,
                     current != before[action],
