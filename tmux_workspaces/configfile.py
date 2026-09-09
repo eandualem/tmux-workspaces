@@ -88,6 +88,15 @@ class ConfigFile:
     Subclasses add parsing and serialisation; everything that decides whether
     replacing the file is safe belongs here. ``error`` and ``conflict`` are the
     exception types raised, so a caller can keep catching its own.
+
+    The concurrent-edit guarantee has a stated limit. Writers that take the
+    sibling lock are fully serialised against each other. An external editor
+    takes no lock, so it is caught by comparing the bytes on disk with the ones
+    read -- a comparison made twice, the second time immediately before the
+    replacement, which leaves a window of microseconds in which such an editor
+    could write and be overwritten. POSIX offers no rename conditional on the
+    target's contents, so that window cannot be closed here; it is narrowed as
+    far as it goes and named rather than implied away.
     """
 
     def __init__(

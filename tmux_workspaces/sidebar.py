@@ -282,10 +282,15 @@ class Sidebar:
         # Reading now records what is on disk, so an edit made while the editor
         # is open is reported as a conflict instead of being overwritten.
         loaded = keys.read()
-        working = self.keymap
+        # The editor edits the file, so it opens on what the file holds. That is
+        # not always what this viewer is running: the map was snapshotted at
+        # launch and someone may have saved since. Showing the running map here
+        # would let Apply replace bindings the user never saw, so the file wins
+        # and the difference is named instead.
+        stale = loaded.diagnostic is None and loaded.keymap != self.keymap
         self.open_menu("edit-shortcuts")
         self.shortcut_editor = ShortcutEditor(
-            working,
+            loaded.keymap,
             keys.write,
             DEFAULT_KEYMAP,
             self.keymap_path,
@@ -294,10 +299,8 @@ class Sidebar:
         )
         if loaded.diagnostic:
             self.shortcut_editor.message = failure(visible(loaded.diagnostic))[:100]
-        elif loaded.keymap != working:
-            # Someone saved other shortcuts since this viewer read the file.
-            # Say so rather than letting Save replace keys the user never saw.
-            self.shortcut_editor.message = "The saved file differs from the keys running here"
+        elif stale:
+            self.shortcut_editor.message = "Showing the saved file; it differs from the keys here"
         elif self.shortcut_editor.lossy:
             self.shortcut_editor.message = "Saving rewrites the file; comments are not kept"
 
