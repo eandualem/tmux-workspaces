@@ -14,25 +14,20 @@ choose a font; see docs for that boundary.
 from __future__ import annotations
 
 import contextlib
-import errno
-import hashlib
 import json
 import os
-import stat
-import time
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from types import MappingProxyType
+
+from .configfile import ConfigConflict, ConfigError, ConfigFile, Vocabulary, read_file
 
 MAX_THEME_BYTES = 16 * 1024
 MAX_FALLBACKS = 8
 SUBSTITUTE_FOREGROUND = 7
 SUBSTITUTE_BACKGROUND = 0
-LOCK_TIMEOUT_SECONDS = 2.0
-LOCK_POLL_SECONDS = 0.02
 
 # Order is the curses pair number minus one, matching the pairs the viewer has
 # always installed: normal=1, active=2, accent=3, muted=4.
@@ -453,35 +448,14 @@ DEFAULT_THEME = Theme(MappingProxyType(_shipped()))
 
 
 def _read_file(path: Path) -> bytes:
-    """Read a regular file, refusing anything that could block viewer startup.
-
-    Opening a FIFO for reading blocks until a writer appears, so a config path
-    pointing at one would hang the viewer before it drew a frame. O_NONBLOCK
-    makes the open return immediately and fstat then rejects anything that is
-    not a regular file. Symlinks are followed deliberately: people symlink their
-    dotfiles, and a link to a regular file is a regular file here.
-    """
-    handle = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
-    try:
-        if not stat.S_ISREG(os.fstat(handle).st_mode):
-            raise OSError(errno.EINVAL, "not a regular file")
-        chunks, total = [], 0
-        while total <= MAX_THEME_BYTES:
-            chunk = os.read(handle, 4096)
-            if not chunk:
-                break
-            chunks.append(chunk)
-            total += len(chunk)
-        return b"".join(chunks)[: MAX_THEME_BYTES + 1]
-    finally:
-        os.close(handle)
+    return read_file(path, MAX_THEME_BYTES)
 
 
-class ThemeError(ValueError):
+class ThemeError(ConfigError):
     """Actionable failure that never asks the caller to discard its working theme."""
 
 
-class ThemeConflict(ThemeError):
+class ThemeConflict(ThemeError, ConfigConflict):
     """The file changed since it was read; the caller keeps its edits."""
 
 
@@ -565,34 +539,33 @@ def load_theme(
         return ThemeLoad(base, selected, f"{error}; using current colors ({selected})")
 
 
-class ThemeFile:
+THEME_WORDS = Vocabulary(
+    noun="theme",
+    title="Theme",
+    unchanged="Your colors are unchanged",
+    reopen="reopen the colors to see the new file",
+    option="--theme",
+    temp_prefix=".theme-",
+)
+
+
+class ThemeFile(ConfigFile):
     """Reads and conflict-checked atomic writes for one theme file."""
 
     def __init__(self, path):
-        self.path = Path(path)
-        self._digest: str | None = None
-        self._seen = False
-        # A file that exists but could not be read is neither "never read" nor
-        # "read these bytes": replacing it would destroy contents nobody saw.
-        self._unreadable = False
-
-    @staticmethod
-    def _hash(payload: bytes) -> str:
-        # The length is part of the digest: reads stop one byte past the cap, so
-        # without it two different oversized files could share a prefix hash.
-        return hashlib.sha256(f"{len(payload)}:".encode() + payload).hexdigest()
+        super().__init__(
+            path,
+            limit=MAX_THEME_BYTES,
+            words=THEME_WORDS,
+            error=ThemeError,
+            conflict=ThemeConflict,
+        )
 
     def read(self) -> ThemeLoad:
         """Record the bytes seen even when they are invalid, so Apply can repair them."""
-        try:
-            payload = _read_file(self.path)
-        except FileNotFoundError:
-            self._digest, self._seen, self._unreadable = None, True, False
-            return ThemeLoad(DEFAULT_THEME, self.path)
-        except OSError as error:
-            self._digest, self._seen, self._unreadable = None, False, True
-            return ThemeLoad(DEFAULT_THEME, self.path, f"{error.strerror}: {self.path}")
-        self._digest, self._seen, self._unreadable = self._hash(payload), True, False
+        payload, diagnostic = self.read_bytes()
+        if payload is None:
+            return ThemeLoad(DEFAULT_THEME, self.path, diagnostic)
         try:
             return ThemeLoad(parse_theme(payload), self.path)
         except (ValueError, UnicodeDecodeError) as error:
@@ -600,165 +573,11 @@ class ThemeFile:
             # promise a repair only where write() can actually perform one.
             repair = (
                 "shrink it below the size limit before saving"
-                if len(payload) > MAX_THEME_BYTES
+                if self.oversized(payload)
                 else "saving will replace it"
             )
             return ThemeLoad(DEFAULT_THEME, self.path, f"{error}; {repair} ({self.path})")
 
-    def writable(self) -> bool:
-        """Whether a Save can be offered; a race still surfaces as ThemeError."""
-        try:
-            info = self.path.lstat()
-        except FileNotFoundError:
-            parent = self.path.parent
-            while not parent.exists() and parent != parent.parent:
-                parent = parent.parent
-            return os.access(parent, os.W_OK | os.X_OK)
-        except OSError:
-            return False
-        if not stat.S_ISREG(info.st_mode):
-            return False
-        return os.access(self.path, os.W_OK)
-
-    def _check_target(self) -> None:
-        try:
-            info = self.path.lstat()
-        except FileNotFoundError:
-            return
-        except OSError as error:
-            raise ThemeError(f"Theme {self.path}: {error.strerror}") from error
-        if stat.S_ISLNK(info.st_mode):
-            raise ThemeError(
-                "Saving would replace a symbolic link, so nothing was written. Save to "
-                f"a regular file instead of {self.path}."
-            )
-        if not stat.S_ISREG(info.st_mode):
-            raise ThemeError(f"Not a regular file, so it was not replaced: {self.path}")
-        if not os.access(self.path, os.W_OK):
-            raise ThemeError(
-                "The theme file is read-only. Your colors are unchanged; fix the "
-                f"permissions of {self.path} or choose another path with --theme."
-            )
-
-    def _conflict(self) -> None:
-        """Compare the bytes on disk with those last read. Call under the lock."""
-        if self._unreadable:
-            # Permissions can change between the read and the save, so the rule
-            # is stated here rather than left to whether the re-read happens to
-            # fail again.
-            raise ThemeError(
-                "The theme file could not be read, so it was not replaced. Your colors "
-                f"are unchanged; fix the permissions of {self.path}, then apply again."
-            )
-        try:
-            payload = _read_file(self.path)
-        except FileNotFoundError:
-            current = None
-        except OSError as error:
-            raise ThemeError(f"{error.strerror}: {self.path}") from error
-        else:
-            if len(payload) > MAX_THEME_BYTES:
-                raise ThemeError(
-                    f"The theme file is larger than {MAX_THEME_BYTES} bytes, so a "
-                    "concurrent edit cannot be detected safely. Your colors are unchanged; "
-                    f"shrink or remove {self.path}, then apply again."
-                )
-            current = self._hash(payload)
-        if self._seen and current != self._digest:
-            raise ThemeConflict(
-                "The theme file changed on disk since it was read. Your colors are "
-                "unchanged; reopen the colors to see the new file, then apply again. "
-                f"({self.path})"
-            )
-
     def write(self, theme: Theme) -> None:
         """Replace the file atomically, refusing unsafe targets and concurrent edits."""
-        payload = theme.to_toml().encode("utf-8")
-        if len(payload) > MAX_THEME_BYTES:
-            raise ThemeError(f"Theme exceeds {MAX_THEME_BYTES} bytes; remove some values.")
-        self._check_target()
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        except OSError as error:
-            raise ThemeError(
-                f"{error.strerror}: {self.path.parent}. Your colors are unchanged."
-            ) from error
-        lock = self._lock()
-        try:
-            # Everything that decides whether replacing is safe happens here,
-            # while the lock is held, and the digest is checked once more with
-            # the replacement already on disk.
-            self._check_target()
-            self._conflict()
-            temporary = None
-            try:
-                with NamedTemporaryFile(
-                    dir=self.path.parent, prefix=".theme-", suffix=".toml", delete=False
-                ) as stream:
-                    temporary = Path(stream.name)
-                    stream.write(payload)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.chmod(temporary, 0o600)
-                self._conflict()
-                os.replace(temporary, self.path)
-                temporary = None
-            finally:
-                if temporary is not None:
-                    with contextlib.suppress(OSError):
-                        temporary.unlink()
-        except OSError as error:
-            raise ThemeError(
-                f"{error.strerror or error}: {self.path}. Your colors are unchanged."
-            ) from error
-        finally:
-            self._release(lock)
-        self._digest, self._seen, self._unreadable = self._hash(payload), True, False
-
-    def _lock(self):
-        """Serialize this application's writers on a stable sibling lock file.
-
-        The lock cannot live on the theme file itself: write() replaces that
-        inode, so two writers would end up holding locks on different inodes and
-        a first save to a missing file would take no lock at all. The sibling
-        file is never replaced, so its inode is stable. flock is non-blocking and
-        bounded, because a viewer that blocks here stops drawing. External
-        editors do not take this lock, so the byte-level digest comparison, not
-        the lock, is what actually detects a concurrent edit.
-        """
-        try:
-            import fcntl
-        except ImportError:
-            return None
-        target = self.path.with_name("." + self.path.name + ".lock")
-        try:
-            handle = os.open(target, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        except OSError as error:
-            raise ThemeError(
-                f"Theme lock {target}: {error.strerror}. Your colors are unchanged."
-            ) from error
-        deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
-        while True:
-            try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return handle
-            except OSError as error:
-                if error.errno not in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES):
-                    os.close(handle)
-                    raise ThemeError(
-                        f"Theme lock {target}: {error.strerror}. Your colors are unchanged."
-                    ) from error
-                if time.monotonic() >= deadline:
-                    os.close(handle)
-                    raise ThemeError(
-                        "The theme file is being saved by another window. Your colors "
-                        "are unchanged; try again in a moment."
-                    ) from error
-                time.sleep(LOCK_POLL_SECONDS)
-
-    @staticmethod
-    def _release(handle) -> None:
-        if handle is None:
-            return
-        with contextlib.suppress(OSError):
-            os.close(handle)
+        self.write_bytes(theme.to_toml().encode("utf-8"))

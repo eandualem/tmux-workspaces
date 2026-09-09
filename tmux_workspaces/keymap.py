@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 
+from .configfile import ConfigConflict, ConfigError, ConfigFile, Vocabulary
 from .controls import ACTIONS, DIRECT_SHORTCUTS, SHORTCUTS
 
 MAX_KEYMAP_BYTES = 64 * 1024
@@ -368,6 +369,54 @@ class Keymap:
             if keys
         )
 
+    def to_dict(self) -> dict:
+        """A plain mapping this class can read back, naming every action.
+
+        Every action is listed explicitly, including the ones bound to nothing.
+        ``from_dict`` only lets a default yield its key to an explicit binding
+        when the action is absent, so an edited map has to be complete or
+        reloading it could quietly restore a key the user cleared.
+        """
+        return {
+            "prefix": self.prefix,
+            "bindings": {action: list(keys) for action, keys in self.bindings.items()},
+            "direct": {action: list(keys) for action, keys in self.direct.items()},
+        }
+
+    def with_keys(self, section: str, action: str, keys) -> Keymap:
+        """This map with one action's keys replaced, or ValueError with a reason.
+
+        Validation is not repeated here: the candidate goes back through
+        ``from_dict``, which stays the single authority on what a keymap may
+        contain. An invalid edit therefore cannot become a Keymap at all.
+        """
+        if section not in ("bindings", "direct"):
+            raise ValueError(f"unknown keymap section {section!r}")
+        if action not in ACTIONS:
+            raise ValueError(f"unknown action {action!r}")
+        candidate = self.to_dict()
+        candidate[section][action] = [str(key) for key in keys]
+        return Keymap.from_dict(candidate)
+
+    def with_prefix(self, prefix: str) -> Keymap:
+        """This map with a different prefix key, or ValueError with a reason."""
+        candidate = self.to_dict()
+        candidate["prefix"] = str(prefix)
+        return Keymap.from_dict(candidate)
+
+    def released(self, section: str, key: str) -> Keymap:
+        """This map with `key` removed from whichever action holds it.
+
+        Taking a key that is already in use is a deliberate, confirmed step in
+        the editor; this performs only the release, so the caller still has to
+        make the assignment and can show both halves before either happens.
+        """
+        candidate = self.to_dict()
+        canonical = _canonicalize(section, key)
+        for owner, keys in candidate[section].items():
+            candidate[section][owner] = [held for held in keys if held != canonical]
+        return Keymap.from_dict(candidate)
+
     def to_toml(self) -> str:
         lines = [f"prefix = {json.dumps(self.prefix)}"]
         for section, mapping in (("bindings", self.bindings), ("direct", self.direct)):
@@ -392,6 +441,152 @@ class Keymap:
 
 
 DEFAULT_KEYMAP = Keymap.from_dict({})
+
+
+def _canonicalize(section: str, key: str) -> str:
+    """The stored spelling of a key, for the section that will hold it."""
+    if section == "bindings":
+        return canonical_tmux_key(key)
+    if section == "direct":
+        return canonical_ghostty_trigger(key)
+    raise ValueError(f"unknown keymap section {section!r}")
+
+
+@dataclass(frozen=True)
+class Claim:
+    """What already holds a physical key, so the editor can offer a resolution.
+
+    ``kind`` is ``prefix``, ``cancel``, ``bindings`` or ``direct``. ``action`` is
+    set only for the two section kinds. ``held`` is the spelling to remove when
+    the user chooses to take the key, which is not always the key they typed: a
+    terminal trigger and a prefix binding collide through the same physical key
+    while being written differently.
+    """
+
+    kind: str
+    action: str | None
+    held: str
+    reason: str
+
+
+def claim_for(keymap: Keymap, section: str, key: str) -> Claim | None:
+    """What would collide if `key` were assigned in `section`, or None.
+
+    This answers the question ``from_dict`` refuses to: it names the current
+    owner instead of raising on the first problem. ``from_dict`` remains the
+    authority on whether a candidate is legal -- this only decides what the
+    editor should say before building one.
+    """
+    canonical = _canonicalize(section, key)
+    physical = canonical if section == "bindings" else _direct_tmux_key(canonical)
+    for action, keys in keymap.bindings.items() if section == "bindings" else ():
+        if canonical in keys:
+            return Claim(
+                "bindings", action, canonical, f"the prefix key for {ACTION_LABELS[action]}"
+            )
+    for action, triggers in keymap.direct.items() if section == "direct" else ():
+        if canonical in triggers:
+            return Claim(
+                "direct", action, canonical, f"the terminal shortcut for {ACTION_LABELS[action]}"
+            )
+    if physical is None:
+        # A trigger the terminal never turns into a key the viewer can read
+        # cannot collide with a prefix binding at all.
+        return None
+    if physical == keymap.prefix:
+        return Claim("prefix", None, physical, "the prefix key itself")
+    if physical == "Escape":
+        return Claim("cancel", None, physical, "reserved for cancelling")
+    if section == "direct":
+        for action, keys in keymap.bindings.items():
+            if physical in keys:
+                return Claim(
+                    "bindings",
+                    action,
+                    physical,
+                    f"shadowed by the prefix key for {ACTION_LABELS[action]}",
+                )
+        return None
+    for action, triggers in keymap.direct.items():
+        for trigger in triggers:
+            if _direct_tmux_key(trigger) == physical:
+                return Claim(
+                    "direct",
+                    action,
+                    trigger,
+                    f"shadowed by the terminal shortcut for {ACTION_LABELS[action]}",
+                )
+    return None
+
+
+def parse_keymap(payload: bytes) -> Keymap:
+    """A keymap from file bytes, raising ValueError with a reason."""
+    if len(payload) > MAX_KEYMAP_BYTES:
+        raise ValueError(f"keymap exceeds {MAX_KEYMAP_BYTES} bytes")
+    return Keymap.from_dict(tomllib.loads(payload.decode("utf-8")))
+
+
+class KeymapError(ConfigError):
+    """Actionable failure that never asks the caller to discard its working map."""
+
+
+class KeymapConflict(KeymapError, ConfigConflict):
+    """The file changed since it was read; the caller keeps its edits."""
+
+
+KEYMAP_WORDS = Vocabulary(
+    noun="keymap",
+    title="Keymap",
+    unchanged="Your shortcuts are unchanged",
+    reopen="reopen the shortcuts to see the new file",
+    option="--keymap",
+    temp_prefix=".keymap-",
+)
+
+
+@dataclass(frozen=True)
+class KeymapLoad:
+    """A keymap plus the diagnostic to show. Loading never blocks the viewer."""
+
+    keymap: Keymap
+    path: Path
+    diagnostic: str | None = None
+
+
+class KeymapFile(ConfigFile):
+    """Reads and conflict-checked atomic writes for one keymap file."""
+
+    def __init__(self, path):
+        super().__init__(
+            path,
+            limit=MAX_KEYMAP_BYTES,
+            words=KEYMAP_WORDS,
+            error=KeymapError,
+            conflict=KeymapConflict,
+        )
+
+    def read(self) -> KeymapLoad:
+        """Record the bytes seen even when they are invalid, so Save can repair them."""
+        payload, diagnostic = self.read_bytes()
+        if payload is None:
+            return KeymapLoad(DEFAULT_KEYMAP, self.path, diagnostic)
+        try:
+            return KeymapLoad(parse_keymap(payload), self.path)
+        except (ValueError, UnicodeDecodeError) as error:
+            repair = (
+                "shrink it below the size limit before saving"
+                if self.oversized(payload)
+                else "saving will replace it"
+            )
+            return KeymapLoad(DEFAULT_KEYMAP, self.path, f"{error}; {repair} ({self.path})")
+
+    def saves_cleanly(self, keymap: Keymap) -> bool:
+        """Whether saving this keymap would preserve everything the file holds."""
+        return self.rewrites_cleanly(keymap.to_toml().encode("utf-8"))
+
+    def write(self, keymap: Keymap) -> None:
+        """Replace the file atomically, refusing unsafe targets and concurrent edits."""
+        self.write_bytes(keymap.to_toml().encode("utf-8"))
 
 
 def keymap_source(

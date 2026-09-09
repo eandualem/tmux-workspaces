@@ -1445,3 +1445,90 @@ class ThemeMenuTests(unittest.TestCase):
         self.sidebar.input(curses.KEY_DOWN)
         self.sidebar.draw()
         self.screen.erase.assert_called_once()
+
+
+class ShortcutMenuTests(unittest.TestCase):
+    """The shortcut editor reached from the sidebar, and every route out of it."""
+
+    def setUp(self):
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.path = Path(directory.name) / "keymap.toml"
+        self.path.write_text(DEFAULT_KEYMAP.to_toml())
+        self.model = Model.initial()
+        self.screen = Mock()
+        self.screen.getmaxyx.return_value = (38, 28)
+        source = Mock(socket="/unused/source.sock", persistent_socket=True)
+        source.snapshot.return_value = ({}, "")
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
+        self.display.snapshot_scope.return_value = contextlib.nullcontext()
+        self.display.focused_leaf.return_value = self.model.tab["focus"]
+        self.sidebar = Sidebar(
+            self.screen,
+            self.model,
+            Mock(),
+            source,
+            self.display,
+            Mock(),
+            keymap_path=self.path,
+        )
+
+    def opened(self, state=None):
+        """An open editor, optionally left in a sub-state Escape would consume."""
+        self.sidebar.open_shortcut_editor()
+        editor = self.sidebar.shortcut_editor
+        self.assertIsNotNone(editor)
+        if state == "field":
+            editor.edit()
+        elif state == "capture":
+            editor.capture()
+        elif state == "pending":
+            editor.edit()
+            editor.field.value = "v"
+            editor.commit()
+            self.assertIsNotNone(editor.pending)
+        return editor
+
+    def test_opening_shows_the_saved_file(self):
+        editor = self.opened()
+        self.assertEqual(self.sidebar.menu, "edit-shortcuts")
+        self.assertEqual(editor.draft, DEFAULT_KEYMAP)
+
+    def test_a_viewer_without_a_keymap_file_refuses_and_names_the_option(self):
+        self.sidebar.keymap_path = None
+        self.sidebar.open_shortcut_editor()
+        self.assertIsNone(self.sidebar.shortcut_editor)
+        self.assertIn("--keymap", self.sidebar.menu_message)
+
+    def test_every_route_out_closes_the_editor_from_every_state(self):
+        """Leaving must never stranded an editor: undrawn but still taking input."""
+        routes = {
+            "close_menu": lambda: self.sidebar.close_menu(),
+            "show": lambda: self.sidebar.show(),
+            "another menu": lambda: self.sidebar.open_menu("tab"),
+            "action": lambda: self.sidebar.action("new-tab"),
+        }
+        for state in (None, "field", "capture", "pending"):
+            for name, leave in routes.items():
+                with self.subTest(state=state, route=name):
+                    self.opened(state)
+                    leave()
+                    self.assertIsNone(self.sidebar.shortcut_editor)
+                    self.assertNotEqual(self.sidebar.menu, "edit-shortcuts")
+
+    def test_leaving_discards_staged_changes_without_writing(self):
+        before = self.path.read_text()
+        editor = self.opened()
+        editor.edit()
+        editor.field.value = "F9"
+        editor.commit()
+        self.assertTrue(editor.changed)
+        self.sidebar.show()
+        self.assertIsNone(self.sidebar.shortcut_editor)
+        self.assertEqual(self.path.read_text(), before)
+
+    def test_refresh_is_blocked_while_an_edit_is_open(self):
+        editor = self.opened()
+        self.sidebar.refresh_viewer()
+        self.assertIn("Apply or cancel", editor.message)
+        self.assertIs(self.sidebar.shortcut_editor, editor)

@@ -179,6 +179,41 @@ and transfer. Workspace options provide **Delete empty workspace**; a workspace
 with tabs cannot be deleted. These commands need no individual shortcut.
 Menu input belongs to the navigation panel while the menu has focus.
 
+## Editing shortcuts in the viewer
+
+Open **Shortcuts** from the sidebar and choose **Edit shortcuts…**. Each action
+appears twice, once for its prefix key and once for its terminal shortcut, with
+the keys it currently holds. **Enter** types a key, **c** captures one, **d**
+restores the shipped keys for that row, **u** unbinds it, **a** applies and
+**Escape** leaves without changing anything. A row a save would write is marked.
+
+**Capture works for prefix keys only.** Those reach the viewer as ordinary keys,
+so pressing one names it. A terminal shortcut never arrives as a key: the
+terminal converts it to a private sequence first, so pressing the combination
+could only report the mapping already in force. The editor says so and asks you
+to type the trigger instead, using the `direct` grammar below.
+
+Taking a key that is already in use is always asked first, naming the action
+that holds it. Answering yes removes it from that action; answering no keeps
+both as they were. The key is released wherever it actually lives, which is not
+always the row you are editing: `ctrl+t` and `C-t` are the same physical key
+spelled two ways, and only one of those spellings is in your file. The prefix key
+itself and Escape are reserved and cannot be reassigned.
+
+Saving requires a file to save to. A viewer started with `--keymap PATH`, or one
+that read a configuration file, has one; a viewer that inherited its map from
+the instance that launched it does not, and says so rather than inventing a path
+and freezing the keys you are already using. Saving rewrites the file from the
+effective map, so comments and hand formatting are not preserved — the editor
+warns before you save when the file has any. Concurrent edits, read-only files,
+symbolic links and unwritable directories are all refused with the reason, and
+your shortcuts stay as they are.
+
+**Nothing reloads.** A save changes the file. Prefix keys apply to viewers
+opened afterwards, and terminal shortcuts apply to a fresh `./ghostty` instance,
+for the reasons in the last paragraph of the next section. The editor states
+this when it saves rather than implying the new keys are already live.
+
 ## User keymaps
 
 An optional TOML file changes existing action bindings without editing source.
