@@ -67,7 +67,10 @@ class GhosttyLauncherTests(unittest.TestCase):
         )
 
     def test_shell_command_preserves_literal_paths_and_viewer_arguments(self):
-        with tempfile.TemporaryDirectory(prefix="tw-ghostty-", dir="/tmp") as directory:
+        with (
+            tempfile.TemporaryDirectory(prefix="tw-ghostty-", dir="/tmp") as directory,
+            patch.dict(os.environ, {"TMUX_WORKSPACES_KEYMAP": ""}),
+        ):
             root = Path(directory) / "checkout with 'quotes'; $literal"
             root.mkdir()
             (root / "run").write_text(

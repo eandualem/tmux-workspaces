@@ -62,21 +62,31 @@ class RequestTests(unittest.TestCase):
 
     def test_a_damaged_or_forged_request_is_ignored_rather_than_obeyed(self):
         marker = self.directory / relaunch.MARKER
-        for payload in (
-            "[]",
-            "not json",
-            json.dumps({"relaunch": False}),
-            json.dumps({"relaunch": "yes"}),
-            json.dumps({"relaunch": True, "navigation": {"workspace": "../../etc"}}),
-            json.dumps({"relaunch": True, "navigation": {"workspace": "w" * 65}}),
-            json.dumps({"relaunch": True, "navigation": {"workspace": "w1", "tab": 5}}),
-            json.dumps({"relaunch": True, "navigation": "everything"}),
-            "{" + " " * relaunch.MAX_REQUEST_BYTES + "}",
+        ignored_navigation = {"navigation": None}
+        for payload, expected in (
+            ("[]", None),
+            ("not json", None),
+            (json.dumps({"relaunch": False}), None),
+            (json.dumps({"relaunch": "yes"}), None),
+            (
+                json.dumps({"relaunch": True, "navigation": {"workspace": "../../etc"}}),
+                ignored_navigation,
+            ),
+            (
+                json.dumps({"relaunch": True, "navigation": {"workspace": "w" * 65}}),
+                ignored_navigation,
+            ),
+            (
+                json.dumps({"relaunch": True, "navigation": {"workspace": "w1", "tab": 5}}),
+                ignored_navigation,
+            ),
+            (json.dumps({"relaunch": True, "navigation": "everything"}), ignored_navigation),
+            ("{" + " " * relaunch.MAX_REQUEST_BYTES + "}", None),
         ):
             with self.subTest(payload=payload[:40]):
                 marker.write_text(payload)
                 taken = relaunch.take_request(self.directory)
-                self.assertIn(taken, (None, {"navigation": None}), payload[:40])
+                self.assertEqual(taken, expected, payload[:40])
                 self.assertFalse(marker.exists(), "a consumed request was left behind")
         # Only identifiers survive; nothing else in a request is ever read.
         marker.write_text(

@@ -180,7 +180,13 @@ class LayoutRecoveryTests(unittest.TestCase):
                 # A supervisor resolves the library once, so the window it
                 # starts is handed the final directory for that mode.
                 args = parser().parse_args(
-                    ["_window", "--data-dir", str(library), *(["--demo"] if demo else [])]
+                    [
+                        "_window",
+                        "--no-keymap",
+                        "--data-dir",
+                        str(library),
+                        *(["--demo"] if demo else []),
+                    ]
                 )
                 with (
                     patch("tmux_workspaces.preflight.check_terminal"),
