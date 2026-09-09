@@ -7,7 +7,8 @@ extraction on 2026-09-07; that upstream commit does not contain its implementati
 The initial snapshot here comprised the viewer, usage documentation and tests
 under `experiments/workspace_viewer/`.
 
-The imported MIT notice is retained in [LICENSE](../LICENSE). Development since
+The imported MIT notice is retained in [LICENSE](../LICENSE), alongside a copyright
+line for this project's own contributors under the same MIT terms. Development since
 extraction adds independent launch, generic attachment, an opt-in read-only adapter,
 TPM and Ghostty entry points, compact navigation, and inline tab/workspace names.
 No upstream service code, existing layouts, agent data, credentials or transcripts

@@ -27,9 +27,13 @@ class GhosttyLauncherTests(unittest.TestCase):
         self.assertEqual((ROOT / "integrations/ghostty.conf").read_text(), ghostty_bindings())
 
     def test_launch_captures_library_and_source_without_shared_preferences(self):
+        # HOME is explicit so the expected configuration path never depends on the
+        # developer's own home directory or on the account database behind it.
+        home = Path("/tmp/fixture home")
         with patch.dict(
             os.environ,
             {
+                "HOME": str(home),
                 "TMUX": "/tmp/outer,source.sock,1,0",
                 "TMUX_WORKSPACES_DATA_DIR": "/tmp/active library",
                 "PATH": "/custom tools:/usr/bin:/bin",
@@ -62,7 +66,7 @@ class GhosttyLauncherTests(unittest.TestCase):
                 # The file this instance would read is named, so a window here
                 # can offer the same selection back without this environment.
                 "--keymap-source",
-                str(Path.home() / ".config/tmux-workspaces/keymap.toml"),
+                str(home / ".config/tmux-workspaces/keymap.toml"),
             ],
         )
 

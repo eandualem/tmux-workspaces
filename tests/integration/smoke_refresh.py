@@ -75,6 +75,12 @@ def ready(client: Client, library: Path) -> bool:
     return "Layouts saved" in sidebar(Tmux(json.loads(manifest.read_text())["viewer_socket"]))
 
 
+def title_pair(client: Client):
+    """The header's own color pair, or None until that row has been drawn."""
+    drawn = styles(Tmux(client.viewer_socket)).get("title")
+    return pair_colors(drawn) if drawn else None
+
+
 def start(
     resources: FixtureResources,
     library: Path,
@@ -243,7 +249,7 @@ def exercise(resources: FixtureResources) -> None:
     theme = directory / "custom colors.toml"
     theme.write_text('[normal]\nforeground = "white"\nbackground = "blue"\n')
     client = start(resources, library, source, config, theme=theme)
-    assert pair_colors(styles(Tmux(client.viewer_socket))["title"]) == (7, 4)
+    wait(client, lambda: title_pair(client) == (7, 4), "viewer did not load its explicit theme")
     first_instance = client.manifest(library).parent
     first_viewer = Tmux(client.viewer_socket)
 
@@ -323,8 +329,10 @@ def exercise(resources: FixtureResources) -> None:
         "replacement viewer did not become ready",
         timeout=25,
     )
-    assert pair_colors(styles(Tmux(client.viewer_socket))["title"]) == (7, 1), (
-        "replacement did not reload its explicit theme"
+    wait(
+        client,
+        lambda: title_pair(client) == (7, 1),
+        "replacement did not reload its explicit theme",
     )
     second_instance = client.manifest(library).parent
     assert second_instance != first_instance
