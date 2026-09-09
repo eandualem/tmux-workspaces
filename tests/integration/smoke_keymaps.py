@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from tests.integration.support import Client, FixtureResources, click_button, saved, sidebar, wait
@@ -144,9 +145,33 @@ def editor(directory: Path) -> None:
         original = config.read_text()
 
         def open_editor():
-            click_button(client, viewer, "Shortcuts")
+            # Opening the menu is a click, and a click can miss: the sidebar
+            # redraws underneath it on a loaded host, and a button one row from
+            # where it was measured is a different button. Rather than trust the
+            # first one, check the menu it should have opened and click again if
+            # it did not. Every later step verifies its own effect already.
+            for attempt in range(4):
+                if attempt:
+                    # A missed click opens whatever sits a row away, so leave
+                    # that before trying again; Escape on the plain sidebar is
+                    # harmless.
+                    client.type("\x1b")
+                    client.pump(0.2)
+                click_button(client, viewer, "Shortcuts")
+                if opened("Edit shortcuts…"):
+                    break
+                assert attempt < 3, "the shortcuts menu never opened after four clicks"
             click_button(client, viewer, "Edit shortcuts…")
             wait(client, lambda: "Edit shortcuts" in sidebar(viewer), "editor did not open")
+
+        def opened(label: str, timeout: float = 4.0) -> bool:
+            """Whether `label` appears within `timeout`, without failing if not."""
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if label in sidebar(viewer):
+                    return True
+                client.pump(0.1)
+            return False
 
         # Cancel must write nothing, even after a change is staged.
         open_editor()

@@ -417,8 +417,23 @@ def click_button(client, viewer, text):
     def sidebar():
         return viewer.run("capture-pane", "-p", "-t", "%0")
 
-    wait(client, lambda: text in sidebar(), "missing button: " + text)
-    lines = sidebar().splitlines()
-    row = next(i for i, line in enumerate(lines) if text in line)
+    seen: dict = {}
+
+    def settled() -> bool:
+        """The label is drawn, and on the same row as it was a moment ago.
+
+        Waiting only for the text to appear can measure a half-drawn sidebar,
+        where the rows sit at different offsets than the finished frame. The row
+        computed from that capture then clicks whatever the finished frame puts
+        there instead -- one row up, in practice, which is a different button.
+        Requiring the row to repeat is what makes the position mean something.
+        """
+        lines = sidebar().splitlines()
+        row = next((index for index, line in enumerate(lines) if text in line), None)
+        previous, seen["row"], seen["lines"] = seen.get("row"), row, lines
+        return row is not None and row == previous
+
+    wait(client, settled, "missing button: " + text)
+    lines, row = seen["lines"], seen["row"]
     top = int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
     client.click(lines[row].index(text) + 2, row + top + 1)
