@@ -358,16 +358,23 @@ class Sidebar:
         self.put(height - 2, 1, message, self.message_style(message, bool(editor.message)))
         return cursor
 
-    def leave_shortcuts(self) -> bool:
-        """Close the shortcut editor if one is open, discarding staged changes."""
+    def leave_shortcuts(self) -> None:
+        """Close the shortcut editor if one is open, discarding staged changes.
+
+        This cannot refuse, and deliberately differs from the colour editor for
+        that reason. Leaving colours can fail because the terminal refuses to
+        reinstall the ones it opened with, which is a real failure outside the
+        editor and has to stop the caller. Leaving shortcuts restores nothing
+        outside the editor, so a caller closing the menu always succeeds --
+        including while a field, a capture or a question is open, which
+        ``cancel`` would otherwise take a second Escape to leave. A socket
+        action must not be refused because a text field happens to be open.
+        """
         if self.shortcut_editor:
-            self.shortcut_editor.cancel()
-            if not self.shortcut_editor.closed:
-                return False
+            self.shortcut_editor.dismiss()
             self.shortcut_editor = None
             if self.menu == "edit-shortcuts":
                 self.menu = None
-        return True
 
     def theme_action(self, action: Callable, *args) -> None:
         action(*args)

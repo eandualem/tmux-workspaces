@@ -109,6 +109,52 @@ class EditingTests(unittest.TestCase):
         self.assertEqual(edit.draft, DEFAULT_KEYMAP)
 
 
+class DismissTests(unittest.TestCase):
+    """Taking the screen away is one step, where Escape would take two."""
+
+    def staged(self, state):
+        edit = editor()
+        typed(edit, "F9")
+        if state == "field":
+            edit.edit()
+        elif state == "capture":
+            edit.capture()
+        elif state == "pending":
+            edit.edit()
+            edit.field.value = "v"
+            edit.commit()
+            self.assertIsNotNone(edit.pending)
+        return edit
+
+    def test_dismiss_closes_from_every_sub_state_and_discards_the_draft(self):
+        for state in (None, "field", "capture", "pending"):
+            with self.subTest(state=state):
+                edit = self.staged(state)
+                edit.dismiss()
+                self.assertTrue(edit.closed)
+                self.assertFalse(edit.changed)
+                self.assertIsNone(edit.field)
+                self.assertFalse(edit.capturing)
+                self.assertIsNone(edit.pending)
+
+    def test_cancel_still_takes_two_steps_from_a_sub_state(self):
+        """Escape closes the field first; the editor only leaves on the second."""
+        for state in ("field", "capture", "pending"):
+            with self.subTest(state=state):
+                edit = self.staged(state)
+                edit.cancel()
+                self.assertFalse(edit.closed)
+                edit.cancel()
+                self.assertTrue(edit.closed)
+
+    def test_dismiss_writes_nothing(self):
+        recorder = Recorder()
+        edit = editor(save=recorder)
+        typed(edit, "F9")
+        edit.dismiss()
+        self.assertEqual(recorder.saved, [])
+
+
 class ClaimResolutionTests(unittest.TestCase):
     def test_taking_a_used_key_is_asked_before_it_happens(self):
         edit = editor()

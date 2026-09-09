@@ -343,6 +343,22 @@ class ShortcutEditor:
         if self._apply_keys(list(shipped[action])) and not self.message:
             self.message = "Shipped keys restored; a to keep"
 
+    def dismiss(self) -> None:
+        """Leave at once, discarding staged changes and any open sub-state.
+
+        ``cancel`` is the Escape key's two-step: the first press closes an open
+        field, capture or question, the second leaves the editor. A caller that
+        is taking the screen away -- focus moving to another pane, a socket
+        action, another menu opening -- is not pressing Escape, so it gets one
+        step. Leaving the editor half-open there is what strands it: undrawn,
+        still holding scroll input, still blocking refresh.
+        """
+        self.field = None
+        self.capturing = False
+        self.pending = None
+        self.draft = self.working
+        self.closed = True
+
     def cancel(self) -> None:
         """Leave, discarding every staged change. Nothing was written."""
         if self.pending is not None:
