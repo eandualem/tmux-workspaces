@@ -9,7 +9,7 @@ import curses
 import unittest
 
 from tmux_workspaces.keymap import DEFAULT_KEYMAP, Keymap
-from tmux_workspaces.shortcut_editor import ShortcutEditor, captured_key, failed
+from tmux_workspaces.shortcut_editor import ShortcutEditor, captured_key, failed, fit_rows
 
 
 class Recorder:
@@ -107,6 +107,52 @@ class EditingTests(unittest.TestCase):
         self.assertTrue(edit.closed)
         self.assertFalse(edit.changed)
         self.assertEqual(edit.draft, DEFAULT_KEYMAP)
+
+
+class FitRowsTests(unittest.TestCase):
+    """Rows have to stay readable at the width the sidebar actually gets."""
+
+    def rows(self):
+        return editor().rows()
+
+    def test_the_section_survives_at_every_width_the_sidebar_draws(self):
+        """Two rows of one action differ only by section, so it is never cut.
+
+        The sidebar refuses to draw a menu under eighteen columns, and the
+        label column is narrower than the panel, so this covers well below
+        anything a user is shown.
+        """
+        rows = self.rows()
+        for width in range(9, 60):
+            with self.subTest(width=width):
+                for label in fit_rows(rows, width):
+                    self.assertRegex(label, r"\((prefix|terminal|pfx|term)\)$")
+
+    def test_labels_stay_inside_the_width_even_absurdly_narrow(self):
+        rows = self.rows()
+        for width in range(1, 60):
+            with self.subTest(width=width):
+                self.assertTrue(all(len(label) <= width for label in fit_rows(rows, width)))
+
+    def test_a_wide_column_keeps_whole_names_and_the_long_section_word(self):
+        labels = fit_rows(self.rows(), 40)
+        self.assertIn("New tab (prefix)", labels)
+        self.assertNotIn("…", "".join(labels))
+
+    def test_a_row_that_fits_is_not_shortened_because_another_row_does_not(self):
+        labels = fit_rows(self.rows(), 20)
+        self.assertIn("New tab (pfx)", labels)
+        self.assertTrue(any("…" in label for label in labels), "a long row should shorten")
+
+    def test_the_two_rows_of_one_action_never_collapse_onto_each_other(self):
+        rows = self.rows()
+        for width in range(8, 60):
+            with self.subTest(width=width):
+                labels = fit_rows(rows, width)
+                pairs = {}
+                for (_label, section, *_rest), text in zip(rows, labels, strict=True):
+                    pairs.setdefault(text, set()).add(section)
+                    self.assertEqual(len(pairs[text]), 1, f"{text!r} names both sections")
 
 
 class DismissTests(unittest.TestCase):
