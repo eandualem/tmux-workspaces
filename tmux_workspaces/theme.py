@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 
-from .configfile import ConfigFile, Vocabulary, read_file
+from .configfile import ConfigConflict, ConfigError, ConfigFile, Vocabulary, read_file
 
 MAX_THEME_BYTES = 16 * 1024
 MAX_FALLBACKS = 8
@@ -451,11 +451,11 @@ def _read_file(path: Path) -> bytes:
     return read_file(path, MAX_THEME_BYTES)
 
 
-class ThemeError(ValueError):
+class ThemeError(ConfigError):
     """Actionable failure that never asks the caller to discard its working theme."""
 
 
-class ThemeConflict(ThemeError):
+class ThemeConflict(ThemeError, ConfigConflict):
     """The file changed since it was read; the caller keeps its edits."""
 
 

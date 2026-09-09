@@ -243,6 +243,7 @@ class Sidebar:
         """Edit the viewer's semantic colors: same route by click or by key."""
         if not self.leave_theme():
             return
+        self.leave_shortcuts()
         colors = ThemeFile(theme_path(self.theme_path))
         # Reading now records what is on disk, so an edit made while the editor
         # is open is reported as a conflict instead of being overwritten.
@@ -289,7 +290,7 @@ class Sidebar:
             DEFAULT_KEYMAP,
             self.keymap_path,
             writable=keys.writable(),
-            lossy=not keys.rewrites_cleanly(loaded.keymap),
+            lossy=not keys.saves_cleanly(loaded.keymap),
         )
         if loaded.diagnostic:
             self.shortcut_editor.message = failure(visible(loaded.diagnostic))[:100]
@@ -439,6 +440,7 @@ class Sidebar:
         """Drop an open menu without moving the keyboard away from its pane."""
         if not self.leave_theme():
             return
+        self.leave_shortcuts()
         self.menu, self.query = None, ""
         self.selection.reset()
         self.menu_message = ""
@@ -448,6 +450,7 @@ class Sidebar:
     def show(self) -> None:
         if not self.leave_theme():
             return
+        self.leave_shortcuts()
         self.clear_inline()
         self.close_menu()
         self.save()
@@ -494,6 +497,7 @@ class Sidebar:
     def open_menu(self, name: str, pending: str = "") -> None:
         if not self.leave_theme():
             return
+        self.leave_shortcuts()
         self.clear_inline()
         self.remember()
         self.menu, self.pending, self.query = name, pending, ""
@@ -603,6 +607,7 @@ class Sidebar:
             return
         if not self.leave_theme():
             return
+        self.leave_shortcuts()
         if name.startswith("attach-pane:"):
             _, tab_id, leaf_id = name.split(":")
             self.attach_pane(tab_id, leaf_id)

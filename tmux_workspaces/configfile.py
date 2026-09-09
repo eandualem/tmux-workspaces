@@ -106,6 +106,10 @@ class ConfigFile:
         self.conflict = conflict
         self._digest: str | None = None
         self._seen = False
+        # The bytes behind that digest. Anything wanting to inspect the file as
+        # it was read must use these rather than reading again: a second read
+        # would move the digest onto newer bytes and blind the conflict check.
+        self._payload: bytes | None = None
         # A file that exists but could not be read is neither "never read" nor
         # "read these bytes": replacing it would destroy contents nobody saw.
         self._unreadable = False
@@ -127,12 +131,32 @@ class ConfigFile:
             payload = read_file(self.path, self.limit)
         except FileNotFoundError:
             self._digest, self._seen, self._unreadable = None, True, False
+            self._payload = None
             return None, None
         except OSError as error:
             self._digest, self._seen, self._unreadable = None, False, True
+            self._payload = None
             return None, f"{error.strerror}: {self.path}"
         self._digest, self._seen, self._unreadable = self._hash(payload), True, False
+        self._payload = payload
         return payload, None
+
+    def rewrites_cleanly(self, payload: bytes) -> bool:
+        """Whether writing `payload` would preserve everything the file holds.
+
+        Generated output carries no comments and one fixed ordering, so a
+        hand-written file is not round-tripped. This compares against the bytes
+        already read rather than reading again, because a second read would
+        advance the conflict digest onto a concurrent writer's changes while the
+        caller still held the older content -- and the save would then replace
+        that writer's file instead of refusing.
+
+        A file nobody read cannot be judged, so it is reported as lossy: that
+        errs towards warning the user rather than towards a silent rewrite.
+        """
+        if not self._seen:
+            return False
+        return self._payload is None or self._payload == payload
 
     def oversized(self, payload: bytes) -> bool:
         """Whether these bytes exceed what this file type accepts."""
@@ -199,6 +223,14 @@ class ConfigFile:
                     f"shrink or remove {self.path}, then apply again."
                 )
             current = self._hash(payload)
+        if not self._seen and current is not None:
+            # The contract this class exists for: bytes nobody looked at are
+            # never replaced. A first save to a path with no file is still fine.
+            raise self.error(
+                f"The {words.noun} file was not read before saving, so it was not "
+                f"replaced. {words.unchanged}; {words.reopen}, then apply again. "
+                f"({self.path})"
+            )
         if self._seen and current != self._digest:
             raise self.conflict(
                 f"The {words.noun} file changed on disk since it was read. "
@@ -246,6 +278,7 @@ class ConfigFile:
         finally:
             self._release(lock)
         self._digest, self._seen, self._unreadable = self._hash(payload), True, False
+        self._payload = payload
 
     def _lock(self):
         """Serialize this application's writers on a stable sibling lock file.

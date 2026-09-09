@@ -149,13 +149,36 @@ class KeymapFileTests(unittest.TestCase):
     def test_a_generated_file_rewrites_without_loss(self):
         handle = KeymapFile(self.path)
         handle.write(DEFAULT_KEYMAP)
-        self.assertTrue(handle.rewrites_cleanly(DEFAULT_KEYMAP))
+        self.assertTrue(handle.saves_cleanly(DEFAULT_KEYMAP))
 
     def test_a_hand_written_file_is_reported_as_lossy(self):
         self.path.write_text("# my own notes\nprefix = 'C-b'\n")
         handle = KeymapFile(self.path)
         keymap = handle.read().keymap
-        self.assertFalse(handle.rewrites_cleanly(keymap))
+        self.assertFalse(handle.saves_cleanly(keymap))
+
+    def test_judging_the_rewrite_does_not_move_the_conflict_digest(self):
+        """A second read here would let a save replace another writer's file."""
+        self.path.write_text("# my own notes\nprefix = 'C-b'\n")
+        handle = KeymapFile(self.path)
+        keymap = handle.read().keymap
+        self.path.write_text("prefix = 'C-x'\n")
+        handle.saves_cleanly(keymap)
+        with self.assertRaises(KeymapConflict):
+            handle.write(DEFAULT_KEYMAP)
+        self.assertEqual(self.path.read_text(), "prefix = 'C-x'\n")
+
+    def test_an_existing_file_nobody_read_is_never_replaced(self):
+        before = "prefix = 'C-b'\n"
+        self.path.write_text(before)
+        with self.assertRaises(KeymapError) as caught:
+            KeymapFile(self.path).write(DEFAULT_KEYMAP)
+        self.assertIn("not read before saving", str(caught.exception))
+        self.assertEqual(self.path.read_text(), before)
+
+    def test_a_first_save_to_a_missing_path_still_works(self):
+        KeymapFile(self.path).write(DEFAULT_KEYMAP)
+        self.assertTrue(self.path.exists())
 
     def test_a_concurrent_edit_is_refused_and_the_other_writer_keeps_the_file(self):
         handle = KeymapFile(self.path)

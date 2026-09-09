@@ -580,18 +580,9 @@ class KeymapFile(ConfigFile):
             )
             return KeymapLoad(DEFAULT_KEYMAP, self.path, f"{error}; {repair} ({self.path})")
 
-    def rewrites_cleanly(self, keymap: Keymap) -> bool:
-        """Whether saving would preserve everything the file currently holds.
-
-        The generated TOML carries no comments and one fixed ordering, so a
-        hand-written file is not round-tripped. Comparing the bytes is the
-        honest test: equal means saving loses nothing, and the editor can offer
-        an in-place save. Otherwise it has to say what would be lost.
-        """
-        payload, _diagnostic = self.read_bytes()
-        if payload is None:
-            return True
-        return payload == keymap.to_toml().encode("utf-8")
+    def saves_cleanly(self, keymap: Keymap) -> bool:
+        """Whether saving this keymap would preserve everything the file holds."""
+        return self.rewrites_cleanly(keymap.to_toml().encode("utf-8"))
 
     def write(self, keymap: Keymap) -> None:
         """Replace the file atomically, refusing unsafe targets and concurrent edits."""
