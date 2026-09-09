@@ -34,6 +34,13 @@ ANCHORS = {
     "active": "▶",
     "accent": "Shell",
 }
+# The workspace header occupies the top row, and the "Workspaces…" button
+# repeats its word further down the sidebar. Searching the whole screen for the
+# title would report that button's style as the header's, and would accept a
+# screen whose header is not drawn yet, asserting against a partial paint.
+# Match the top row instead of the row's first column: a configured background
+# shifts where the captured header text begins, but never which row holds it.
+FIRST_ROW_ROLES = frozenset({"title"})
 _ATTRIBUTES = {1: "bold", 2: "dim", 4: "underline", 7: "reverse"}
 _CLEAR = {22: ("bold", "dim"), 24: ("underline",), 27: ("reverse",)}
 
@@ -117,9 +124,13 @@ class Screen:
             index += 1
         return "".join(text), states
 
-    def at(self, anchor: str):
-        """The style in force where `anchor` starts, or None when it is not drawn."""
-        for text, states in self.lines:
+    def at(self, anchor: str, *, first_row: bool = False):
+        """The style in force where `anchor` starts, or None when it is not drawn.
+
+        `first_row` searches only the top row, for an anchor whose word also
+        appears elsewhere in the sidebar.
+        """
+        for text, states in self.lines[:1] if first_row else self.lines:
             position = text.find(anchor)
             if position >= 0:
                 return states[position]
@@ -179,7 +190,7 @@ def styles(viewer: Tmux) -> dict[str, tuple[int, int, tuple[str, ...]]]:
     drawn = screen(viewer)
     found = {}
     for role, anchor in ANCHORS.items():
-        state = drawn.at(anchor)
+        state = drawn.at(anchor, first_row=role in FIRST_ROW_ROLES)
         if state is not None:
             found[role] = state
     return found
