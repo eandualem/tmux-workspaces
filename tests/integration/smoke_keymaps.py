@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -14,6 +15,8 @@ from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
+
+ROOT = Path(__file__).resolve().parents[2]
 
 CONFIG = """prefix = 'C-a'
 [bindings]
@@ -127,6 +130,91 @@ def raw_prefix(directory: Path, library: Path, client: Client, viewer: Tmux, she
     assert "Type a name" not in sidebar(viewer), "disabled direct rename still runs"
     assert viewer.run("display-message", "-p", "#{pane_id}") != "%0"
     client.type("\x03")
+
+
+def editor(directory: Path) -> None:
+    """Editing shortcuts in a real viewer: capture, cancel, save, and the next viewer."""
+    # The file outlives the first fixture: a later viewer has to read what was
+    # saved, which is the whole point of the scenario.
+    config = directory / "editor-keys.toml"
+    config.write_text(CONFIG)
+    with FixtureResources(parent=directory) as resources:
+        library = resources.library("editor")
+        client, viewer, _shells = launch(resources, library, ["--keymap", str(config)])
+        original = config.read_text()
+
+        def open_editor():
+            click_button(client, viewer, "Shortcuts")
+            click_button(client, viewer, "Edit shortcuts…")
+            wait(client, lambda: "Edit shortcuts" in sidebar(viewer), "editor did not open")
+
+        # Cancel must write nothing, even after a change is staged.
+        open_editor()
+        client.type("c")
+        wait(client, lambda: "Press the key" in sidebar(viewer), "capture did not start")
+        client.type("\x06")
+        wait(client, lambda: "C-f" in sidebar(viewer), "captured key was not staged")
+        # The captured key reached the editor, not an action and not a shell:
+        # the editor is still open, and no tab was created by C-f.
+        assert "Edit shortcuts" in sidebar(viewer), "a captured key ran an action"
+        assert len(saved(library).space["tabs"]) == 1, "a captured key created a tab"
+        client.type("\x1b")
+        wait(client, lambda: "Edit shortcuts" not in sidebar(viewer), "cancel did not close")
+        assert config.read_text() == original, "cancel wrote to the keymap file"
+
+        # A save replaces the file and says the change is not yet live.
+        open_editor()
+        client.type("c")
+        wait(client, lambda: "Press the key" in sidebar(viewer), "capture did not restart")
+        client.type("\x06")
+        wait(client, lambda: "C-f" in sidebar(viewer), "captured key was not staged")
+        client.type("a")
+        wait(client, lambda: "Edit shortcuts" not in sidebar(viewer), "apply did not close")
+        wait(client, lambda: "C-f" in config.read_text(), "apply did not write the keymap")
+        assert 'new-tab = ["C-f"]' in config.read_text(), "the saved file lost the binding"
+
+        # The running viewer keeps the keys it started with: nothing hot-reloads.
+        client.type("\x01\x06")
+        client.pump(0.4)
+        assert len(saved(library).space["tabs"]) == 1, "the running viewer adopted the saved key"
+        client.type("\x01u")
+        wait(
+            client,
+            lambda: len(saved(library).space["tabs"]) == 2,
+            "the running viewer lost its own key",
+        )
+        client.type("\x01q")
+        wait(client, lambda: client.process.poll() is not None, "custom quit did not exit")
+
+    with FixtureResources(parent=directory) as resources:
+        # A viewer started afterwards reads the saved file and uses the new key.
+        library = resources.library("editor-reopened")
+        client, viewer, _shells = launch(resources, library, ["--keymap", str(config)])
+        client.type("\x01\x06")
+        wait(
+            client,
+            lambda: len(saved(library).space["tabs"]) == 2,
+            "the saved key did not reach a new viewer",
+        )
+        client.type("\x01q")
+        wait(client, lambda: client.process.poll() is not None, "custom quit did not exit")
+
+    printed = subprocess.run(
+        [sys.executable, str(ROOT / "run"), "--keymap", str(config), "--print-keymap", "help"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert printed.returncode == 0, printed.stderr
+    # Help renders keys for people, so it names the label rather than the
+    # stored spelling: `C-f` is written `Ctrl-f` there.
+    assert "Ctrl-f" in printed.stdout, "generated help does not match the saved map"
+    print(
+        "PASS: captured keys reach the editor rather than an action or a shell, cancel writes "
+        "nothing, a save replaces the file and applies to the next viewer while the running one "
+        "keeps its own keys, and generated help matches what was saved",
+        flush=True,
+    )
 
 
 def standalone(directory: Path) -> None:
@@ -340,4 +428,5 @@ def _nested(resources: FixtureResources) -> None:
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="tw-keymaps-smoke-", dir="/tmp") as directory:
         standalone(Path(directory))
+        editor(Path(directory))
         nested(Path(directory))
