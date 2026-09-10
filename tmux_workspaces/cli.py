@@ -99,6 +99,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--instance-dir", type=Path, help=argparse.SUPPRESS)
     result.add_argument("--agent", default="", help=argparse.SUPPRESS)
     result.add_argument("--terminal", default="", help=argparse.SUPPRESS)
+    # An empty pane: a chooser for that exact tab and leaf, offering a shell or
+    # the same session roster the sidebar shows.
+    result.add_argument("--chooser", action="store_true", help=argparse.SUPPRESS)
+    result.add_argument("--tab", default="", help=argparse.SUPPRESS)
+    result.add_argument("--leaf", default="", help=argparse.SUPPRESS)
     result.add_argument("--shell-socket", help=argparse.SUPPRESS)
     result.add_argument("--action-socket", help=argparse.SUPPRESS)
     result.add_argument("--action", help=argparse.SUPPRESS)
@@ -180,6 +185,10 @@ def main() -> int:
             send_action(args.action_socket, args.action, wait=args.wait_action)
             return 0
         if args.mode == "_leaf":
+            if args.chooser:
+                from .chooser import chooser_main
+
+                return chooser_main(args)
             from .attachments import leaf_main
 
             return leaf_main(args)

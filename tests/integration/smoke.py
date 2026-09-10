@@ -11,7 +11,7 @@ from tmux_workspaces.model import leaves
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
 
-from .support import FixtureResources, click_attach, click_button, saved, wait
+from .support import FixtureResources, click_attach, click_button, open_terminal, saved, wait
 
 
 def exercise(directory: Path):
@@ -153,6 +153,7 @@ def _exercise(resources: FixtureResources):
     wait(client, lambda: "No tabs yet" in sidebar(), "new workspace failed")
     key("t")
     wait(client, lambda: saved(library).tab is not None, "new-tab shortcut failed")
+    open_terminal(client, viewer, library)
     key("r")
     client.type("\x15Notebook")
     button("Save name")

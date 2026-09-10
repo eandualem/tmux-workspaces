@@ -23,9 +23,15 @@ named tab, such as **Tab a82f**. Nothing is populated from the agent roster.
 New workspaces start empty. Existing saved names, tabs and attachments are
 preserved when upgrading; the viewer does not delete your earlier arrangements.
 
-Click the top **+** beside the workspace name to open a normal login shell,
-initially in the directory where you launched the viewer. Use it for commands,
-a status view, an editor, or any other terminal program. **Tab actions… → Rename tab** changes its name. Names belong to
+Click the top **+** beside the workspace name to open a new tab. The pane starts
+empty and asks what it should run: **Open terminal** for a normal login shell,
+initially in the directory where you launched the viewer, or any tmux session
+from the same roster the navigation panel shows, with its state beside it. Move
+with the arrow keys and press Enter, or click a row. Nothing is created until you
+choose, so attaching never lands on top of a shell you did not ask for; an empty
+pane stays empty across exit and reopen until it is filled. Use a shell for
+commands, a status view, an editor, or any other terminal program.
+**Tab actions… → Rename tab** changes its name. Names belong to
 you: attaching a session never changes them. In the name editor, type a name and
 click **Save name** or press Enter; Ctrl-u clears the existing name.
 
@@ -36,7 +42,8 @@ there. Drag the borders to adjust sizes. **Focus** temporarily shows one pane;
 **Next →** cycles panes and **Layout** restores the splits. Narrow terminals
 use temporary focus without discarding the arrangement.
 
-Select a pane, click **Attach session…** in the navigation panel, then choose a tmux session
+To attach a session to a pane that already has a shell, select the pane, click
+**Attach session…** in the navigation panel, then choose a tmux session
 for that pane. This is a separate control from **Focus**. Type to filter the chooser.
 The pane's original shell stays running;
 **Tab actions… → Return pane to shell** brings it back. Each split can attach a different session or

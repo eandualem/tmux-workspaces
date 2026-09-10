@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from tests.integration.support import FixtureResources, click_button, saved, wait
+from tests.integration.support import FixtureResources, click_button, open_terminal, saved, wait
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.shells import Shells
@@ -142,6 +142,7 @@ def exercise(resources: FixtureResources) -> None:
     old_tab = saved(library).tab["id"]
     client.type(direct_sequence("new-tab"))
     wait(client, lambda: saved(library).tab["id"] != old_tab, "reopened new tab failed")
+    open_terminal(client, viewer, library)
     fresh = saved(library).pane
     probe(client, fresh, "refreshed", second, True)
     # Another window with no SSH/XDG settings must not inherit an old socket
@@ -150,6 +151,7 @@ def exercise(resources: FixtureResources) -> None:
     old_tab = saved(library).tab["id"]
     other.type(direct_sequence("new-tab"))
     wait(other, lambda: saved(library).tab["id"] != old_tab, "context-free new tab failed")
+    open_terminal(other, other_viewer, library)
     probe(other, saved(library).pane, "unset", {}, False)
     probe(client, fresh, "still-second", second, True)
     click_button(other, other_viewer, "Attach session…")

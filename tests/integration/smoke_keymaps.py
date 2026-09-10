@@ -11,7 +11,15 @@ import tempfile
 import time
 from pathlib import Path
 
-from tests.integration.support import Client, FixtureResources, click_button, saved, sidebar, wait
+from tests.integration.support import (
+    Client,
+    FixtureResources,
+    click_button,
+    open_terminal,
+    saved,
+    sidebar,
+    wait,
+)
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.shells import Shells
@@ -262,10 +270,13 @@ def _standalone(resources: FixtureResources) -> None:
     destinations.append((token, first))
     assert_routed(client, shells, destinations)
 
-    # One write includes the custom action followed immediately by text.
+    # The custom action opens a tab; its chooser picks the shell, then text
+    # typed there reaches that shell and no other.
     command, token = marker()
-    client.type("\x01u" + command)
+    client.type("\x01u")
     wait(client, lambda: len(saved(library).space["tabs"]) == 2, "custom new-tab failed")
+    open_terminal(client, viewer, library)
+    client.type(command)
     second_target = terminal(library)
     destinations.append((token, second_target))
     assert first != second_target
@@ -312,6 +323,8 @@ def _standalone(resources: FixtureResources) -> None:
     client.type("\x1b")
     client.type("\x01u")
     wait(client, lambda: len(saved(library).space["tabs"]) == 3, "running keymap was not frozen")
+    # A later relaunch of this library waits for the focused pane's shell.
+    open_terminal(client, viewer, library)
 
     # Another viewer takes the new snapshot without changing the first one.
     other_library = resources.library("second")
@@ -319,9 +332,11 @@ def _standalone(resources: FixtureResources) -> None:
     second.type("\x01y")
     wait(second, lambda: len(saved(other_library).space["tabs"]) == 2, "new snapshot not loaded")
     assert not other_viewer.run("list-keys", "-T", "prefix", "u", check=False)
+    open_terminal(second, other_viewer, other_library)
     unchanged_target = terminal(other_library)
     command, token = marker()
     second.type("\x01u" + command)
+    # u is unbound in the new snapshot, so the text lands in the current shell.
     assert_routed(second, other_shells, [(token, unchanged_target)])
     assert len(saved(other_library).space["tabs"]) == 2
     second.type("\x01q")
@@ -424,8 +439,10 @@ def _nested(resources: FixtureResources) -> None:
     first = terminal(library)
     first_pid = shells.run("display-message", "-p", "-t", first, "#{pane_pid}")
     command, token = marker()
-    client.type("\x01u" + command)
+    client.type("\x01u")
     wait(client, lambda: len(saved(library).space["tabs"]) == 2, "outer tmux ate custom prefix")
+    open_terminal(client, viewer, library)
+    client.type(command)
     assert_routed(client, shells, [(token, terminal(library))])
     client.type("\x01eNested custom\r")
     wait(client, lambda: saved(library).tab["name"] == "Nested custom", "nested rename failed")

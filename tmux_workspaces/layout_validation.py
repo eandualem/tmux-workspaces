@@ -127,6 +127,12 @@ def validate_state(state: object, *, navigation: bool = True, legacy: bool = Fal
                     )
                     if "cwd" in node:
                         path(node["cwd"], branch + ".cwd")
+                    if "empty" in node:
+                        require(
+                            node["empty"] is True and agent is None,
+                            branch + ".empty",
+                            "an empty pane is true and has no attachment",
+                        )
                     if "source_socket" in node:
                         require(
                             agent is not None,

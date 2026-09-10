@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from .entrypoints import script_command
 from .keymap import DEFAULT_KEYMAP, Keymap, direct_sequence
-from .model import leaves, minimum_size
+from .model import is_empty, leaves, minimum_size
 from .shells import Shells
 from .tmux import Tmux
 
@@ -41,6 +41,7 @@ class Display:
         host_socket: str | None = None,
         host_pane: str | None = None,
         keymap: Keymap | None = None,
+        roster_args: tuple[str, ...] = (),
     ):
         if len({os.path.realpath(p) for p in (viewer_socket, source_socket, shell_socket)}) != 3:
             raise ValueError("Viewer, terminal and source sockets must differ")
@@ -51,6 +52,9 @@ class Display:
         self.host_socket, self.host_pane = host_socket, host_pane
         self.sidebar = sidebar
         self.keymap = keymap or DEFAULT_KEYMAP
+        # How a chooser pane builds the sidebar's session roster for itself.
+        self.roster_args = tuple(roster_args)
+        self._tab_id = ""
         self.panes: dict[str, str] = {}
         self.last_size = (0, 0)
         self.small = False
@@ -248,6 +252,20 @@ class Display:
     def _leaf_command(self, pane: dict | None) -> str:
         if not pane:
             return script_command("_leaf")
+        if is_empty(pane):
+            return script_command(
+                "_leaf",
+                "--chooser",
+                "--tab",
+                self._tab_id,
+                "--leaf",
+                pane["id"],
+                "--action-socket",
+                self.action_socket,
+                "--source-socket",
+                self.source_socket,
+                *self.roster_args,
+            )
         if pane["agent"]:
             source_socket = pane.get("source_socket") or self.source_socket
             if os.path.realpath(source_socket) in {
@@ -283,7 +301,9 @@ class Display:
             for name, value in {
                 "@viewer_leaf_id": leaf["id"],
                 "@viewer_tab_id": tab["id"],
-                "@viewer_agent": re.sub(r"[^\w .-]", "", leaf["agent"] or "Terminal"),
+                "@viewer_agent": re.sub(
+                    r"[^\w .-]", "", leaf["agent"] or ("Empty" if is_empty(leaf) else "Terminal")
+                ),
             }.items():
                 commands.append(["set-option", "-p", "-t", pane, name, value])
         return commands + select
@@ -325,8 +345,9 @@ class Display:
                 leaf["id"]: pane for leaf, pane in zip(displayed, containers, strict=True)
             }
             shape, geometry = self._rendered_shape, self._rendered_geometry
+            self._tab_id = tab["id"]
             self._shell_names = self.shells.ensure_many(
-                [leaf for leaf in displayed if not leaf["agent"]]
+                [leaf for leaf in displayed if not leaf["agent"] and not is_empty(leaf)]
             )
             # Construct and validate every target before touching displayed clients.
             commands = [["select-pane", "-t", self.sidebar]]
@@ -356,7 +377,7 @@ class Display:
         if "agent" in tree:
             # cwd is a saved restart location; changing it does not change the
             # attachment client for an already-running shell.
-            return tree["id"], tree["agent"], tree.get("source_socket")
+            return tree["id"], tree["agent"], tree.get("source_socket"), is_empty(tree)
         return (
             tree["id"],
             tree["direction"],
@@ -408,8 +429,9 @@ class Display:
         self._rendered_key = self._rendered_shape = self._rendered_geometry = None
         self.last_size = (cols, rows)
         self.panes.clear()
+        self._tab_id = tab["id"] if tab else ""
         self._shell_names = self.shells.ensure_many(
-            [pane for pane in leaves(tree) if not pane["agent"]]
+            [pane for pane in leaves(tree) if not pane["agent"] and not is_empty(pane)]
         )
         first = leaves(tree)[0] if tree else None
         command = self._leaf_command(first)
