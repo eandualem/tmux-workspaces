@@ -176,9 +176,11 @@ class LaunchContext:
                 args += ["--url", self.url]
         if self.keymap_state is not None:
             args += ["--keymap-state", self.keymap_state, "--manual-reopen"]
-        elif self.no_keymap:
+        if self.no_keymap:
             args.append("--no-keymap")
         else:
+            # Named even when the keys are frozen: the running map came from
+            # this file, and it is the one the shortcut editor writes.
             args += ["--keymap-source", str(self.keymap_selector)]
             if self.keymap_required:
                 args.append("--keymap-required")
