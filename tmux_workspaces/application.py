@@ -48,6 +48,16 @@ def make_source(
     return Source(socket, TmuxProvider(socket), overlays)
 
 
+def roster_args(args) -> tuple[str, ...]:
+    """The options a chooser pane needs to build the sidebar's own roster."""
+    if args.demo:
+        return ("--demo", "--instance-dir", str(args.instance_dir))
+    if args.backbone:
+        result = ("--backbone", "--backbone-data-dir", str(args.backbone_data_dir))
+        return result + (("--url", args.url) if args.url else ())
+    return ()
+
+
 @contextlib.contextmanager
 def startup_cleanup():
     """Attempt every cleanup while retaining the original startup diagnostic."""
@@ -110,6 +120,7 @@ def sidebar_main(args) -> int:
                 args.host_socket,
                 args.host_pane,
                 effective_keymap(args),
+                roster_args=roster_args(args),
             )
             relaunch.started(args.instance_dir)
             try:

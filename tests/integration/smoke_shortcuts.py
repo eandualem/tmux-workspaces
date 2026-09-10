@@ -12,6 +12,7 @@ from tests.integration.support import (
     FixtureResources,
     OuterClient,
     click_button,
+    open_terminal,
     right_click,
     saved,
     sidebar,
@@ -124,6 +125,7 @@ def _standalone(resources: FixtureResources) -> None:
         )
         client.pump(0.35)
         assert len(saved(library).space["tabs"]) == count
+        open_terminal(client, viewer, library)
         rename("rename-tab", name)
     choose_tab(1, "Alpha")
     key("previous-tab")
@@ -174,6 +176,7 @@ def _standalone(resources: FixtureResources) -> None:
         )
         key("new-tab")
         check(lambda: saved(library).tab is not None, "direct tab in new workspace failed")
+        open_terminal(client, viewer, library)
         rename("rename-tab", tab_name)
         if count == 2:
             rename("rename-workspace", "Lab")
@@ -338,6 +341,7 @@ def _nested(resources: FixtureResources) -> None:
     wait(client, lambda: len(saved(library).space["tabs"]) == 2, "direct key lost in outer tmux")
     client.pump(0.35)
     assert len(saved(library).space["tabs"]) == 2
+    open_terminal(client, viewer, library)
     client.type(direct_sequence("rename-tab"))
     wait(client, lambda: "Type a name" in sidebar(viewer), "nested direct rename failed")
     client.type("Nested\r")
