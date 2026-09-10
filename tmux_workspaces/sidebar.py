@@ -271,11 +271,12 @@ class Sidebar:
         if self.shortcut_editor:
             return
         if self.keymap_path is None:
-            # An inherited snapshot has no file behind it. Writing the implicit
-            # default path would create a map the user never chose and silently
-            # freeze the keys they are using, so refuse and name the option.
+            # No file stands behind this map: --no-keymap, or a snapshot handed
+            # over without its source. Writing the implicit default path would
+            # create a map the user never chose and silently freeze the keys
+            # they are using, so refuse and name the option.
             self.menu_message = failure(
-                "this viewer inherited its shortcuts; start it with --keymap FILE to edit them"
+                "this viewer has no keymap file; start it with --keymap FILE to edit shortcuts"
             )
             return
         keys = KeymapFile(self.keymap_path)

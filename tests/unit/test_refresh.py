@@ -338,24 +338,53 @@ class LaunchContextTests(unittest.TestCase):
             context = self.context(["--data-dir", str(root), "--keymap-state", pinned])
             child = context.child_args(root / "handover.json", None)
         self.assertIn("--manual-reopen", child)
-        self.assertNotIn("--keymap-source", child)
         self.assertEqual(child[child.index("--keymap-state") + 1], pinned)
         # Without a dedicated profile the ordinary command still reopens it.
         self.assertEqual(context.published, context.reopen)
+
+    def test_a_fixed_map_window_still_knows_which_file_its_keys_came_from(self):
+        """Frozen keys are edited in the file that produced them, not nowhere.
+
+        A Ghostty window runs the snapshot its launcher took, but the shortcut
+        editor writes a file. Dropping the selection here left every launched
+        window unable to edit shortcuts at all.
+        """
+        pinned = 'prefix = "C-b"\n\n[bindings]\n\n[direct]\n'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            keys = root / "keys.toml"
+            context = self.context(
+                ["--data-dir", str(root), "--keymap-state", pinned, "--keymap", str(keys)]
+            )
+            child = context.child_args(root / "handover.json", None)
+            self.assertEqual(child[child.index("--keymap-source") + 1], str(keys))
+            self.assertIn("--keymap-required", child)
+            self.assertIn("--manual-reopen", child)
+            # The optional default is named too, so a first save can create it.
+            with patch.dict(os.environ, {"HOME": str(root), "XDG_CONFIG_HOME": str(root)}):
+                context = self.context(["--data-dir", str(root), "--keymap-state", pinned])
+            child = context.child_args(root / "handover.json", None)
+            self.assertEqual(
+                child[child.index("--keymap-source") + 1],
+                str(root / "tmux-workspaces" / "keymap.toml"),
+            )
+            self.assertNotIn("--keymap-required", child)
+            # Frozen keys never make the file mandatory for the window itself.
+            self.assertNotIn("--no-keymap", child)
 
 
 class WindowTests(unittest.TestCase):
     """One supervised window: its own display, its own report."""
 
     @contextlib.contextmanager
-    def window(self, arguments, *, attach=0, started=True):
+    def window(self, arguments, *, attach=0, started=True, no_keymap=True):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             handover = root / "handover.json"
             args = parser().parse_args(
                 [
                     "_window",
-                    "--no-keymap",
+                    *(["--no-keymap"] if no_keymap else []),
                     "--data-dir",
                     str(root / "library"),
                     "--handover",
@@ -451,6 +480,32 @@ class WindowTests(unittest.TestCase):
                 self.assertEqual(application.window_main(args), 0)
             self.assertFalse(relaunch.read_status(handover)["relaunch"])
         self.assertIn("--manual-reopen", recorded["child"])
+
+    def test_a_fixed_map_window_hands_its_keymap_file_to_the_sidebar(self):
+        """Manual reopen disables refresh, not editing: the file still travels."""
+        pinned = 'prefix = "C-b"\n\n[bindings]\n\n[direct]\n'
+        with self.window(
+            ["--manual-reopen", "--keymap-state", pinned, "--keymap-source", "/cfg/keys.toml"],
+            no_keymap=False,
+        ) as (args, _handover, recorded):
+            self.assertEqual(application.window_main(args), 0)
+        child = recorded["child"]
+        self.assertIn("--manual-reopen", child)
+        self.assertEqual(child[child.index("--keymap-source") + 1], "/cfg/keys.toml")
+        # The sidebar runs the snapshot and edits the file; both survive parsing.
+        sidebar = parser().parse_args(child)
+        self.assertEqual(sidebar.keymap_source, Path("/cfg/keys.toml"))
+        self.assertEqual(cli.effective_keymap(sidebar).prefix, "C-b")
+
+    def test_a_window_without_keymaps_offers_the_sidebar_nothing_to_edit(self):
+        """--no-keymap stays authoritative even if a source is named beside it."""
+        with self.window(["--keymap-source", "/cfg/keys.toml"]) as (args, _handover, recorded):
+            self.assertEqual(application.window_main(args), 0)
+        child = recorded["child"]
+        self.assertNotIn("--keymap-source", child)
+        self.assertNotIn("--keymap-required", child)
+        sidebar = parser().parse_args(child)
+        self.assertIsNone(sidebar.keymap or sidebar.keymap_source)
 
     def test_the_window_hands_its_navigation_and_reopen_text_to_the_sidebar(self):
         selection = json.dumps({"workspace": "w1", "tab": "", "leaf": "", "focus": False})
