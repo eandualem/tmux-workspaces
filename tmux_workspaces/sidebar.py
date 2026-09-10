@@ -9,12 +9,12 @@ import textwrap
 import time
 from collections.abc import Callable
 
-from .controls import Actions, mouse_action
+from .controls import Actions, mouse_action, pane_choice
 from .display import Display
 from .events import InputEvents
 from .keymap import ACTION_LABELS, DEFAULT_KEYMAP, KeymapFile, tmux_key_label
 from .menu import Entry, Selection
-from .model import LayoutConflict, Model, leaves
+from .model import LayoutConflict, Model, is_empty, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
 from .shortcut_editor import CAPTURE_HINT, CONFIRM_HINT, ShortcutEditor, fit_rows
@@ -544,7 +544,8 @@ class Sidebar:
 
     def new_tab(self) -> None:
         self.remember()
-        self.model.add_tab()
+        # The pane opens as a chooser: a shell, or a session, decided there.
+        self.model.add_tab(empty=True)
         self.tab_offset = max(0, len(self.model.space["tabs"]) - 1)
         self.show()
 
@@ -577,6 +578,40 @@ class Sidebar:
         # Demo fixture servers are recreated per window; other references retain
         # their server even if the next launch uses a different chooser socket.
         self.model.attach(name, self.source.socket if self.source.persistent_socket else None)
+        self.show()
+
+    def fill_pane(self, tab_id: str, leaf_id: str, session: str | None) -> None:
+        """A chooser pane picked what it runs: an ordinary shell, or a session.
+
+        The pane named the destination it was started for. Anything that moved
+        since -- another window replacing the pane, the tab changing, the pane
+        already filled -- is refused, and the display is redrawn so a stale
+        chooser is replaced by whatever the pane holds now.
+        """
+        self.remember()
+        try:
+            self.store.refresh(self.model)
+        except LayoutConflict:
+            self.message = "Pane changed; choose again"
+            self.show()
+            return
+        tab = self.model.tab
+        pane = (
+            next((p for p in leaves(tab["tree"]) if p["id"] == leaf_id), None)
+            if tab and tab["id"] == tab_id
+            else None
+        )
+        if not pane or not is_empty(pane) or leaf_id not in self.display.panes:
+            self.message = "Pane changed; choose again"
+            self.show()
+            return
+        tab["focus"] = leaf_id
+        if session is None:
+            self.model.open_terminal()
+        else:
+            self.model.attach(
+                session, self.source.socket if self.source.persistent_socket else None
+            )
         self.show()
 
     def split(self, direction: str) -> None:
@@ -622,6 +657,10 @@ class Sidebar:
         if name.startswith("attach-pane:"):
             _, tab_id, leaf_id = name.split(":")
             self.attach_pane(tab_id, leaf_id)
+            return
+        choice = pane_choice(name)
+        if choice:
+            self.fill_pane(*choice[1:])
             return
         if name.startswith("select-tab-"):
             index = int(name.removeprefix("select-tab-")) - 1
@@ -1241,7 +1280,7 @@ class Sidebar:
                         )
                     label = attached[0] + " · " + state
                 else:
-                    label = "Shell"
+                    label = "Empty" if is_empty(members[0]) else "Shell"
                 if tab_edit:
                     label = hint
                 self.put(row, 1 if tab_edit else 3, label, self.style("accent"))

@@ -60,6 +60,28 @@ DIRECT_SHORTCUTS = {
 
 ACTIONS = frozenset(SHORTCUTS.values()) | DIRECT_SHORTCUTS.keys() | {"quit"}
 
+# A chooser pane names the destination it was started for, so a choice made
+# in a pane that has since been replaced cannot land on the pane now there.
+PANE_CHOICE = re.compile(
+    r"(choose-terminal|choose-session):([a-f0-9]{12}):([a-f0-9]{12})(?::(.*))?"
+)
+MAX_ACTION_BYTES = 4096
+
+
+def pane_choice(action: str) -> tuple[str, str, str, str | None] | None:
+    """Decode ``choose-terminal:TAB:LEAF`` or ``choose-session:TAB:LEAF:NAME``."""
+    from .targets import valid_session
+
+    match = PANE_CHOICE.fullmatch(action) if len(action.encode()) <= MAX_ACTION_BYTES else None
+    if not match:
+        return None
+    kind, tab, leaf, name = match.groups()
+    if kind == "choose-terminal" and name is None:
+        return kind, tab, leaf, None
+    if kind == "choose-session" and name is not None and valid_session(name):
+        return kind, tab, leaf, name
+    return None
+
 
 def mouse_action(action: str) -> tuple[int, int] | None:
     """Decode a bounded pane-relative mouse action without evaluating input."""
@@ -72,10 +94,11 @@ def mouse_action(action: str) -> tuple[int, int] | None:
 
 
 def valid_action(action: str) -> bool:
-    return (
+    return len(action.encode()) <= MAX_ACTION_BYTES and (
         action in ACTIONS
         or mouse_action(action) is not None
         or re.fullmatch(r"attach-pane:[a-f0-9]{12}:[a-f0-9]{12}", action) is not None
+        or pane_choice(action) is not None
     )
 
 
@@ -133,8 +156,8 @@ class Actions:
     def pending(self):
         while True:
             try:
-                payload, sender = self.receiver.recvfrom(64)
-                action = payload.decode()
+                payload, sender = self.receiver.recvfrom(MAX_ACTION_BYTES)
+                action = payload.decode(errors="replace")
             except BlockingIOError:
                 return
             if valid_action(action):

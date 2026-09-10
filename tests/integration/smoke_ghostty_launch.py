@@ -15,7 +15,14 @@ import tempfile
 import time
 from pathlib import Path
 
-from tests.integration.support import Client, FixtureResources, click_button, saved, wait
+from tests.integration.support import (
+    Client,
+    FixtureResources,
+    click_button,
+    open_terminal,
+    saved,
+    wait,
+)
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence, send_action
 from tmux_workspaces.ghostty_launcher import launch_command
@@ -113,9 +120,11 @@ def _exercise(resources: FixtureResources) -> None:
     client.type(direct_sequence("new-tab"))
     wait(
         client,
-        lambda: len(saved(library).space["tabs"]) == 2 and content_ready(viewer),
+        lambda: len(saved(library).space["tabs"]) == 2,
         "one direct new-tab action failed after the Ghostty shell wrapper",
     )
+    open_terminal(client, viewer, library)
+    wait(client, lambda: content_ready(viewer), "the chosen shell did not attach")
     stable(2)
     client.type(direct_sequence("split-right"))
     wait(

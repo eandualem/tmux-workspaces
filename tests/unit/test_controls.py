@@ -161,16 +161,30 @@ class ControlTests(unittest.TestCase):
                 self.assertEqual(
                     shells.run("display-message", "-p", "-t", terminal, "#{pane_pid}"), shell_pid
                 )
-                client.type(
-                    direct_sequence("new-tab") + "printf 'AFTER_SHORTCUT_%s\\n' NEW_SHELL\r"
-                )
+                # A new tab opens as a chooser. Enter in the same write picks the
+                # shell; the command then goes to that shell once it exists.
+                client.type(direct_sequence("new-tab") + "\r")
                 wait(
                     client,
                     lambda: len(saved(library).space["tabs"]) == 2,
-                    "new-tab shortcut did not create its terminal",
+                    "new-tab shortcut did not create its tab",
+                )
+                wait(
+                    client,
+                    lambda: not saved(library).pane.get("empty"),
+                    "Enter in the chooser did not open a terminal",
                 )
                 new_terminal = "=" + Shells.name(saved(library).pane) + ":"
                 self.assertNotEqual(new_terminal, terminal)
+                wait(
+                    client,
+                    lambda: (
+                        new_terminal[1:-1]
+                        in shells.run("list-sessions", "-F", "#{session_name}", check=False)
+                    ),
+                    "the chosen terminal was not created",
+                )
+                client.type("printf 'AFTER_SHORTCUT_%s\\n' NEW_SHELL\r")
                 wait(
                     client,
                     lambda: (

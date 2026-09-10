@@ -384,6 +384,42 @@ def saved(directory: Path) -> Model:
         )
 
 
+def open_terminal(client, viewer, library: Path) -> None:
+    """Pick the shell in a new tab's chooser and wait until that shell exists.
+
+    A new tab opens empty. Scenarios that go on to type into the tab choose its
+    terminal here, waiting for the chooser first so the Enter cannot be swallowed
+    by a pane that is still being spawned.
+    """
+    from tmux_workspaces.chooser import TERMINAL
+    from tmux_workspaces.shells import Shells
+
+    def chooser_pane():
+        focus = saved(library).tab["focus"]
+        for line in viewer.run(
+            "list-panes", "-F", "#{pane_id}|#{@viewer_leaf_id}", check=False
+        ).splitlines():
+            pane, leaf = line.split("|", 1)
+            if leaf == focus:
+                return pane
+        return None
+
+    def shown() -> bool:
+        pane = chooser_pane()
+        return bool(pane) and TERMINAL in viewer.run("capture-pane", "-p", "-t", pane, check=False)
+
+    wait(client, shown, "the new tab did not show its chooser")
+    client.type("\r")
+    wait(client, lambda: not saved(library).pane.get("empty"), "Enter did not open a terminal")
+    name = Shells.name(saved(library).pane)
+    shells = Tmux(socket_path(library, "terminals"))
+    wait(
+        client,
+        lambda: name in shells.run("list-sessions", "-F", "#{session_name}", check=False),
+        "the chosen terminal was not created",
+    )
+
+
 def click_attach(client, viewer, leaf_id):
     # Click an inactive terminal, then immediately open the sidebar chooser.
     # pane_last must preserve that target even before the sidebar poll runs.

@@ -33,7 +33,7 @@ remain open alongside the new window; they share arrangements and shells.
 
 The shipped map follows Ghostty's usual keys, with the actions applied to saved workspaces:
 
-- **Command-T**: new tab with an ordinary shell.
+- **Command-T**: new tab, opening as a chooser for an ordinary shell or a session.
 - **Command-D**: split right, with a vertical divider.
 - **Command-Shift-D**: split below, with a horizontal divider.
 - **Command-[ / Command-]**: previous / next pane.

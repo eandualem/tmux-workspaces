@@ -13,8 +13,16 @@ def identity() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def leaf(cwd: str | None = None) -> dict:
-    return {"id": identity(), "agent": None, "cwd": cwd or str(Path.cwd())}
+def leaf(cwd: str | None = None, *, empty: bool = False) -> dict:
+    """A pane. Empty ones run a chooser instead of a shell until one is picked."""
+    item = {"id": identity(), "agent": None, "cwd": cwd or str(Path.cwd())}
+    if empty:
+        item["empty"] = True
+    return item
+
+
+def is_empty(pane: dict) -> bool:
+    return bool(pane.get("empty")) and pane.get("agent") is None
 
 
 def leaves(tree: dict | None) -> list[dict]:
@@ -62,8 +70,8 @@ def remove_leaf(tree: dict, target: str) -> dict | None:
     return {**tree, "first": first, "second": second}
 
 
-def new_tab(name: str | None = None) -> dict:
-    tree = leaf()
+def new_tab(name: str | None = None, *, empty: bool = False) -> dict:
+    tree = leaf(empty=empty)
     return {
         "id": identity(),
         "name": name or "Tab " + identity()[:4],
@@ -99,8 +107,8 @@ class Model:
             (t for t in tabs if t["id"] == self.space["selected"]), tabs[0] if tabs else None
         )
 
-    def add_tab(self, name: str | None = None) -> None:
-        tab = new_tab(name)
+    def add_tab(self, name: str | None = None, *, empty: bool = False) -> None:
+        tab = new_tab(name, empty=empty)
         self.space["tabs"].append(tab)
         self.space["selected"] = tab["id"]
 
@@ -128,12 +136,20 @@ class Model:
         if not self.pane:
             raise ValueError("Create a tab first")
         self.pane["agent"] = agent
+        # Choosing anything, including a return to shell, ends the empty state.
+        self.pane.pop("empty", None)
         # Keep the v2 field for compatibility; it now also represents generic sessions.
         # Names are meaningful only on their original server, including while offline.
         if agent and source_socket:
             self.pane["source_socket"] = source_socket
         else:
             self.pane.pop("source_socket", None)
+
+    def open_terminal(self) -> None:
+        """Give the focused empty pane an ordinary shell."""
+        if not self.pane:
+            raise ValueError("Create a tab first")
+        self.pane.pop("empty", None)
 
     def close_tab(self) -> None:
         tab = self.tab
