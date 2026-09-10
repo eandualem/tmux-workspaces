@@ -377,14 +377,14 @@ class WindowTests(unittest.TestCase):
     """One supervised window: its own display, its own report."""
 
     @contextlib.contextmanager
-    def window(self, arguments, *, attach=0, started=True):
+    def window(self, arguments, *, attach=0, started=True, no_keymap=True):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             handover = root / "handover.json"
             args = parser().parse_args(
                 [
                     "_window",
-                    "--no-keymap",
+                    *(["--no-keymap"] if no_keymap else []),
                     "--data-dir",
                     str(root / "library"),
                     "--handover",
@@ -485,7 +485,8 @@ class WindowTests(unittest.TestCase):
         """Manual reopen disables refresh, not editing: the file still travels."""
         pinned = 'prefix = "C-b"\n\n[bindings]\n\n[direct]\n'
         with self.window(
-            ["--manual-reopen", "--keymap-state", pinned, "--keymap-source", "/cfg/keys.toml"]
+            ["--manual-reopen", "--keymap-state", pinned, "--keymap-source", "/cfg/keys.toml"],
+            no_keymap=False,
         ) as (args, _handover, recorded):
             self.assertEqual(application.window_main(args), 0)
         child = recorded["child"]
@@ -495,6 +496,16 @@ class WindowTests(unittest.TestCase):
         sidebar = parser().parse_args(child)
         self.assertEqual(sidebar.keymap_source, Path("/cfg/keys.toml"))
         self.assertEqual(cli.effective_keymap(sidebar).prefix, "C-b")
+
+    def test_a_window_without_keymaps_offers_the_sidebar_nothing_to_edit(self):
+        """--no-keymap stays authoritative even if a source is named beside it."""
+        with self.window(["--keymap-source", "/cfg/keys.toml"]) as (args, _handover, recorded):
+            self.assertEqual(application.window_main(args), 0)
+        child = recorded["child"]
+        self.assertNotIn("--keymap-source", child)
+        self.assertNotIn("--keymap-required", child)
+        sidebar = parser().parse_args(child)
+        self.assertIsNone(sidebar.keymap or sidebar.keymap_source)
 
     def test_the_window_hands_its_navigation_and_reopen_text_to_the_sidebar(self):
         selection = json.dumps({"workspace": "w1", "tab": "", "leaf": "", "focus": False})

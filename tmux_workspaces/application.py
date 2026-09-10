@@ -309,10 +309,11 @@ def run_instance(args) -> tuple[int, dict | None, bool]:
             # terminal profile from it. Reloading into that surface would leave
             # the two disagreeing, so such a window is reopened by hand.
             child_args.append("--manual-reopen")
-        if args.keymap_source is not None:
+        if args.keymap_source is not None and not args.no_keymap:
             # Carry the selection rather than this window's map: a refresh
             # re-reads the same file and validates it before replacing itself,
             # and the shortcut editor writes it even where refresh is manual.
+            # Without keymaps there is no file, so nothing is offered to edit.
             child_args += ["--keymap-source", str(args.keymap_source)]
             if args.keymap_required:
                 child_args.append("--keymap-required")
