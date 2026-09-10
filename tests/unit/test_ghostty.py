@@ -225,9 +225,10 @@ class GhosttyLauncherTests(unittest.TestCase):
                 child = context.child_args(root / "handover.json", None)
             self.assertEqual(context.keymap_selector, selected)
             self.assertFalse(context.keymap_required, "an absent default became an error")
-            # Keys here are fixed, so this window reloads nothing at all.
+            # Keys here are fixed, so this window reloads nothing at all; the
+            # file is still named, because the shortcut editor writes it.
             self.assertIn("--manual-reopen", child)
-            self.assertNotIn("--keymap-source", child)
+            self.assertEqual(child[child.index("--keymap-source") + 1], str(selected))
             self.assertNotIn("--keymap-required", child)
             # The command names that directory rather than an explicit file, so
             # a default created later is still picked up, and it stays one

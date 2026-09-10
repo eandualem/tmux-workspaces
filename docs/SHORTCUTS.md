@@ -200,10 +200,12 @@ always the row you are editing: `ctrl+t` and `C-t` are the same physical key
 spelled two ways, and only one of those spellings is in your file. The prefix key
 itself and Escape are reserved and cannot be reassigned.
 
-Saving requires a file to save to. A viewer started with `--keymap PATH`, or one
-that read a configuration file, has one; a viewer that inherited its map from
-the instance that launched it does not, and says so rather than inventing a path
-and freezing the keys you are already using. Saving rewrites the file from the
+Saving requires a file to save to. That is the file the launch selected: the one
+named by `--keymap PATH` or `TMUX_WORKSPACES_KEYMAP`, or otherwise
+`~/.config/tmux-workspaces/keymap.toml`, which the first save creates. A window
+opened through `./ghostty` runs a snapshot of that file's keys and still edits
+the file itself. Only a viewer started with `--no-keymap` has nowhere to save,
+and it says so rather than inventing a path. Saving rewrites the file from the
 effective map, so comments and hand formatting are not preserved — the editor
 warns before you save when the file has any. Concurrent edits, read-only files,
 symbolic links and unwritable directories are all refused with the reason, and
