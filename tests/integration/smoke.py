@@ -97,16 +97,21 @@ def _exercise(resources: FixtureResources):
     button("Return pane to shell")
     wait(client, lambda: attached(terminal), "return to original shell failed")
     assert shell_pid == shells.run("display-message", "-p", "-t", terminal, "#{pane_pid}")
-    # Click and keyboard splits create terminals inside the same tab.
+    # Click and keyboard splits open choosers inside the same tab; each is
+    # given a terminal here, which starts in the neighbour's directory.
     button("Split →")
     wait(client, lambda: len(panes()) == 3, "split-right failed")
     assert saved(library).pane["agent"] is None
+    assert saved(library).pane.get("empty") is True, "a split opened a shell unasked"
     assert Path(saved(library).pane["cwd"]).resolve() == Path("/tmp").resolve()
+    open_terminal(client, viewer, library)
     key('"')
     wait(client, lambda: len(panes()) == 4, "split-below shortcut failed")
+    open_terminal(client, viewer, library)
     key("o")
     key("h")
     wait(client, lambda: len(panes()) == 5, "four-pane layout failed")
+    open_terminal(client, viewer, library)
     assert len(saved(library).space["tabs"]) == 2
     assert [p["agent"] for p in leaves(saved(library).tab["tree"])] == [None] * 4
     target_leaf = leaves(saved(library).tab["tree"])[0]["id"]

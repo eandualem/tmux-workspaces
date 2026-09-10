@@ -1,7 +1,7 @@
 """An empty pane's chooser: an ordinary shell, or one of the sessions the sidebar lists.
 
-A new tab opens as this instead of a shell, so attaching a session never lands
-on top of a terminal nobody asked for. The pane knows which tab and leaf it was
+A new tab or split opens as this instead of a shell, so attaching a session
+never lands on top of a terminal nobody asked for. The pane knows which tab and leaf it was
 started for and names them in its choice, so a choice can only ever fill that
 pane. Drawing and input live in ``run``; ``Chooser`` holds the state and is
 tested without a terminal.
@@ -17,7 +17,7 @@ import time
 from .controls import send_action
 
 TERMINAL = "Open terminal"
-TITLE = "New tab"
+TITLE = "New pane"
 LEAD = "Choose what this pane runs."
 HINT = "↑↓ move · Enter open · click"
 EMPTY_ROSTER = "No tmux sessions to attach"

@@ -73,8 +73,8 @@ right-click for options.
 ## What you get
 
 - **Workspaces group tabs by purpose** — development, review, operations — not by
-  screen size. A new tab asks what it should run: an ordinary shell, or one of
-  your tmux sessions, right there in the pane. Splits are shells.
+  screen size. A new tab or split asks what it should run: an ordinary shell,
+  or one of your tmux sessions, right there in the pane.
 - **Attach sessions you already have.** Any tmux session, whoever created it. Closing
   a tab ends its own shells and never stops a session you attached.
 - **It persists.** Names, grouping, splits and attachment references survive exit

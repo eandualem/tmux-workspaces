@@ -616,8 +616,10 @@ class Sidebar:
 
     def split(self, direction: str) -> None:
         self.remember()
+        # The new pane opens as a chooser, like a new tab. The directory is
+        # kept so a terminal chosen there starts where its neighbour is.
         cwd = self.model.pane.get("cwd") if self.model.pane else None
-        self.model.split(direction, cwd)
+        self.model.split(direction, cwd, empty=True)
         self.show()
 
     def next_tab(self, offset: int) -> None:
