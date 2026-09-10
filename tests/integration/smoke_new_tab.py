@@ -11,7 +11,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from tests.integration.support import FixtureResources, saved, sidebar, wait
+from tests.integration.support import FixtureResources, saved, shell_attached, sidebar, wait
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.chooser import EMPTY_ROSTER, ROSTER_HEADING, TERMINAL, TITLE
 from tmux_workspaces.shells import Shells
@@ -101,6 +101,7 @@ def _exercise(resources: FixtureResources) -> None:
     assert saved(library).pane["agent"] is None
     wait(client, shell_exists, "the chosen terminal was not created")
     wait(client, lambda: "Shell" in sidebar(viewer), "the sidebar still shows an empty pane")
+    wait(client, lambda: shell_attached(shells, shell_name()), "the chosen terminal did not attach")
     client.type("printf 'CHOSEN_%s\\n' TERMINAL\r")
     wait(
         client,

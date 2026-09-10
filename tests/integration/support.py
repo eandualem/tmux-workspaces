@@ -418,6 +418,16 @@ def open_terminal(client, viewer, library: Path) -> None:
         lambda: name in shells.run("list-sessions", "-F", "#{session_name}", check=False),
         "the chosen terminal was not created",
     )
+    # Typing is only safe once the pane's client is attached to that shell;
+    # text sent before then can be lost while the attachment starts.
+    wait(client, lambda: shell_attached(shells, name), "the chosen terminal did not attach")
+
+
+def shell_attached(shells: Tmux, name: str) -> bool:
+    attached = shells.run(
+        "display-message", "-p", "-t", "=" + name + ":", "#{session_attached}", check=False
+    )
+    return attached.isdigit() and int(attached) > 0
 
 
 def click_attach(client, viewer, leaf_id):

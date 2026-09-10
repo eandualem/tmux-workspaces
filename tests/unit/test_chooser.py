@@ -97,6 +97,39 @@ class ChooserDrawTests(unittest.TestCase):
         self.assertEqual(hits, {4: 0, 6: 1})
         self.assertIn(module.HINT, [call.args[2] for call in screen.addnstr.call_args_list])
 
+    def test_a_roster_taller_than_the_pane_scrolls_with_the_selection(self):
+        """Keyboard and mouse agree: only drawn rows are clickable, and the
+        selection is always among them."""
+        screen, curses = fake_curses([])
+        chooser = Chooser(TAB, LEAF)
+        chooser.update({f"s{index:02d}": {"online": True} for index in range(30)}, "")
+        hits = draw(screen, chooser, curses)
+        # Twenty rows: fourteen list rows (4..17), terminal, heading, twelve sessions.
+        self.assertEqual(hits, {4: 0, **{row: row - 5 for row in range(6, 18)}})
+        texts = [call.args[2] for call in screen.addnstr.call_args_list]
+        self.assertIn(module.MORE_BELOW, texts)
+        self.assertNotIn(module.MORE_ABOVE, texts)
+        chooser.select(25)
+        hits = draw(screen, chooser, curses)
+        self.assertIn(25, hits.values())
+        self.assertNotIn(0, hits.values(), "the terminal row scrolled off with the selection")
+        texts = [call.args[2] for call in screen.addnstr.call_args_list]
+        self.assertIn(module.MORE_ABOVE, texts)
+        # Moving back up scrolls only as far as needed; the last row stays clickable.
+        chooser.move(-1)
+        hits = draw(screen, chooser, curses)
+        self.assertEqual(min(hits.values()), 12)
+        chooser.select(30)
+        hits = draw(screen, chooser, curses)
+        self.assertEqual(max(hits.values()), 30)
+        chooser.select(0)
+        hits = draw(screen, chooser, curses)
+        self.assertEqual(hits[4], 0)
+        # A tiny pane still keeps the selection on screen.
+        screen.getmaxyx.return_value = (7, 40)
+        chooser.select(3)
+        self.assertEqual(draw(screen, chooser, curses), {4: 3})
+
     def test_an_empty_roster_says_so_and_a_narrow_pane_never_raises(self):
         screen, curses = fake_curses([])
         screen.getmaxyx.return_value = (3, 8)
@@ -167,8 +200,17 @@ class ChooserRunTests(unittest.TestCase):
         self.assertEqual(module.clicked_row("[<0;5;7M"), 6)
 
     def test_a_silent_viewer_is_reported_and_the_choice_stays_offered(self):
-        screen, curses = fake_curses([10, 10])
+        screen, curses = fake_curses([10])
         chooser = Chooser(TAB, LEAF)
+        with (
+            patch.object(module, "send_action", side_effect=OSError("gone")) as send,
+            self.assertRaises(StopFixture),
+        ):
+            run(screen, chooser, self.source({}), "/tmp/a.sock", curses, write=Mock())
+        self.assertEqual(send.call_count, 1)
+        self.assertEqual(chooser.message, "The viewer did not respond; try again")
+        # The choice is still offered: a second Enter sends it again.
+        screen, curses = fake_curses([10, 10])
         with (
             patch.object(module, "send_action", side_effect=[OSError("gone"), None]) as send,
             self.assertRaises(StopFixture),

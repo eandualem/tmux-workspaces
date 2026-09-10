@@ -9,7 +9,7 @@ import time
 import unittest
 from pathlib import Path
 
-from tests.integration.support import Client, saved, wait
+from tests.integration.support import Client, saved, shell_attached, wait
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import (
     DIRECT_SHORTCUTS,
@@ -178,11 +178,8 @@ class ControlTests(unittest.TestCase):
                 self.assertNotEqual(new_terminal, terminal)
                 wait(
                     client,
-                    lambda: (
-                        new_terminal[1:-1]
-                        in shells.run("list-sessions", "-F", "#{session_name}", check=False)
-                    ),
-                    "the chosen terminal was not created",
+                    lambda: shell_attached(shells, new_terminal[1:-1]),
+                    "the chosen terminal did not attach",
                 )
                 client.type("printf 'AFTER_SHORTCUT_%s\\n' NEW_SHELL\r")
                 wait(

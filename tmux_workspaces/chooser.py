@@ -22,6 +22,7 @@ LEAD = "Choose what this pane runs."
 HINT = "↑↓ move · Enter open · click"
 EMPTY_ROSTER = "No tmux sessions to attach"
 ROSTER_HEADING = "Attach a session"
+MORE_ABOVE, MORE_BELOW = "↑ more above", "↓ more below"
 
 
 class Chooser:
@@ -31,6 +32,7 @@ class Chooser:
         self.tab_id, self.leaf_id = tab_id, leaf_id
         self.sessions: list[tuple[str, str]] = []
         self.index = 0
+        self.offset = 0
         self.error = ""
         self.message = ""
 
@@ -69,6 +71,26 @@ class Chooser:
     def rows(self) -> list[tuple[str, str]]:
         return [(TERMINAL, ""), *self.sessions]
 
+    def layout(self) -> list[int | None]:
+        """The choice index drawn on each list row; None is the roster heading."""
+        items: list[int | None] = [0]
+        if self.sessions:
+            items.append(None)
+        items.extend(range(1, self.count))
+        return items
+
+    def viewport(self, available: int) -> tuple[int, int]:
+        """The slice of ``layout`` to draw, scrolled only as far as the selection needs."""
+        items = self.layout()
+        available = max(1, available)
+        position = items.index(self.index)
+        if position < self.offset:
+            self.offset = position
+        elif position >= self.offset + available:
+            self.offset = position - available + 1
+        self.offset = max(0, min(self.offset, len(items) - available))
+        return self.offset, min(len(items), self.offset + available)
+
     def action(self) -> str:
         """The viewer action for the current selection."""
         name = self.selected_name()
@@ -91,22 +113,31 @@ def draw(screen, chooser: Chooser, curses) -> dict[int, int]:
     put(1, 2, TITLE[:room], curses.A_BOLD)
     put(2, 2, LEAD[:room], curses.A_DIM)
     hits: dict[int, int] = {}
+    # Rows 4 to height-3 hold the list; a roster taller than that scrolls with
+    # the selection, and the rows above and below say so.
+    items = chooser.layout()
+    start, end = chooser.viewport(height - 6)
+    if start > 0:
+        put(3, 2, MORE_ABOVE[:room], curses.A_DIM)
     row = 4
-    for index, (label, state) in enumerate(chooser.rows()):
-        if index == 1:
+    labels = chooser.rows()
+    for item in items[start:end]:
+        if item is None:
             put(row, 2, ROSTER_HEADING[:room], curses.A_DIM)
             row += 1
-        selected = index == chooser.index
+            continue
+        label, state = labels[item]
+        selected = item == chooser.index
         marker = "▸ " if selected else "  "
         put(row, 2, (marker + label)[:room], curses.A_REVERSE if selected else 0)
         if state:
             column = min(width - len(state) - 2, 4 + len(label) + 2)
             if column > 4 + len(label):
                 put(row, column, state, curses.A_DIM)
-        hits[row] = index
+        hits[row] = item
         row += 1
-        if row >= height - 2:
-            break
+    if end < len(items):
+        put(row, 2, MORE_BELOW[:room], curses.A_DIM)
     if not chooser.sessions:
         put(row, 2, EMPTY_ROSTER[:room], curses.A_DIM)
     footer = chooser.message or chooser.error or HINT
