@@ -78,9 +78,9 @@ the click itself instead of forwarding it to the viewer.
 The **+** beside the workspace name creates a tab. The wider numbered buttons at
 the bottom switch workspaces; arrows reveal additional workspaces when needed.
 The workspace name is a label, with its options available by right-click or the
-**Workspaces…** button. To attach a session, select its destination pane and click
-the navigation panel's **Attach session…** button, separate from **Focus**. Pane borders stay
-plain. The navigation panel button,
+**Workspaces…** button. To attach a session, select its destination pane and open
+**Tab actions… → Attach session**; splits, focus and pane cycling live in the same
+menu. Panes are set apart by a gap in the panel's color, not by ruled borders.
 **Tab actions… → Attach session** and the attachment shortcut work on all supported versions.
 
 ## Other terminals and the existing launcher

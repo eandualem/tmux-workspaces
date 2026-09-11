@@ -175,16 +175,26 @@ class Role:
     attributes: tuple[str, ...] = ()
 
     @classmethod
-    def from_dict(cls, data: Mapping, *, role: str) -> Role:
+    def from_dict(cls, data: Mapping, *, role: str, base: Role | None = None) -> Role:
+        """Read a role table. Keys left out keep ``base``'s values, so a table
+        naming only a foreground changes only that; without a base they are
+        the terminal's defaults."""
         if not isinstance(data, Mapping):
             raise ValueError(f"{role}: expected a table of foreground/background/attributes")
         unknown = set(data) - {"foreground", "background", "attributes"}
         if unknown:
             raise ValueError(f"{role}: unknown option {next(iter(sorted(unknown)))!r}")
+        base = base or cls((DEFAULT_COLOR,), (DEFAULT_COLOR,), ())
         return cls(
-            _canonical_list(data.get("foreground", DEFAULT_COLOR), what=f"{role}.foreground"),
-            _canonical_list(data.get("background", DEFAULT_COLOR), what=f"{role}.background"),
-            _canonical_attributes(data.get("attributes", []), what=f"{role}.attributes"),
+            _canonical_list(
+                data.get("foreground", list(base.foreground)), what=f"{role}.foreground"
+            ),
+            _canonical_list(
+                data.get("background", list(base.background)), what=f"{role}.background"
+            ),
+            _canonical_attributes(
+                data.get("attributes", list(base.attributes)), what=f"{role}.attributes"
+            ),
         )
 
     def to_toml_table(self, role: str) -> str:
@@ -207,22 +217,22 @@ class Role:
 _PRESETS: tuple[tuple[str, str, dict[str, Role]], ...] = (
     (
         "default",
-        "Terminal background, steel-blue accent, grey secondary text",
-        {
-            "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
-            "active": Role(("231", "white"), ("238", "blue"), ()),
-            "accent": Role(("110", "cyan"), (DEFAULT_COLOR,), ()),
-            "muted": Role(("243", "white"), (DEFAULT_COLOR,), ()),
-        },
-    ),
-    (
-        "slate",
-        "A dark sidebar panel set apart from the terminals beside it",
+        "A dark panel beside the terminals, with a steel-blue accent",
         {
             "normal": Role(("252", "white"), ("235", "black"), ()),
             "active": Role(("231", "white"), ("239", "blue"), ()),
             "accent": Role(("110", "cyan"), ("235", "black"), ()),
             "muted": Role(("245", "white"), ("235", "black"), ()),
+        },
+    ),
+    (
+        "plain",
+        "The terminal's own background, steel-blue accent, grey secondary text",
+        {
+            "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
+            "active": Role(("231", "white"), ("238", "blue"), ()),
+            "accent": Role(("110", "cyan"), (DEFAULT_COLOR,), ()),
+            "muted": Role(("243", "white"), (DEFAULT_COLOR,), ()),
         },
     ),
     (
@@ -237,12 +247,12 @@ _PRESETS: tuple[tuple[str, str, dict[str, Role]], ...] = (
     ),
     (
         "paper",
-        "For light terminals: dark text, a deep blue accent",
+        "For light terminals: a pale panel, dark text and a deep blue accent",
         {
-            "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
-            "active": Role(("232", "black"), ("253", "white"), ()),
-            "accent": Role(("25", "blue"), (DEFAULT_COLOR,), ()),
-            "muted": Role(("245", "black"), (DEFAULT_COLOR,), ("dim",)),
+            "normal": Role(("236", "black"), ("254", "white"), ()),
+            "active": Role(("232", "black"), ("250", "cyan"), ()),
+            "accent": Role(("25", "blue"), ("254", "white"), ()),
+            "muted": Role(("245", "black"), ("254", "white"), ("dim",)),
         },
     ),
     (
@@ -445,7 +455,7 @@ class Theme:
         roles = dict(preset_theme(data["preset"]).roles) if "preset" in data else _shipped()
         for role in ROLES:
             if role in data:
-                roles[role] = Role.from_dict(data[role], role=role)
+                roles[role] = Role.from_dict(data[role], role=role, base=roles[role])
         return cls(MappingProxyType(roles))
 
     def with_role(self, role: str, **changes) -> Theme:

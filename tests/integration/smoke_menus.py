@@ -51,7 +51,7 @@ def _exercise(resources: FixtureResources) -> None:
         """
         rows = []
         for line in styled():
-            if "48;5;238" not in line:
+            if "48;5;239" not in line:
                 continue
             text = ESCAPE_SEQUENCE.sub("", line).strip()
             if text and not text.startswith(">"):

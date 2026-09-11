@@ -44,19 +44,19 @@ FIRST_ROW_ROLES = frozenset({"title"})
 _ATTRIBUTES = {1: "bold", 2: "dim", 4: "underline", 7: "reverse"}
 _CLEAR = {22: ("bold", "dim"), 24: ("underline",), 27: ("reverse",)}
 
-# The appearance shipped before any theme configuration existed: pair 1 is the
-# terminal default, 2 active, 3 accent and 4 muted.
+# The shipped appearance: a panel of its own color (pair 1 normal), then
+# 2 active, 3 accent and 4 muted, all on that panel.
 SHIPPED_256 = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
-    "muted": (243, DEFAULT, ()),
-    "active": (231, 238, ()),
-    "accent": (110, DEFAULT, ()),
+    "title": (252, 235, ("bold",)),
+    "muted": (245, 235, ()),
+    "active": (231, 239, ()),
+    "accent": (110, 235, ()),
 }
 SHIPPED_BASIC = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
-    "muted": (7, DEFAULT, ()),
+    "title": (7, 0, ("bold",)),
+    "muted": (7, 0, ()),
     "active": (7, 4, ()),
-    "accent": (6, DEFAULT, ()),
+    "accent": (6, 0, ()),
 }
 
 
@@ -295,11 +295,12 @@ foreground = ["bright-magenta", "magenta"]
 foreground = 244
 """
 
+# Roles the file leaves out keep the shipped panel background.
 CUSTOM_256 = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
+    "title": (252, 235, ("bold",)),
     "active": (3, 27, ("bold",)),
-    "accent": (13, DEFAULT, ()),
-    "muted": (244, DEFAULT, ()),
+    "accent": (13, 235, ()),
+    "muted": (244, 235, ()),
 }
 
 

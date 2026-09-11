@@ -32,18 +32,20 @@ pane/tab actions and workspace switching instead of ruled lines. Selecting
 another tab can move the following rows by one line as the detail row changes
 position.
 
-Attach session is independent of Focus. Shortcuts and Exit share a row. The
-Workspaces… control opens workspace options; numbered workspace buttons switch
-purposes, the selected one drawn as a filled block, and the accent + beside them
-creates a workspace. The top + creates a tab. Double-click the active tab name or
-top workspace name to edit it in place. The bottom row is the status line: an
-accent light and `Layouts saved` while idle, a message otherwise.
+The footer is one plain list, one control per row: Tab actions…, Shortcuts,
+Colors…, Exit, then Workspaces… and the numbered workspace buttons, the
+selected one drawn as a filled block, with the accent + beside them creating a
+workspace. Splits, focus, pane cycling and attaching live in Tab actions…; a
+split opens as the same chooser as a new tab. The top + creates a tab.
+Double-click the active tab name or top workspace name to edit it in place. The
+bottom row is the status line: an accent light and `Layouts saved` while idle,
+a message otherwise.
 
-Content panes use plain single-line borders, retaining the full available
-content height, colored from the viewer theme: the focused pane's border in the
-accent color, the others muted. The navigation panel and attachment shortcut
-both target the selected pane. Colors… in the panel switches presets and edits
-each role; see [THEMES.md](THEMES.md).
+Content panes keep the full available content height and are set apart from
+the panel and from each other by a band of the panel's own color rather than
+ruled borders; no border marks the focused pane. Tab actions… and the
+attachment shortcut both target the selected pane. Colors… in the panel
+switches presets and edits each role; see [THEMES.md](THEMES.md).
 
 ## Try these interactions
 
@@ -51,7 +53,7 @@ each role; see [THEMES.md](THEMES.md).
 2. Create a tab, split right/below, type into shells and rename both kinds of name.
 3. Select an inactive pane, attach reviewer, then return to its parked shell.
 4. Try right-click options, inline Enter/Escape, and a long name.
-5. Drag borders and resize smaller/larger; Focus/Layout restores the saved splits.
+5. Drag the gaps and resize smaller/larger; Focus pane/Show layout restores the saved splits.
 6. Exit and launch the sample again; check the arrangement and ordinary shell state.
 
 Very short navigation panels (under 16 rows) show an enlarge hint while core

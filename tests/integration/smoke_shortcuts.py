@@ -138,11 +138,14 @@ def _standalone(resources: FixtureResources) -> None:
     assert saved(library).tab["name"] == "Beta"
 
     for count, action in ((2, "split-right"), (3, "split-below"), (4, "split-right")):
+        neighbour = saved(library).pane.get("cwd")
         key(action)
         check(
             lambda count=count: len(leaves(saved(library).tab["tree"])) == count,
             "one direct split key did not create one pane",
         )
+        # A terminal chosen in the split starts where its neighbour was.
+        assert saved(library).pane.get("cwd") == neighbour, "split lost the neighbour's directory"
         open_terminal(client, viewer, library)
     check(
         lambda: len(viewer.run("list-panes").splitlines()) == 5,

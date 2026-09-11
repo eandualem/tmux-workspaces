@@ -35,28 +35,30 @@ commands, a status view, an editor, or any other terminal program.
 you: attaching a session never changes them. In the name editor, type a name and
 click **Save name** or press Enter; Ctrl-u clears the existing name.
 
-Click **Split →** or **Split ↓** to add another pane beside or below the
-selected one. It opens with the same chooser as a new tab; a terminal chosen
-there starts in the original shell's working directory. Four panes still belong
-to one tab. Click a pane to select and type
-there. Drag the borders to adjust sizes. **Focus** temporarily shows one pane;
-**Next →** cycles panes and **Layout** restores the splits. Narrow terminals
-use temporary focus without discarding the arrangement.
+**Tab actions… → Split right** or **Split below** adds another pane beside or
+below the selected one, as do the split shortcuts. It opens with the same
+chooser as a new tab; a terminal chosen there starts in the original shell's
+working directory. Four panes still belong to one tab. Click a pane to select
+and type there. Drag the gap between panes to adjust sizes. **Tab actions… →
+Focus pane** temporarily shows one pane; **Next pane** cycles panes and
+**Show layout** restores the splits. Narrow terminals use temporary focus
+without discarding the arrangement. The navigation panel itself is one plain
+list: **Tab actions…**, **Shortcuts**, **Colors…**, **Exit**, then the
+workspace controls.
 
-To attach a session to a pane that already has a shell, select the pane, click
-**Attach session…** in the navigation panel, then choose a tmux session
-for that pane. This is a separate control from **Focus**. Type to filter the chooser.
-The pane's original shell stays running;
+To attach a session to a pane that already has a shell, select the pane, open
+**Tab actions… → Attach session**, then choose a tmux session for that pane.
+Type to filter the chooser. The pane's original shell stays running;
 **Tab actions… → Return pane to shell** brings it back. Each split can attach a different session or
 remain an ordinary terminal. Attachment names and states appear as secondary
 information, below the active tab’s name. Offline attachments stay associated with
 their pane and reconnect when the session returns; the viewer never starts
 an external session. The roster is only an attachment chooser, never a source of tabs.
 
-Pane borders take the viewer's colors: the focused pane's border is drawn in the
-accent color and the others in the muted one, so the split you are typing in is
-easy to find. The navigation panel button, **Tab actions… → Attach session**
-and the attachment shortcut work on all supported tmux versions.
+Panes are separated by a gap in the navigation panel's own color rather than
+by ruled borders, and no border is highlighted; the cursor shows where you are
+typing. **Tab actions… → Attach session** and the attachment shortcut work on
+all supported tmux versions.
 Once open, the chooser keeps its selected destination even if focus moves to
 another pane. If another viewer removes or changes that destination, attach again
 from the updated pane instead of replacing the peer's change.
@@ -67,7 +69,7 @@ renames a workspace or deletes an empty one. **Tab actions…** also reorders ta
 workspace. Scroll the navigation panel with the wheel or its arrow controls.
 
 **Colors…** opens the color editor. Its last row, **Preset**, steps through the
-shipped looks — `default`, `slate`, `forest`, `paper` and `mono` — with a live
+shipped looks — `default`, `plain`, `forest`, `paper` and `mono` — with a live
 preview; the rows above tune each color role by hand. Apply writes the choice
 to a small TOML file; [THEMES.md](THEMES.md) describes the file and every role.
 The status line at the bottom of the panel shows a small light while the viewer

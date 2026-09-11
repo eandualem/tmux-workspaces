@@ -54,10 +54,11 @@ class Display:
         self.keymap = keymap or DEFAULT_KEYMAP
         # How a chooser pane builds the sidebar's session roster for itself.
         self.roster_args = tuple(roster_args)
-        # Pane border colors follow the viewer theme: the muted role for borders
-        # at rest and the accent role for the focused pane. Until a theme
-        # installs, these are the shipped values.
-        self.border_colors = ("colour243", "colour110")
+        # Pane borders are not lines but a band of the sidebar's own background,
+        # so the panel and each terminal are set apart by a color gap rather
+        # than a rule, and no border is highlighted. Until a theme installs,
+        # this is the shipped panel color.
+        self.border_color = "colour235"
         self._setup_done = False
         self._tab_id = ""
         self.panes: dict[str, str] = {}
@@ -90,8 +91,8 @@ class Display:
             self.tmux.run("set-option", "-g", name, value)
         for name, value in {
             "pane-border-status": "off",
-            "pane-border-style": "fg=" + self.border_colors[0],
-            "pane-active-border-style": "fg=" + self.border_colors[1],
+            "pane-border-style": self._border_style(),
+            "pane-active-border-style": self._border_style(),
             "automatic-rename": "off",
             "allow-rename": "off",
             "window-size": "latest",
@@ -187,21 +188,27 @@ class Display:
                 ),
             )
 
-    def style_borders(self, inactive: str, active: str) -> None:
-        """Color the pane borders from the theme: two options, applied at once.
+    def _border_style(self) -> str:
+        # Foreground and background alike: the line glyphs vanish into a band.
+        return f"fg={self.border_color},bg={self.border_color}"
+
+    def style_borders(self, color: str) -> None:
+        """Paint the pane borders as a band of one color, the sidebar's background.
 
         Called whenever a palette installs, including a preview in the colors
-        editor, so the borders change with the sidebar rather than a step
-        behind it. Before ``setup`` the values are only remembered; ``setup``
-        applies them with the rest of the window options.
+        editor, so the gap changes with the sidebar rather than a step behind
+        it. The focused pane is not marked by its border: the owner asked for
+        no highlighted border at all. Before ``setup`` the value is only
+        remembered; ``setup`` applies it with the rest of the window options.
         """
-        self.border_colors = (inactive, active)
+        self.border_color = color
         if not self._setup_done:
             return
+        style = self._border_style()
         self.tmux.batch(
             [
-                ["set-window-option", "-g", "pane-border-style", "fg=" + inactive],
-                ["set-window-option", "-g", "pane-active-border-style", "fg=" + active],
+                ["set-window-option", "-g", "pane-border-style", style],
+                ["set-window-option", "-g", "pane-active-border-style", style],
             ]
         )
 

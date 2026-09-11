@@ -92,12 +92,12 @@ class PresetThemeTests(unittest.TestCase):
             Theme.from_dict({"preset": 3})
 
     def test_a_file_may_start_from_a_preset_and_override_a_role(self):
-        theme = parse_theme(b'preset = "slate"\n[accent]\nforeground = "red"\n')
-        self.assertEqual(theme.roles["normal"], preset_theme("slate").roles["normal"])
+        theme = parse_theme(b'preset = "paper"\n[accent]\nforeground = "red"\n')
+        self.assertEqual(theme.roles["normal"], preset_theme("paper").roles["normal"])
         self.assertEqual(theme.roles["accent"].foreground, ("red",))
         self.assertIsNone(theme.preset_name())
         # The name is matched loosely; the sections are not.
-        self.assertEqual(parse_theme(b'preset = " Paper "\n').preset_name(), "paper")
+        self.assertEqual(parse_theme(b'preset = " Plain "\n').preset_name(), "plain")
         with self.assertRaises(ValueError) as caught:
             parse_theme(b"[presets]\n")
         self.assertIn("preset", str(caught.exception))
@@ -218,7 +218,7 @@ class BorderColorTests(unittest.TestCase):
     def test_colors_set_before_setup_are_applied_by_setup(self):
         display = self.display()
         display.tmux = Mock()
-        display.style_borders("colour245", "colour110")
+        display.style_borders("colour254")
         display.tmux.batch.assert_not_called()
         display.setup()
         options = {
@@ -226,22 +226,24 @@ class BorderColorTests(unittest.TestCase):
             for call in display.tmux.run.call_args_list
             if call.args[:2] == ("set-window-option", "-g")
         }
-        self.assertEqual(options["pane-border-style"], "fg=colour245")
-        self.assertEqual(options["pane-active-border-style"], "fg=colour110")
+        # A band, not a line: the glyphs take the same color as their ground,
+        # and the focused pane's border is not marked.
+        self.assertEqual(options["pane-border-style"], "fg=colour254,bg=colour254")
+        self.assertEqual(options["pane-active-border-style"], "fg=colour254,bg=colour254")
 
     def test_colors_set_after_setup_reach_tmux_in_one_batch(self):
         display = self.display()
         display.tmux = Mock()
         display.setup()
         display.tmux.reset_mock()
-        display.style_borders("default", "colour25")
+        display.style_borders("default")
         display.tmux.batch.assert_called_once_with(
             [
-                ["set-window-option", "-g", "pane-border-style", "fg=default"],
-                ["set-window-option", "-g", "pane-active-border-style", "fg=colour25"],
+                ["set-window-option", "-g", "pane-border-style", "fg=default,bg=default"],
+                ["set-window-option", "-g", "pane-active-border-style", "fg=default,bg=default"],
             ]
         )
-        self.assertEqual(display.border_colors, ("default", "colour25"))
+        self.assertEqual(display.border_color, "default")
 
 
 class ChooserThemeTests(unittest.TestCase):
@@ -254,23 +256,24 @@ class ChooserThemeTests(unittest.TestCase):
         self.assertIsNone(install_theme(Curses(), None, 256))
 
     def test_a_theme_file_colors_the_chooser_like_the_sidebar(self):
-        self.path.write_text('preset = "slate"\n')
+        self.path.write_text('preset = "paper"\n')
         fake = Curses()
         fake.COLORS = 256
         styles = install_theme(fake, self.path, 256)
-        palette = preset_theme("slate").resolve(256)
+        palette = preset_theme("paper").resolve(256)
         self.assertEqual(fake.pairs[2], palette.entries["active"][:2])
         self.assertEqual(styles["selected"], 2)
-        self.assertEqual(styles["muted"], 4)
+        # Paper's muted role adds dim, so the style is pair 4 plus that bit.
+        self.assertEqual(styles["muted"], 4 | Curses.A_DIM)
         self.assertEqual(styles["background"], 1)
         self.assertTrue(styles["title"] & Curses.A_BOLD)
 
     def test_the_outer_terminal_bounds_the_chooser_palette(self):
-        self.path.write_text('preset = "slate"\n')
+        self.path.write_text('preset = "paper"\n')
         fake = Curses()
         fake.COLORS = 256
         install_theme(fake, self.path, 8)
-        self.assertEqual(fake.pairs[2], preset_theme("slate").resolve(8).entries["active"][:2])
+        self.assertEqual(fake.pairs[2], preset_theme("paper").resolve(8).entries["active"][:2])
 
     def test_an_unreadable_theme_never_stops_the_chooser(self):
         self.path.write_text("[active]\nforeground = '#8ab4f8'\n")

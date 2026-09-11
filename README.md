@@ -14,11 +14,12 @@ a split layout in each one, and come back to the same arrangement tomorrow.
 │     Shell                  │ $ npm run dev                     │
 │                            │ ready on http://localhost:3000    │
 │  actions                   │                                   │
-│  Split →      Split ↓      │                                   │
-│  Attach session…           │                                   │
-│  Shortcuts            Exit │                                   │
+│  Tab actions…              │                                   │
+│  Shortcuts                 │                                   │
+│  Colors…                   │                                   │
+│  Exit                      │                                   │
 │  workspaces                │                                   │
-│  Workspaces…  Colors…      │                                   │
+│  Workspaces…               │                                   │
 │    1                   +   │                                   │
 │ ● Layouts saved            │                                   │
 └────────────────────────────┴───────────────────────────────────┘
@@ -83,8 +84,8 @@ right-click for options.
 - **Built for remote hosts.** Run it on the tmux host through SSH. It needs no
   desktop, and your shells keep the SSH agent and XDG paths you started with.
 - **Yours to configure.** Pick a color preset or tune each role, and rebind
-  shortcuts, from inside the viewer or from a TOML file. Pane borders and the
-  new-tab chooser follow the same theme.
+  shortcuts, from inside the viewer or from a TOML file. The panel sits beside
+  your terminals in a color of its own, and the new-tab chooser matches it.
 
 ## Install
 

@@ -20,6 +20,7 @@ from tmux_workspaces.theme import (
     color_error,
     load_theme,
     parse_theme_state,
+    preset_theme,
     theme_path,
 )
 
@@ -103,10 +104,10 @@ class ColorValueTests(unittest.TestCase):
 class ShippedAppearanceTests(unittest.TestCase):
     def test_defaults_reproduce_todays_pairs_exactly(self):
         palette = DEFAULT_THEME.resolve(256)
-        self.assertEqual(palette.entries["normal"][:2], (-1, -1))
-        self.assertEqual(palette.entries["active"][:2], (231, 238))
-        self.assertEqual(palette.entries["accent"][:2], (110, -1))
-        self.assertEqual(palette.entries["muted"][:2], (243, -1))
+        self.assertEqual(palette.entries["normal"][:2], (252, 235))
+        self.assertEqual(palette.entries["active"][:2], (231, 239))
+        self.assertEqual(palette.entries["accent"][:2], (110, 235))
+        self.assertEqual(palette.entries["muted"][:2], (245, 235))
         self.assertEqual(palette.fallbacks, ())
 
     def test_defaults_reproduce_todays_basic_palette_exactly(self):
@@ -115,10 +116,10 @@ class ShippedAppearanceTests(unittest.TestCase):
         # and green for 108, so the ordered fallbacks are load-bearing.
         for colors in (8, 16, 88):
             palette = DEFAULT_THEME.resolve(colors)
-            self.assertEqual(palette.entries["normal"][:2], (-1, -1), colors)
+            self.assertEqual(palette.entries["normal"][:2], (7, 0), colors)
             self.assertEqual(palette.entries["active"][:2], (7, 4), colors)
-            self.assertEqual(palette.entries["accent"][:2], (6, -1), colors)
-            self.assertEqual(palette.entries["muted"][:2], (7, -1), colors)
+            self.assertEqual(palette.entries["accent"][:2], (6, 0), colors)
+            self.assertEqual(palette.entries["muted"][:2], (7, 0), colors)
 
     def test_pair_numbers_match_the_existing_sidebar_call_sites(self):
         palette = DEFAULT_THEME.resolve(256)
@@ -150,7 +151,8 @@ class ResolutionTests(unittest.TestCase):
 
     def test_bright_colors_drop_to_their_base_with_bold_on_eight_color_terminals(self):
         theme = Theme.from_dict({"accent": {"foreground": "bright-red"}})
-        self.assertEqual(theme.resolve(16).entries["accent"][:2], (9, -1))
+        # The panel background drops to its basic fallback on 16 colors too.
+        self.assertEqual(theme.resolve(16).entries["accent"][:2], (9, 0))
         foreground, _background, attributes = theme.resolve(8).entries["accent"]
         self.assertEqual(foreground, 1)
         self.assertIn("bold", attributes)
@@ -170,7 +172,7 @@ class ResolutionTests(unittest.TestCase):
         theme = Theme.from_dict({"active": {"foreground": "red", "background": "red"}})
         palette = theme.resolve(256)
         self.assertEqual(palette.fallbacks, ("active",))
-        self.assertEqual(palette.entries["active"][:2], (231, 238))
+        self.assertEqual(palette.entries["active"][:2], (231, 239))
         self.assertNotIn("reverse", palette.entries["active"][2])
         self.assertIn("shipped fallback", palette.describe("active"))
 
@@ -182,7 +184,7 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(theme.resolve(8).fallbacks, ("active",))
 
     def test_terminal_defaults_on_both_sides_are_not_treated_as_a_collision(self):
-        palette = DEFAULT_THEME.resolve(256)
+        palette = preset_theme("plain").resolve(256)
         self.assertEqual(palette.entries["normal"][:2], (-1, -1))
         self.assertEqual(palette.fallbacks, ())
 
@@ -195,14 +197,15 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(
             DEFAULT_THEME.resolve(8).describe("active"), "white on blue (8-color fallback)"
         )
-        self.assertIn("terminal default", DEFAULT_THEME.resolve(256).describe("normal"))
+        self.assertIn("terminal default", preset_theme("plain").resolve(256).describe("normal"))
 
 
 class ParsingTests(unittest.TestCase):
     def test_omitted_roles_and_fields_keep_their_shipped_values(self):
         theme = Theme.from_dict({"accent": {"foreground": "red"}})
         self.assertEqual(theme.roles["active"], DEFAULT_THEME.roles["active"])
-        self.assertEqual(theme.roles["accent"].background, ("default",))
+        # A table naming one key changes one key; the panel background stays.
+        self.assertEqual(theme.roles["accent"].background, ("235", "black"))
         self.assertEqual(Theme.from_dict({}), DEFAULT_THEME)
 
     def test_invalid_configurations_are_rejected_with_located_messages(self):
@@ -614,7 +617,7 @@ class InstallTests(unittest.TestCase):
         palette.install(curses)
         self.assertEqual(curses.started, 1)
         self.assertEqual(curses.defaults, 1)
-        self.assertEqual(curses.pairs, {1: (-1, -1), 2: (231, 238), 3: (110, -1), 4: (243, -1)})
+        self.assertEqual(curses.pairs, {1: (252, 235), 2: (231, 239), 3: (110, 235), 4: (245, 235)})
         self.assertEqual([palette.style(role) for role in ROLES], [1, 2, 3, 4])
 
     def test_attributes_are_folded_into_the_precomputed_style(self):
@@ -697,7 +700,7 @@ class InstallTests(unittest.TestCase):
         self.assertTrue(all(min(pair) >= 0 for pair in curses.pairs.values()))
 
     def test_installed_reports_what_was_given_to_init_pair(self):
-        palette = DEFAULT_THEME.resolve(256)
+        palette = preset_theme("plain").resolve(256)
         with self.assertRaises(ThemeError):
             palette.installed("normal")
         palette.install(Curses())
@@ -709,7 +712,7 @@ class InstallTests(unittest.TestCase):
         # init_pair, so a rollback replaying -1 would fail and strand the
         # half-applied palette.
         curses = Curses(default_colors=False)
-        DEFAULT_THEME.resolve(256).install(curses)
+        preset_theme("plain").resolve(256).install(curses)
         installed = dict(curses.pairs)
         self.assertEqual(installed[1], (7, 0))
         curses.pairs.clear()
@@ -721,7 +724,7 @@ class InstallTests(unittest.TestCase):
 
     def test_terminals_without_default_color_support_get_concrete_colors(self):
         curses = Curses(default_colors=False)
-        DEFAULT_THEME.resolve(256).install(curses)
+        preset_theme("plain").resolve(256).install(curses)
         self.assertEqual(curses.pairs[1], (7, 0))
         self.assertEqual(curses.pairs[3], (110, 0))
 

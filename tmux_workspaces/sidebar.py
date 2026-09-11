@@ -130,14 +130,12 @@ class Sidebar:
         palette = theme.resolve(self.colors)
         palette.install(curses)
         self.theme, self.palette, self.last_frame = theme, palette, None
-        # Pane borders belong to the same layer: borders at rest take the muted
-        # text color, the focused pane's border the accent. A display that
-        # cannot be reached keeps its borders; the sidebar colors still apply.
+        # Pane borders are a band of the sidebar's background, so the panel and
+        # the terminals are separated by a color gap rather than a line. A
+        # display that cannot be reached keeps its borders; the sidebar colors
+        # still apply.
         with contextlib.suppress(RuntimeError, OSError, ValueError):
-            self.display.style_borders(
-                tmux_color(palette.installed("muted")[0]),
-                tmux_color(palette.installed("accent")[0]),
-            )
+            self.display.style_borders(tmux_color(palette.installed("normal")[1]))
         # The role names the sidebar's own base, so its empty cells and the
         # cleared frame carry the configured background rather than the
         # terminal's, which is only visible once someone configures one.
@@ -802,6 +800,12 @@ class Sidebar:
             self.display.select(self.model.tab["focus"])
             self.save()
 
+    def menu_next_pane(self) -> None:
+        """Next pane from the tab menu: the menu closes and typing follows the pane."""
+        self.next_pane()
+        if self.menu:
+            self.show()
+
     def rename(self, kind: str) -> None:
         self.open_menu("name", kind)
         if kind == "rename-tab" and self.model.tab:
@@ -954,8 +958,14 @@ class Sidebar:
                 for space in self.workspace_options()
             ]
         if self.menu == "tab":
+            # Pane actions live here rather than as sidebar buttons: the panel
+            # keeps one plain list, and a split opens as a chooser anyway.
             return [
                 ("Rename tab", lambda: self.rename("rename-tab")),
+                ("Split right", lambda: self.split("right")),
+                ("Split below", lambda: self.split("below")),
+                ("Show layout" if self.model.state["focus"] else "Focus pane", self.toggle_focus),
+                ("Next pane", self.menu_next_pane),
                 ("Move tab up", lambda: self.move_tab(-1)),
                 ("Move tab down", lambda: self.move_tab(1)),
                 ("Move to workspace", lambda: self.open_menu("move")),
@@ -1085,8 +1095,9 @@ class Sidebar:
         return tuple(wrapped[: max(1, self.screen.getmaxyx()[0] - 9)])
 
     def tab_capacity(self) -> int:
-        # One row per tab, plus one detail row for the active tab.
-        return max(1, self.screen.getmaxyx()[0] - 13)
+        # One row per tab, plus one detail row for the active tab; the footer
+        # below the list is eight rows and the header above it two.
+        return max(1, self.screen.getmaxyx()[0] - 12)
 
     def workspace_buttons(self, row: int, width: int) -> None:
         spaces = self.model.state["workspaces"]
@@ -1270,9 +1281,14 @@ class Sidebar:
             )
             tab = self.model.tab
             tabs = self.model.space["tabs"]
-            bottom = height - 9
+            bottom = height - 8
             available = self.tab_capacity()
             self.tab_offset = min(self.tab_offset, max(0, len(tabs) - available))
+            if len(tabs) > available and not workspace_edit:
+                # More tabs than rows: scroll arrows at the end of the label row.
+                muted = self.style("muted")
+                self.button(1, "↑", lambda: self.scroll(-1), x=width - 6, width=2, style=muted)
+                self.button(1, "↓", lambda: self.scroll(1), x=width - 3, width=2, style=muted)
             row = 2
             for index, item in enumerate(
                 tabs[self.tab_offset : self.tab_offset + available], self.tab_offset
@@ -1335,28 +1351,17 @@ class Sidebar:
             if not tabs:
                 self.put(2, 1, "No tabs yet", self.style("muted"))
                 self.button(3, "Open a terminal +", self.new_tab)
-            half = (width - 2) // 2
-            if len(tabs) > available:
-                self.button(bottom - 1, "↑ Tabs", lambda: self.scroll(-1), width=half)
-                self.button(bottom - 1, "↓ Tabs", lambda: self.scroll(1), x=1 + half)
-            else:
-                self.put(bottom - 1, 1, "actions", self.style("muted"))
-            self.button(bottom, "Split →", lambda: self.split("right"), width=half)
-            self.button(bottom, "Split ↓", lambda: self.split("below"), x=1 + half)
-            label = "Layout" if self.model.state["focus"] else "Focus"
-            self.button(bottom + 1, label, self.toggle_focus, width=half)
-            self.button(bottom + 1, "Next →", self.next_pane, x=1 + half)
-            self.button(bottom + 2, "Attach session…", lambda: self.open_menu("agents"))
-            self.put(bottom + 2, 1, "Attach session…", self.style("accent"))
-            self.button(bottom + 3, "Tab actions…", lambda: self.open_menu("tab"))
-            self.button(
-                bottom + 4, "Shortcuts", lambda: self.open_menu("shortcuts"), width=width - 8
-            )
-            self.button(bottom + 4, "Exit", self.quit, x=width - 6, width=5)
-            self.put(bottom + 5, 1, "workspaces", self.style("muted"))
-            self.button(bottom + 6, "Workspaces…", lambda: self.open_menu("workspace"), width=half)
-            self.button(bottom + 6, "Colors…", self.open_theme, x=1 + half)
-            self.workspace_buttons(bottom + 7, width)
+            # One plain list, one control per row. Pane actions (splits, focus,
+            # next pane, attaching) live in Tab actions…, and a split opens as
+            # a chooser, so the panel needs no buttons for them.
+            self.put(bottom - 1, 1, "actions", self.style("muted"))
+            self.button(bottom, "Tab actions…", lambda: self.open_menu("tab"))
+            self.button(bottom + 1, "Shortcuts", lambda: self.open_menu("shortcuts"))
+            self.button(bottom + 2, "Colors…", self.open_theme)
+            self.button(bottom + 3, "Exit", self.quit)
+            self.put(bottom + 4, 1, "workspaces", self.style("muted"))
+            self.button(bottom + 5, "Workspaces…", lambda: self.open_menu("workspace"))
+            self.workspace_buttons(bottom + 6, width)
             notice = bool(error or self.message)
             status = (
                 error
@@ -1364,11 +1369,11 @@ class Sidebar:
                 or ("Narrow: focus view" if self.display.small and tab else "Layouts saved")
             )
             if notice:
-                self.put(bottom + 8, 1, status, self.message_style(status, True))
+                self.put(bottom + 7, 1, status, self.message_style(status, True))
             else:
                 # An idle viewer shows a quiet indicator light before its state.
-                self.put(bottom + 8, 1, "●", self.style("accent"))
-                self.put(bottom + 8, 3, status, self.style("muted"))
+                self.put(bottom + 7, 1, "●", self.style("accent"))
+                self.put(bottom + 7, 3, status, self.style("muted"))
         if cursor:
             with contextlib.suppress(curses.error):
                 curses.curs_set(1)

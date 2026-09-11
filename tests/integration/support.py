@@ -467,10 +467,25 @@ def workspace_row(text: str) -> tuple[int, str]:
     return index, lines[index] if index < len(lines) else ""
 
 
+# Pane actions moved from panel buttons into the Tab actions… menu; scenarios
+# keep naming the old buttons and are routed through the menu.
+MENU_ROUTES = {
+    "Split →": "Split right",
+    "Split ↓": "Split below",
+    "Focus": "Focus pane",
+    "Layout": "Show layout",
+    "Next →": "Next pane",
+    "Attach session…": "Attach session",
+}
+
+
 def click_button(client, viewer, text):
     if text == "+ Tab":
         # The header's plus sits alone in the top row's right corner.
         text = "+"
+    if text in MENU_ROUTES:
+        click_button(client, viewer, "Tab actions…")
+        text = MENU_ROUTES[text]
 
     def sidebar():
         return viewer.run("capture-pane", "-p", "-t", "%0")

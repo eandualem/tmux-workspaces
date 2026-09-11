@@ -248,7 +248,7 @@ class SidebarTests(unittest.TestCase):
         labels = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
         self.assertIn("+", labels)
         self.assertNotIn("+ Tab", labels)
-        self.assertIn("Attach session…", labels)
+        self.assertNotIn("Attach session…", labels)
         self.assertIn("Tab actions…", labels)
         self.assertIn("Workspaces…", labels)
         for x in range(22, 27):
@@ -302,7 +302,7 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.draw()
         labels = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
         self.assertTrue(any("9 Tab 9" in label for label in labels))
-        self.assertEqual(self.sidebar.tab_capacity(), 17)
+        self.assertEqual(self.sidebar.tab_capacity(), 18)
         self.assertEqual(self.sidebar.tab_offset, 0)
 
     def test_compact_rows_keep_counts_and_click_targets_separate(self):
@@ -345,8 +345,9 @@ class SidebarTests(unittest.TestCase):
                 occupied.add((row, column))
         labels = [c.args[2] for c in self.screen.addnstr.call_args_list]
         self.assertTrue(any("31 Tab 31" in text for text in labels))
-        self.mouse(3, 13, curses.BUTTON1_PRESSED)
-        self.assertEqual(self.sidebar.menu, "agents")
+        # The first footer control sits right under the scrolled list.
+        self.mouse(3, 12, curses.BUTTON1_PRESSED)
+        self.assertEqual(self.sidebar.menu, "tab")
 
     def test_workspace_actions_create_rename_and_wrap_without_changing_saved_tabs(self):
         first = copy.deepcopy(self.model.space)
@@ -1055,7 +1056,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.colors, 256)
         self.assertEqual(
             [call.args for call in self.init_pair.call_args_list],
-            [(1, -1, -1), (2, 231, 238), (3, 110, -1), (4, 243, -1)],
+            [(1, 252, 235), (2, 231, 239), (3, 110, 235), (4, 245, 235)],
         )
         self.assertEqual(self.sidebar.message, "")
 
@@ -1066,14 +1067,14 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.colors, 8)
         self.assertEqual(
             [call.args for call in self.init_pair.call_args_list[-4:]],
-            [(1, -1, -1), (2, 7, 4), (3, 6, -1), (4, 7, -1)],
+            [(1, 7, 0), (2, 7, 4), (3, 6, 0), (4, 7, 0)],
         )
 
     def test_the_sidebar_base_takes_the_normal_role(self):
         configured = DEFAULT_THEME.with_role("normal", background=["blue"])
         self.path.write_text(configured.to_toml())
         self.sidebar.setup_theme()
-        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, -1, 4))
+        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, 252, 4))
         self.screen.bkgdset.assert_called_with(" ", self.sidebar.style("normal"))
         self.screen.getmaxyx.return_value = (10, 10)
         self.sidebar.draw()
@@ -1125,7 +1126,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("▶ Normal fg") for line in text))
         for label in ("Apply", "Cancel", "Restore defaults", "‹ Back"):
             self.assertTrue(any(line.startswith(label) for line in text), label)
-        self.assertTrue(any("terminal default on terminal default" in line for line in text))
+        self.assertTrue(any("color 252 on color 235" in line for line in text))
 
     def test_a_refused_restore_keeps_the_editor_and_its_reason_on_screen(self):
         self.sidebar.input("t")
@@ -1285,7 +1286,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.theme.roles["normal"].foreground, ("blue",))
         self.sidebar.input("\x1b")
         self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
-        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, -1, -1))
+        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, 252, 235))
         self.assertFalse(self.path.exists())
         self.assertEqual(self.sidebar.message, "")
 

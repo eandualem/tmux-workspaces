@@ -8,7 +8,8 @@ and attaching a session does not define or rename that organization.
 
 1. New tabs get neutral random names. New tabs and splits open empty: the pane
    offers an ordinary interactive shell or an existing session, and runs whichever
-   is chosen. Every pane can run an ordinary terminal program.
+   is chosen. A terminal chosen in a split starts in the neighbouring pane's
+   working directory. Every pane can run an ordinary terminal program.
 2. Tabs can be named, reordered, moved between workspaces and closed. Workspaces
    can be named and switched; a tab's split layout belongs to that tab.
 3. Existing tmux sessions attach optionally. Session names and source sockets are

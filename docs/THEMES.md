@@ -49,27 +49,27 @@ roles below, chosen for a particular kind of terminal. A one-line file selects
 one:
 
 ```toml
-preset = "slate"
+preset = "plain"
 ```
 
 | Preset | Look |
 | --- | --- |
-| `default` | The terminal's own background, a steel-blue accent and grey secondary text |
-| `slate` | A dark sidebar panel, set apart from the terminals beside it |
+| `default` | A dark panel of its own color beside the terminals, with a steel-blue accent |
+| `plain` | The terminal's own background, a steel-blue accent and grey secondary text |
 | `forest` | The terminal's background with a sage-green accent — the look shipped before presets |
-| `paper` | For light terminals: dark text and a deep blue accent |
+| `paper` | For light terminals: a pale panel, dark text and a deep blue accent |
 | `mono` | The terminal's two colors only, using bold, dim and reverse |
 
 A role table after the `preset` line overrides that part of the preset, so
-`preset = "slate"` followed by `[accent]` with `foreground = "red"` is slate with
+`preset = "plain"` followed by `[accent]` with `foreground = "red"` is plain with
 a red accent. Without a `preset` line the roles start from `default`. The colors
 editor cycles through the presets too, and when it saves colors that equal a
 preset exactly it writes the name rather than four tables.
 
 Every preset carries an explicit basic-palette fallback for each color, so an
 eight-color terminal gets a deliberate choice rather than an approximation.
-`mono` has no colors to fall back from; on it the two pane borders are the same
-color, because a border cannot carry bold or dim.
+On `plain` and `mono` the panel has no color of its own, so the gap between
+panes is simply a blank column in the terminal's background.
 
 ## Roles
 
@@ -81,8 +81,8 @@ every key is optional — anything you leave out keeps its preset's value.
 | --- | --- |
 | `normal` | Body text, buttons and the sidebar's own background |
 | `active` | The selected tab, the selected workspace, the inline name editor and the chooser's selected row |
-| `accent` | Hints, the tab detail row, the indicator light, the focused pane's border and error text |
-| `muted` | Section labels, tab numbers and counts, the other pane borders and the idle status |
+| `accent` | Hints, the tab detail row, the indicator light and error text |
+| `muted` | Section labels, tab numbers and counts and the idle status |
 
 ```toml
 [active]
@@ -116,9 +116,11 @@ last, because a narrow sidebar shows only the first few words.
 
 Two other things are drawn in these colors, so the window reads as one layer:
 
-- **Pane borders.** The border around the focused pane takes the `accent`
-  foreground; every other border takes the `muted` foreground. They change the
-  moment a theme installs, including while previewing in the editor.
+- **The gap between panes.** tmux's pane borders are painted as a band of the
+  `normal` background, foreground and background alike, so the panel and each
+  terminal are set apart by a color gap rather than a line, and no border is
+  highlighted for the focused pane. The band changes the moment a theme
+  installs, including while previewing in the editor.
 - **The new-tab chooser.** An empty pane is its own small program, so it reads
   the same theme file and resolves it against the same palette size the sidebar
   used. Its title is the accent, its hints are muted, its selected row is the
@@ -248,10 +250,10 @@ and checks that cancelling a defaults preview restores the configured background
 Unit tests cover the presets themselves: each resolves without an invisible
 role on 8, 16 and 256 colors, the `preset` key composes with role overrides, a
 saved preset round-trips through its name, the editor's preset row cycles and
-previews, the pane border options follow an installed palette, and the chooser
+previews, the pane border band follows an installed palette, and the chooser
 installs the same file the sidebar read. The border and chooser colors were
 also read back from a private tmux server on macOS with tmux 3.7c during
-development, on `default` and `slate`.
+development, on `default` and `plain`.
 
 ### Not established by those tests
 
