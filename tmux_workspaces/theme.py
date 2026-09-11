@@ -1,6 +1,7 @@
 """Validated semantic viewer colors resolved against real terminal capability.
 
 Files are TOML data naming four semantic roles, never terminal escape sequences.
+A file may start from a named preset and override any role of it.
 This module never imports curses: the caller injects the module, as
 ``preflight.load_curses`` does, so resolution and pair installation stay testable
 without a terminal. Roles map one-to-one onto curses pairs 1-4, which keeps the
@@ -42,13 +43,14 @@ ROLE_LABELS = MappingProxyType(
 )
 ROLE_DETAILS = MappingProxyType(
     {
-        "normal": "Body text and inactive buttons.",
-        "active": "The selected tab, the inline name editor and active counts.",
+        "normal": "Body text, inactive buttons and the sidebar's own background.",
+        "active": "The selected tab, the selected workspace and the inline name editor.",
         "accent": (
-            "Hints, the status line and error text. Error text shares this pair, so it "
-            "always adds bold: with four pairs the colour alone cannot distinguish it."
+            "Hints, the tab detail row, the focused pane border and error text. Error "
+            "text shares this pair, so it always adds bold: with four pairs the colour "
+            "alone cannot distinguish it."
         ),
-        "muted": "Dividers, inactive counts and the idle status line.",
+        "muted": "Section labels, tab numbers, other pane borders and the idle status.",
     }
 )
 ATTRIBUTES = ("bold", "dim", "reverse", "standout", "underline")
@@ -198,16 +200,82 @@ class Role:
         )
 
 
+# Named starting points. The second entry of each color list is the deliberate
+# basic-palette choice: nearest-color approximation would pick black for 238 and
+# green for 108, silently changing the look on an eight-color terminal. Every
+# preset keeps the terminal's font and the colors shell programs print.
+_PRESETS: tuple[tuple[str, str, dict[str, Role]], ...] = (
+    (
+        "default",
+        "Terminal background, steel-blue accent, grey secondary text",
+        {
+            "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
+            "active": Role(("231", "white"), ("238", "blue"), ()),
+            "accent": Role(("110", "cyan"), (DEFAULT_COLOR,), ()),
+            "muted": Role(("243", "white"), (DEFAULT_COLOR,), ()),
+        },
+    ),
+    (
+        "slate",
+        "A dark sidebar panel set apart from the terminals beside it",
+        {
+            "normal": Role(("252", "white"), ("235", "black"), ()),
+            "active": Role(("231", "white"), ("239", "blue"), ()),
+            "accent": Role(("110", "cyan"), ("235", "black"), ()),
+            "muted": Role(("245", "white"), ("235", "black"), ()),
+        },
+    ),
+    (
+        "forest",
+        "Terminal background with a sage-green accent",
+        {
+            "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
+            "active": Role(("231", "white"), ("238", "blue"), ()),
+            "accent": Role(("108", "cyan"), (DEFAULT_COLOR,), ()),
+            "muted": Role(("245", "white"), (DEFAULT_COLOR,), ()),
+        },
+    ),
+    (
+        "paper",
+        "For light terminals: dark text, a deep blue accent",
+        {
+            "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
+            "active": Role(("232", "black"), ("253", "white"), ()),
+            "accent": Role(("25", "blue"), (DEFAULT_COLOR,), ()),
+            "muted": Role(("245", "black"), (DEFAULT_COLOR,), ("dim",)),
+        },
+    ),
+    (
+        "mono",
+        "The terminal's own two colors, with bold, dim and reverse only",
+        {
+            "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
+            "active": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("reverse",)),
+            "accent": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("bold",)),
+            "muted": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("dim",)),
+        },
+    ),
+)
+PRESET_NAMES: tuple[str, ...] = tuple(name for name, _, _ in _PRESETS)
+PRESET_DETAILS = MappingProxyType({name: detail for name, detail, _ in _PRESETS})
+_PRESET_ROLES = MappingProxyType({name: roles for name, _, roles in _PRESETS})
+DEFAULT_PRESET = PRESET_NAMES[0]
+
+
 def _shipped() -> dict[str, Role]:
-    # Exactly the pairs sidebar.py has always installed. The second entry of each
-    # list is the basic-palette choice: nearest-color approximation would pick
-    # black for 238 and green for 108, silently changing the shipped appearance.
-    return {
-        "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
-        "active": Role(("231", "white"), ("238", "blue"), ()),
-        "accent": Role(("108", "cyan"), (DEFAULT_COLOR,), ()),
-        "muted": Role(("245", "white"), (DEFAULT_COLOR,), ()),
-    }
+    return dict(_PRESET_ROLES[DEFAULT_PRESET])
+
+
+def preset_theme(name: str) -> Theme:
+    """The theme a preset names. Raises ValueError for an unknown name."""
+    if not isinstance(name, str) or name.strip().lower() not in _PRESET_ROLES:
+        raise ValueError(f"unknown preset {name!r}; use one of {', '.join(PRESET_NAMES)}")
+    return Theme(MappingProxyType(dict(_PRESET_ROLES[name.strip().lower()])))
+
+
+def tmux_color(index: int) -> str:
+    """The tmux spelling of an installed curses color number."""
+    return "default" if index < 0 else f"colour{index}"
 
 
 @dataclass(frozen=True)
@@ -367,12 +435,14 @@ class Theme:
     def from_dict(cls, data: Mapping) -> Theme:
         if not isinstance(data, Mapping):
             raise ValueError("theme must be a TOML table")
-        unknown = set(data) - set(ROLES)
+        unknown = set(data) - set(ROLES) - {"preset"}
         if unknown:
             raise ValueError(
-                f"unknown theme section {next(iter(sorted(unknown)))!r}; use {', '.join(ROLES)}"
+                f"unknown theme section {next(iter(sorted(unknown)))!r}; "
+                f"use preset, {', '.join(ROLES)}"
             )
-        roles = _shipped()
+        # A preset is the starting point; any role table overrides it.
+        roles = dict(preset_theme(data["preset"]).roles) if "preset" in data else _shipped()
         for role in ROLES:
             if role in data:
                 roles[role] = Role.from_dict(data[role], role=role)
@@ -400,12 +470,27 @@ class Theme:
         )
         return Theme(MappingProxyType(dict(self.roles) | {role: updated}))
 
+    def preset_name(self) -> str | None:
+        """The preset these roles equal exactly, or None for custom colors."""
+        return next((name for name, roles in _PRESET_ROLES.items() if roles == self.roles), None)
+
     def to_toml(self) -> str:
         header = (
             "# tmux-workspaces viewer colors. Names, 'default' or 0-255; RGB is not\n"
             "# supported. Lists are ordered fallbacks: the first value this terminal\n"
             "# supports wins. Fonts and shell colors stay under terminal control.\n"
+            f"# Presets: {', '.join(PRESET_NAMES)}. A [role] table overrides its preset.\n"
         )
+        preset = self.preset_name()
+        if preset is not None:
+            return (
+                header
+                + "\n"
+                + f"preset = {json.dumps(preset)}\n"
+                + "\n# Add a role table below to change part of this preset, for example:\n"
+                + "# [accent]\n"
+                + '# foreground = "red"\n'
+            )
         return header + "\n" + "\n".join(self.roles[role].to_toml_table(role) for role in ROLES)
 
     def resolve(self, colors: int) -> Palette:

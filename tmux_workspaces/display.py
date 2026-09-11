@@ -54,6 +54,11 @@ class Display:
         self.keymap = keymap or DEFAULT_KEYMAP
         # How a chooser pane builds the sidebar's session roster for itself.
         self.roster_args = tuple(roster_args)
+        # Pane border colors follow the viewer theme: the muted role for borders
+        # at rest and the accent role for the focused pane. Until a theme
+        # installs, these are the shipped values.
+        self.border_colors = ("colour243", "colour110")
+        self._setup_done = False
         self._tab_id = ""
         self.panes: dict[str, str] = {}
         self.last_size = (0, 0)
@@ -85,8 +90,8 @@ class Display:
             self.tmux.run("set-option", "-g", name, value)
         for name, value in {
             "pane-border-status": "off",
-            "pane-border-style": "fg=colour238",
-            "pane-active-border-style": "fg=colour108",
+            "pane-border-style": "fg=" + self.border_colors[0],
+            "pane-active-border-style": "fg=" + self.border_colors[1],
             "automatic-rename": "off",
             "allow-rename": "off",
             "window-size": "latest",
@@ -148,6 +153,7 @@ class Display:
         self.tmux.run("unbind-key", "-a", "-T", "prefix")
         self.tmux.run("bind-key", self.keymap.prefix, "send-prefix")
         self.tmux.run("bind-key", "Escape", "switch-client", "-T", "root")
+        self._setup_done = True
         for key, action in self.keymap.prefix_items():
             self.tmux.run(
                 "bind-key",
@@ -180,6 +186,24 @@ class Display:
                     "--wait-action",
                 ),
             )
+
+    def style_borders(self, inactive: str, active: str) -> None:
+        """Color the pane borders from the theme: two options, applied at once.
+
+        Called whenever a palette installs, including a preview in the colors
+        editor, so the borders change with the sidebar rather than a step
+        behind it. Before ``setup`` the values are only remembered; ``setup``
+        applies them with the rest of the window options.
+        """
+        self.border_colors = (inactive, active)
+        if not self._setup_done:
+            return
+        self.tmux.batch(
+            [
+                ["set-window-option", "-g", "pane-border-style", "fg=" + inactive],
+                ["set-window-option", "-g", "pane-active-border-style", "fg=" + active],
+            ]
+        )
 
     @contextlib.contextmanager
     def snapshot_scope(self):

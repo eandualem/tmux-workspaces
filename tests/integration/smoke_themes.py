@@ -30,7 +30,7 @@ DEFAULT = -1
 # row reordering and width changes.
 ANCHORS = {
     "title": "Workspace",
-    "muted": "─────",
+    "muted": "tabs",
     "active": "▶",
     "accent": "Shell",
 }
@@ -48,9 +48,9 @@ _CLEAR = {22: ("bold", "dim"), 24: ("underline",), 27: ("reverse",)}
 # terminal default, 2 active, 3 accent and 4 muted.
 SHIPPED_256 = {
     "title": (DEFAULT, DEFAULT, ("bold",)),
-    "muted": (245, DEFAULT, ()),
+    "muted": (243, DEFAULT, ()),
     "active": (231, 238, ()),
-    "accent": (108, DEFAULT, ()),
+    "accent": (110, DEFAULT, ()),
 }
 SHIPPED_BASIC = {
     "title": (DEFAULT, DEFAULT, ("bold",)),
@@ -278,7 +278,7 @@ def default_appearance(directory: Path) -> None:
         assert_styles(viewer, SHIPPED_256, "restored 256-color viewer")
     print(
         "PASS: an unconfigured viewer draws the shipped 256-color roles "
-        "(muted 245, accent 108, active 231 on 238) and marks its selection without color",
+        "(muted 243, accent 110, active 231 on 238) and marks its selection without color",
         flush=True,
     )
 
@@ -420,7 +420,8 @@ def defaults_and_apply(directory: Path) -> None:
             lambda: styles(viewer) == SHIPPED_256,
             "Apply did not leave the shipped colors installed",
         )
-        assert "[active]" in config.read_text(), config.read_text()
+        # The shipped colors are a named preset, so the file records the name.
+        assert 'preset = "default"' in config.read_text(), config.read_text()
 
         # The saved file is what a newly opened viewer reads.
         second_library = resources.library("reopened")

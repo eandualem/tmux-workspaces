@@ -53,7 +53,9 @@ information, below the active tab’s name. Offline attachments stay associated 
 their pane and reconnect when the session returns; the viewer never starts
 an external session. The roster is only an attachment chooser, never a source of tabs.
 
-Pane borders stay plain. The navigation panel button, **Tab actions… → Attach session**
+Pane borders take the viewer's colors: the focused pane's border is drawn in the
+accent color and the others in the muted one, so the split you are typing in is
+easy to find. The navigation panel button, **Tab actions… → Attach session**
 and the attachment shortcut work on all supported tmux versions.
 Once open, the chooser keeps its selected destination even if focus moves to
 another pane. If another viewer removes or changes that destination, attach again
@@ -63,6 +65,14 @@ Click a numbered workspace button to switch, **+** beside the buttons to create 
 workspace, or **Workspaces… → Switch workspace** to see the full list. **Workspaces…**
 renames a workspace or deletes an empty one. **Tab actions…** also reorders tabs or moves one to another
 workspace. Scroll the navigation panel with the wheel or its arrow controls.
+
+**Colors…** opens the color editor. Its last row, **Preset**, steps through the
+shipped looks — `default`, `slate`, `forest`, `paper` and `mono` — with a live
+preview; the rows above tune each color role by hand. Apply writes the choice
+to a small TOML file; [THEMES.md](THEMES.md) describes the file and every role.
+The status line at the bottom of the panel shows a small light while the viewer
+is idle and its saved state is current; a message replaces it when something
+needs attention.
 
 **Exit viewer** or closing its terminal window leaves your saved tabs, normal
 shells, running programs and agents available for reopening. Explicitly

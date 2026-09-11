@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.integration.support import FixtureResources, click_button, saved, wait
+from tests.integration.support import FixtureResources, click_button, saved, wait, workspace_row
 from tmux_workspaces.application import start_demo
 from tmux_workspaces.tmux import Tmux
 
@@ -119,7 +119,11 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     click(first, first_view, "New workspace")
     first.type("Shared research")
     click(first, first_view, "Save name")
-    wait(second, lambda: "[ 2 ]" in sidebar(second_view), "new workspace did not synchronize")
+    wait(
+        second,
+        lambda: " 2 " in workspace_row(sidebar(second_view))[1],
+        "new workspace did not synchronize",
+    )
     assert "1 researcher" in selected(second_view)
     click(second, second_view, "Workspaces…")
     click(second, second_view, "Switch workspace")

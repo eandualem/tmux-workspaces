@@ -12,15 +12,25 @@ from __future__ import annotations
 import curses
 
 from .name_editor import NameEditor
+from .theme import PRESET_DETAILS, PRESET_NAMES, preset_theme
 
 FIELDS = ("foreground", "background", "attributes")
-FIELD_LABELS = {"foreground": "text", "background": "background", "attributes": "style"}
-SHORT_FIELDS = {"foreground": "fg", "background": "bg", "attributes": "style"}
+# The preset row follows the roles: one word, no field name beside it.
+PRESET = "preset"
+PRESET_LABEL = "Preset"
+CUSTOM = "custom"
+FIELD_LABELS = {"foreground": "text", "background": "background", "attributes": "style", PRESET: ""}
+SHORT_FIELDS = {"foreground": "fg", "background": "bg", "attributes": "style", PRESET: ""}
 HINTS = (
     "↵ edit · a apply · d defaults",
     "↵ edit · a apply · d reset",
     "↵ edit a apply d reset",
     "↵ edit a apply",
+)
+PRESET_HINTS = (
+    "↵ next preset · ← → choose · a apply",
+    "↵ next · ← → choose · a apply",
+    "↵ next · a apply",
 )
 FIELD_HINT = "↵ keep · Esc cancel"
 ERROR = "Error: "
@@ -37,13 +47,13 @@ def fit_labels(rows, width: int) -> list[str]:
     never asks for: it refuses to draw at all under eighteen columns.
     """
     for words in (FIELD_LABELS, SHORT_FIELDS):
-        labels = [f"{role} {words[field]}" for role, field, *_ in rows]
+        labels = [f"{role} {words[field]}".rstrip() for role, field, *_ in rows]
         if all(len(label) <= width for label in labels):
             return labels
     labels = []
     for role, field, *_ in rows:
         word = SHORT_FIELDS[field]
-        text = f"{role} {word}"
+        text = f"{role} {word}".rstrip()
         keep = width - len(word) - 2
         if len(text) > width:
             text = f"{role[:keep]}… {word}" if keep >= 1 else text[: max(0, width - 1)] + "…"
@@ -68,9 +78,10 @@ def failed(message: str) -> bool:
     return message.startswith(ERROR)
 
 
-def hint(width: int) -> str:
+def hint(width: int, preset: bool = False) -> str:
     """The most complete key hint that fits; the buttons carry the rest."""
-    return next((text for text in HINTS if len(text) <= width), HINTS[-1])
+    hints = PRESET_HINTS if preset else HINTS
+    return next((text for text in hints if len(text) <= width), hints[-1])
 
 
 class ThemeEditor:
@@ -100,8 +111,17 @@ class ThemeEditor:
 
     @property
     def targets(self) -> tuple[tuple[str, str], ...]:
-        """Every editable (role, field), in role then field order."""
-        return tuple((role, field) for role in self.draft.roles for field in FIELDS)
+        """Every editable (role, field) in role then field order, then the preset row."""
+        return (*((role, field) for role in self.draft.roles for field in FIELDS), (PRESET, PRESET))
+
+    @property
+    def on_preset(self) -> bool:
+        return self.target == (PRESET, PRESET)
+
+    def preset(self) -> str:
+        """The preset the draft equals, or ``custom`` once any role differs."""
+        name = getattr(self.draft, "preset_name", lambda: None)()
+        return name or CUSTOM
 
     @property
     def target(self) -> tuple[str, str]:
@@ -115,16 +135,36 @@ class ThemeEditor:
         return ", ".join(getattr(self.draft.roles[role], field))
 
     def rows(self) -> list[tuple[str, str, str, bool]]:
-        """Role name, field, value and selection for each editable field."""
+        """Label, field, value and selection for the preset row and each editable field."""
         return [
             (
-                self.labels.get(role, role.title()),
+                PRESET_LABEL if field == PRESET else self.labels.get(role, role.title()),
                 field,
-                self.value(role, field) or "none",
+                self.preset() if field == PRESET else self.value(role, field) or "none",
                 index == self.index,
             )
             for index, (role, field) in enumerate(self.targets)
         ]
+
+    def describe_preset(self) -> str:
+        """What the preset row's value means, for the status line."""
+        name = self.preset()
+        if name == CUSTOM:
+            return "Custom colors; ↵ tries the next preset"
+        return f"{name}: {PRESET_DETAILS[name]}"
+
+    def cycle_preset(self, step: int = 1) -> None:
+        """Preview the next (or previous) preset. Custom colors count as before the first."""
+        self.field = None
+        names = list(PRESET_NAMES)
+        current = self.preset()
+        if current in names:
+            index = (names.index(current) + step) % len(names)
+        else:
+            # Custom colors sit before the first preset and after the last.
+            index = 0 if step > 0 else len(names) - 1
+        if self.preview(preset_theme(names[index])):
+            self.message = ""
 
     def preview(self, theme) -> bool:
         """Show a validated theme at once; nothing is written to disk."""
@@ -149,11 +189,18 @@ class ThemeEditor:
         self.select((self.index + offset) % len(self.targets))
 
     def edit(self, index: int | None = None) -> None:
-        """Open the value field for a target, replacing any field already open."""
+        """Open the value field for a target, replacing any field already open.
+
+        On the preset row there is nothing to type: the row advances to the next
+        preset instead, previewing it at once.
+        """
         if index is not None:
             self.select(index)
             if self.index != index:
                 return
+        if self.on_preset:
+            self.cycle_preset(1)
+            return
         self.field = NameEditor(self.value(*self.target))
         self.message = ""
 
@@ -218,6 +265,8 @@ class ThemeEditor:
             self.cancel()
         elif key in (curses.KEY_UP, curses.KEY_DOWN):
             self.move(-1 if key == curses.KEY_UP else 1)
+        elif key in (curses.KEY_LEFT, curses.KEY_RIGHT) and self.on_preset:
+            self.cycle_preset(-1 if key == curses.KEY_LEFT else 1)
         elif self.field:
             self.field.key(key)
         elif key == "a":

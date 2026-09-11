@@ -246,7 +246,7 @@ class SidebarTests(unittest.TestCase):
         self.assertIsNone(self.sidebar.menu)
         self.assertEqual(self.model.state, before)
         labels = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
-        self.assertIn("[ + ]", labels)
+        self.assertIn("+", labels)
         self.assertNotIn("+ Tab", labels)
         self.assertIn("Attach session…", labels)
         self.assertIn("Tab actions…", labels)
@@ -291,7 +291,7 @@ class SidebarTests(unittest.TestCase):
             for call in self.screen.addnstr.call_args_list
             if call.args[0] == 36 and call.args[1] == 4
         ]
-        self.assertIn("[ 12 ]", rectangles)
+        self.assertIn("12", rectangles)
 
     def test_indexed_tab_selection_stays_visible_with_shorter_footer(self):
         self.screen.getmaxyx.return_value = (30, 28)
@@ -318,7 +318,8 @@ class SidebarTests(unittest.TestCase):
             (c.args[0], c.args[1]): c.args[2].strip() for c in self.screen.addnstr.call_args_list
         }
         self.assertEqual(cells[2, 25], "2")
-        self.assertEqual(cells[3, 3], "2 panes")
+        # The detail row is indented to the name, past the marker and number.
+        self.assertEqual(cells[3, 4], "2 panes")
         self.assertTrue(cells[4, 0].endswith("…"))
         self.assertIn("3 Third", cells[5, 0])
         # Counts and the right edge belong to the tab, not an adjacent row.
@@ -1054,7 +1055,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.colors, 256)
         self.assertEqual(
             [call.args for call in self.init_pair.call_args_list],
-            [(1, -1, -1), (2, 231, 238), (3, 108, -1), (4, 245, -1)],
+            [(1, -1, -1), (2, 231, 238), (3, 110, -1), (4, 243, -1)],
         )
         self.assertEqual(self.sidebar.message, "")
 
@@ -1122,7 +1123,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.sidebar.draw()
         text = [drawn for _, _, drawn in self.drawn()]
         self.assertTrue(any(line.startswith("▶ Normal fg") for line in text))
-        for label in ("Apply", "Cancel", "Restore defaults", "< Back"):
+        for label in ("Apply", "Cancel", "Restore defaults", "‹ Back"):
             self.assertTrue(any(line.startswith(label) for line in text), label)
         self.assertTrue(any("terminal default on terminal default" in line for line in text))
 

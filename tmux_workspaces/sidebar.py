@@ -21,7 +21,15 @@ from .shortcut_editor import CAPTURE_HINT, CONFIRM_HINT, ShortcutEditor, fit_row
 from .shortcut_editor import FIELD_HINT as KEY_FIELD_HINT
 from .shortcut_editor import hint as shortcut_hint
 from .source import Source
-from .theme import DEFAULT_THEME, ROLE_LABELS, ThemeError, ThemeFile, load_theme, theme_path
+from .theme import (
+    DEFAULT_THEME,
+    ROLE_LABELS,
+    ThemeError,
+    ThemeFile,
+    load_theme,
+    theme_path,
+    tmux_color,
+)
 from .theme_editor import FIELD_HINT, ThemeEditor, failed, failure, fit_labels, hint
 
 
@@ -122,6 +130,14 @@ class Sidebar:
         palette = theme.resolve(self.colors)
         palette.install(curses)
         self.theme, self.palette, self.last_frame = theme, palette, None
+        # Pane borders belong to the same layer: borders at rest take the muted
+        # text color, the focused pane's border the accent. A display that
+        # cannot be reached keeps its borders; the sidebar colors still apply.
+        with contextlib.suppress(RuntimeError, OSError, ValueError):
+            self.display.style_borders(
+                tmux_color(palette.installed("muted")[0]),
+                tmux_color(palette.installed("accent")[0]),
+            )
         # The role names the sidebar's own base, so its empty cells and the
         # cleared frame carry the configured background rather than the
         # terminal's, which is only visible once someone configures one.
@@ -396,7 +412,8 @@ class Sidebar:
     def draw_theme(self, height: int, width: int) -> tuple[int, int] | None:
         editor = self.theme_editor
         rows = editor.rows()
-        self.put(3, 1, FIELD_HINT if editor.field else hint(width - 2), self.style("accent"))
+        guide = FIELD_HINT if editor.field else hint(width - 2, editor.on_preset)
+        self.put(3, 1, guide, self.style("accent"))
         start, cursor = 4, None
         available = max(1, height - start - 6)
         offset = max(0, min(editor.index, len(rows) - available))
@@ -428,7 +445,9 @@ class Sidebar:
         self.button(height - 4, "Apply", lambda: self.theme_action(editor.apply), width=half)
         self.button(height - 4, "Cancel", lambda: self.theme_action(editor.cancel), x=1 + half)
         self.button(height - 3, "Restore defaults", lambda: self.theme_action(editor.defaults))
-        message = editor.message or self.describe(editor.target[0])
+        message = editor.message or (
+            editor.describe_preset() if editor.on_preset else self.describe(editor.target[0])
+        )
         self.put(height - 2, 1, message, self.message_style(message, bool(editor.message)))
         return cursor
 
@@ -869,10 +888,13 @@ class Sidebar:
         width: int | None = None,
         active: bool = False,
         context: Callable | None = None,
+        style: int | None = None,
     ) -> None:
         columns = self.screen.getmaxyx()[1]
         width = width or columns - x - 1
-        self.put(y, x, text.ljust(width), self.style("active" if active else "normal"), width)
+        if style is None:
+            style = self.style("active" if active else "normal")
+        self.put(y, x, text.ljust(width), style, width)
         self.hits.append((y, x, x + width, action))
         if context:
             self.context_hits.append((y, x, x + width, context))
@@ -1071,26 +1093,35 @@ class Sidebar:
         selected = spaces.index(self.model.space)
         button_width = max(5, len(str(len(spaces))) + 4)
         overflow = len(spaces) * (button_width + 1) > width - 6
+        muted, accent = self.style("muted"), self.style("accent") | curses.A_BOLD
         if overflow:
             button_width = min(button_width, width - 12)
             count = max(1, (width - 12) // (button_width + 1))
             left = 4
-            self.button(row, "[<]", lambda: self.next_workspace(-1), width=3)
-            self.button(row, "[>]", lambda: self.next_workspace(1), x=width - 8, width=3)
+            self.button(row, " ‹ ", lambda: self.next_workspace(-1), width=3, style=muted)
+            self.button(
+                row, " › ", lambda: self.next_workspace(1), x=width - 8, width=3, style=muted
+            )
         else:
             count, left = len(spaces), 1
         start = max(0, min(selected - count // 2, len(spaces) - count))
         for index, space in enumerate(spaces[start : start + count], start):
+            # The selected workspace is a filled block; the others are quiet
+            # numbers. Every button keeps its full width as the click target.
+            active = space["id"] == self.model.space["id"]
             self.button(
                 row,
-                f"[{index + 1:^{button_width - 2}}]",
+                f"{index + 1:^{button_width}}",
                 lambda space=space: self.choose_workspace(space),
                 x=left + (index - start) * (button_width + 1),
                 width=button_width,
-                active=space["id"] == self.model.space["id"],
+                active=active,
                 context=lambda space=space: self.context_workspace(space),
+                style=None if active else muted,
             )
-        self.button(row, "[+]", lambda: self.rename("new-workspace"), x=width - 4, width=3)
+        self.button(
+            row, " + ", lambda: self.rename("new-workspace"), x=width - 4, width=3, style=accent
+        )
 
     def draw(self) -> None:
         agents, error = self.source.snapshot()
@@ -1145,7 +1176,7 @@ class Sidebar:
             self.screen.refresh()
             return
         if self.menu and self.menu != "inline-name":
-            self.button(0, "< Back", self.show)
+            self.button(0, "‹ Back", self.show, style=self.style("accent"))
             titles = {
                 "agents": "Attach to selected pane",
                 "spaces": "Workspaces",
@@ -1220,12 +1251,21 @@ class Sidebar:
             self.context_hits.append(
                 (0, 1, width - 7, lambda: self.context_workspace(self.model.space))
             )
-            self.button(0, "[ + ]", self.new_tab, x=width - 6, width=5)
+            # A bare plus in the accent color; its five-cell hit area is unchanged.
+            self.button(
+                0,
+                "  +",
+                self.new_tab,
+                x=width - 6,
+                width=5,
+                style=self.style("accent") | curses.A_BOLD,
+            )
             hint = "Enter save · Esc cancel" if width >= 25 else "↵ save · Esc cancel"
+            # Sections are named in quiet lowercase labels rather than ruled off.
             self.put(
                 1,
                 1,
-                hint if workspace_edit else "─" * (width - 2),
+                hint if workspace_edit else "tabs",
                 self.style("accent" if workspace_edit else "muted"),
             )
             tab = self.model.tab
@@ -1253,6 +1293,9 @@ class Sidebar:
                 if len(name) > room:
                     name = name[: max(0, room - 1)] + "…"
                 self.button(row, prefix + name, action, x=0, active=active, context=context)
+                if not active:
+                    # At rest the number is a secondary detail beside the name.
+                    self.put(row, 2, str(index + 1), self.style("muted"))
                 self.put(
                     row,
                     width - len(count) - 2,
@@ -1285,7 +1328,7 @@ class Sidebar:
                     label = "Empty" if is_empty(members[0]) else "Shell"
                 if tab_edit:
                     label = hint
-                self.put(row, 1 if tab_edit else 3, label, self.style("accent"))
+                self.put(row, 1 if tab_edit else len(prefix), label, self.style("accent"))
                 self.hits.append((row, 0, width - 1, action))
                 self.context_hits.append((row, 0, width - 1, context))
                 row += 1
@@ -1293,10 +1336,11 @@ class Sidebar:
                 self.put(2, 1, "No tabs yet", self.style("muted"))
                 self.button(3, "Open a terminal +", self.new_tab)
             half = (width - 2) // 2
-            self.put(bottom - 1, 1, "─" * (width - 2), self.style("muted"))
             if len(tabs) > available:
                 self.button(bottom - 1, "↑ Tabs", lambda: self.scroll(-1), width=half)
                 self.button(bottom - 1, "↓ Tabs", lambda: self.scroll(1), x=1 + half)
+            else:
+                self.put(bottom - 1, 1, "actions", self.style("muted"))
             self.button(bottom, "Split →", lambda: self.split("right"), width=half)
             self.button(bottom, "Split ↓", lambda: self.split("below"), x=1 + half)
             label = "Layout" if self.model.state["focus"] else "Focus"
@@ -1309,16 +1353,22 @@ class Sidebar:
                 bottom + 4, "Shortcuts", lambda: self.open_menu("shortcuts"), width=width - 8
             )
             self.button(bottom + 4, "Exit", self.quit, x=width - 6, width=5)
-            self.put(bottom + 5, 1, "─" * (width - 2), self.style("muted"))
+            self.put(bottom + 5, 1, "workspaces", self.style("muted"))
             self.button(bottom + 6, "Workspaces…", lambda: self.open_menu("workspace"), width=half)
             self.button(bottom + 6, "Colors…", self.open_theme, x=1 + half)
             self.workspace_buttons(bottom + 7, width)
+            notice = bool(error or self.message)
             status = (
                 error
                 or self.message
                 or ("Narrow: focus view" if self.display.small and tab else "Layouts saved")
             )
-            self.put(bottom + 8, 1, status, self.message_style(status, bool(error or self.message)))
+            if notice:
+                self.put(bottom + 8, 1, status, self.message_style(status, True))
+            else:
+                # An idle viewer shows a quiet indicator light before its state.
+                self.put(bottom + 8, 1, "●", self.style("accent"))
+                self.put(bottom + 8, 3, status, self.style("muted"))
         if cursor:
             with contextlib.suppress(curses.error):
                 curses.curs_set(1)

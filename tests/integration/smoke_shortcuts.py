@@ -18,6 +18,7 @@ from tests.integration.support import (
     sidebar,
     tab_row,
     wait,
+    workspace_row,
 )
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
@@ -229,9 +230,8 @@ def _standalone(resources: FixtureResources) -> None:
     client.type("Main\r")
     check(lambda: saved(library).space["name"] == "Main", "workspace context rename failed")
     choose_space(3, "Archive")
-    lines = sidebar(viewer).splitlines()
-    switch_row = next(i for i, line in enumerate(lines) if "[ 1 ]" in line)
-    right_click(client, viewer, switch_row, lines[switch_row].index("[ 1 ]") + 3)
+    switch_row, buttons = workspace_row(sidebar(viewer))
+    right_click(client, viewer, switch_row, buttons.index("1") + 1)
     check(lambda: "Workspace options" in sidebar(viewer), "inactive workspace button menu missing")
     button("Rename workspace")
     client.type("Primary\r")

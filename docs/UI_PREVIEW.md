@@ -24,19 +24,26 @@ Do not remove a sample library or its checkout while you still need its shells.
 
 ## Organization
 
-Tabs use one numbered row with a pane count on the right. The active tab has one
-extra detail row. Long names end with an ellipsis. Thin separators group tab
-navigation, pane/tab actions and workspace switching. Selecting another tab can
-move the following rows by one line as the detail row changes position.
+Tabs use one numbered row with a pane count on the right; the number and count
+are muted on rows at rest, and the active tab is one filled row with a ▶ marker
+and one extra detail row. Long names end with an ellipsis. Quiet lowercase
+section labels — `tabs`, `actions`, `workspaces` — group tab navigation,
+pane/tab actions and workspace switching instead of ruled lines. Selecting
+another tab can move the following rows by one line as the detail row changes
+position.
 
 Attach session is independent of Focus. Shortcuts and Exit share a row. The
-Workspaces… control opens workspace options; numbered rectangles switch purposes
-and their adjacent + creates a workspace. The top + creates a tab. Double-click
-the active tab name or top workspace name to edit it in place.
+Workspaces… control opens workspace options; numbered workspace buttons switch
+purposes, the selected one drawn as a filled block, and the accent + beside them
+creates a workspace. The top + creates a tab. Double-click the active tab name or
+top workspace name to edit it in place. The bottom row is the status line: an
+accent light and `Layouts saved` while idle, a message otherwise.
 
-Content panes use plain borders, retaining the full available content height.
-The active border indicates focus. The navigation panel and attachment shortcut
-both target the selected pane.
+Content panes use plain single-line borders, retaining the full available
+content height, colored from the viewer theme: the focused pane's border in the
+accent color, the others muted. The navigation panel and attachment shortcut
+both target the selected pane. Colors… in the panel switches presets and edits
+each role; see [THEMES.md](THEMES.md).
 
 ## Try these interactions
 

@@ -9,7 +9,12 @@ import shlex
 import sys
 from pathlib import Path
 
-from tests.integration.support import Client, FixtureResources, wait
+from tests.integration.support import (
+    Client,
+    FixtureResources,
+    wait,
+    workspace_row,
+)
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.model import leaves
@@ -228,9 +233,8 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
                         if kind == "tab":
                             row, column = (4 if index else 2), 3
                         else:
-                            label = f"[ {index + 1} ]"
-                            row = next(i for i, line in enumerate(lines) if label in line)
-                            column = lines[row].index(label) + 2
+                            row, buttons = workspace_row("\n".join(lines))
+                            column = buttons.index(str(index + 1)) + 1
                         navigation = f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m"
                     command, marker = packet()
                     expected.append((marker, terminal(tab)))

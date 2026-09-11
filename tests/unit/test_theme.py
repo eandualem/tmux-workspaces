@@ -105,8 +105,8 @@ class ShippedAppearanceTests(unittest.TestCase):
         palette = DEFAULT_THEME.resolve(256)
         self.assertEqual(palette.entries["normal"][:2], (-1, -1))
         self.assertEqual(palette.entries["active"][:2], (231, 238))
-        self.assertEqual(palette.entries["accent"][:2], (108, -1))
-        self.assertEqual(palette.entries["muted"][:2], (245, -1))
+        self.assertEqual(palette.entries["accent"][:2], (110, -1))
+        self.assertEqual(palette.entries["muted"][:2], (243, -1))
         self.assertEqual(palette.fallbacks, ())
 
     def test_defaults_reproduce_todays_basic_palette_exactly(self):
@@ -234,7 +234,7 @@ class ParsingTests(unittest.TestCase):
         self.assertEqual(
             edited.roles["accent"].background, DEFAULT_THEME.roles["accent"].background
         )
-        self.assertEqual(DEFAULT_THEME.roles["accent"].foreground, ("108", "cyan"))
+        self.assertEqual(DEFAULT_THEME.roles["accent"].foreground, ("110", "cyan"))
         self.assertEqual(edited.roles["muted"], DEFAULT_THEME.roles["muted"])
         with self.assertRaises(ValueError):
             DEFAULT_THEME.with_role("accent", foreground="#fff")
@@ -614,7 +614,7 @@ class InstallTests(unittest.TestCase):
         palette.install(curses)
         self.assertEqual(curses.started, 1)
         self.assertEqual(curses.defaults, 1)
-        self.assertEqual(curses.pairs, {1: (-1, -1), 2: (231, 238), 3: (108, -1), 4: (245, -1)})
+        self.assertEqual(curses.pairs, {1: (-1, -1), 2: (231, 238), 3: (110, -1), 4: (243, -1)})
         self.assertEqual([palette.style(role) for role in ROLES], [1, 2, 3, 4])
 
     def test_attributes_are_folded_into_the_precomputed_style(self):
@@ -723,7 +723,7 @@ class InstallTests(unittest.TestCase):
         curses = Curses(default_colors=False)
         DEFAULT_THEME.resolve(256).install(curses)
         self.assertEqual(curses.pairs[1], (7, 0))
-        self.assertEqual(curses.pairs[3], (108, 0))
+        self.assertEqual(curses.pairs[3], (110, 0))
 
     def test_installing_costs_one_pair_per_role_so_an_apply_stays_cheap(self):
         curses = Curses()

@@ -456,9 +456,21 @@ def click_attach(client, viewer, leaf_id):
     )
 
 
+def workspace_row(text: str) -> tuple[int, str]:
+    """The sidebar row holding the numbered workspace buttons, and its text.
+
+    The buttons are bare numbers now, so they are found by position: the row
+    under the Workspaces…/Colors… controls.
+    """
+    lines = text.splitlines()
+    index = next(i for i, line in enumerate(lines) if "Workspaces…" in line) + 1
+    return index, lines[index] if index < len(lines) else ""
+
+
 def click_button(client, viewer, text):
     if text == "+ Tab":
-        text = "[ + ]"
+        # The header's plus sits alone in the top row's right corner.
+        text = "+"
 
     def sidebar():
         return viewer.run("capture-pane", "-p", "-t", "%0")
