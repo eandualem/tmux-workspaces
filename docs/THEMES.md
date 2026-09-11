@@ -148,6 +148,16 @@ Two other things are drawn in these colors, so the window reads as one layer:
   highlighted for the focused pane. The band, the sidebar's pane style and
   any empty pane's change the moment a theme installs, including while
   previewing in the editor.
+- **The padding inside panes.** When the terminal's background is known, each
+  content pane has a one-column gutter pane on either side, and the border
+  glyph between a gutter and its pane is painted in that background so it
+  vanishes; between two split panes the band is itself a one-cell gutter in
+  the panel color, with a blank column on each side of it. The background is
+  read from the terminal's answer to the standard color query (OSC 11) once,
+  before the viewer enters tmux, or from `--terminal-background`. It is not a
+  theme value: it is whatever your terminal says it is, and it is never
+  written to the theme file. Without it there are no gutters and the borders
+  stay the band.
 - **The new-tab chooser.** An empty pane is its own small program, so it reads
   the same theme file and resolves it against the same palette size the sidebar
   used. Its title is the accent, its hints are muted, its selected row is the

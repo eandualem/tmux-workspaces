@@ -43,7 +43,10 @@ a message otherwise.
 
 Content panes keep the full available content height and are set apart from
 the panel and from each other by a band of the panel's own color rather than
-ruled borders; no border marks the focused pane. Tab actions… and the
+ruled borders; no border marks the focused pane. When the terminal has
+answered the background-color query, each pane's contents are inset by one
+blank column on each side; the sample launcher can force it with
+`--terminal-background` on `./run`. Tab actions… and the
 attachment shortcut both target the selected pane. Colors… in the panel
 switches presets and edits each role; see [THEMES.md](THEMES.md).
 

@@ -79,6 +79,9 @@ def parser() -> argparse.ArgumentParser:
         "--theme", type=Path, help="viewer color TOML (overrides environment/default path)"
     )
     result.add_argument("--terminal-colors", type=int, help=argparse.SUPPRESS)
+    # The terminal's background, `#rrggbb`, queried once by the window process;
+    # given explicitly by tests and by anyone whose terminal does not answer.
+    result.add_argument("--terminal-background", help=argparse.SUPPRESS)
     # A refresh re-reads the selected file before it replaces the viewer, so the
     # running instance validates exactly what the launcher will load next.
     result.add_argument("--keymap-source", type=Path, help=argparse.SUPPRESS)

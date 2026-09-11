@@ -63,6 +63,9 @@ class LaunchContext:
         )
         self.url = args.url if self.backbone else None
         self.theme = theme_path(args.theme)
+        # A background given on the command line reaches every window it
+        # starts; otherwise each window asks the terminal itself.
+        self.terminal_background = args.terminal_background
         self.shortcut_hints = args.shortcut_hints
         # A launcher-supplied snapshot fixes this window's keys and the terminal
         # profile generated from them, so such a window is reopened by hand.
@@ -190,6 +193,8 @@ class LaunchContext:
             args += ["--reopen-command", self.published]
         if self.ghostty_app:
             args += ["--ghostty-app", self.ghostty_app]
+        if self.terminal_background:
+            args += ["--terminal-background", self.terminal_background]
         carried = relaunch.navigation_argument(selection)
         if carried:
             args += ["--carry-navigation", carried]
