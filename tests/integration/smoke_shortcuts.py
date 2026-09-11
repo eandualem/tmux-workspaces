@@ -41,7 +41,7 @@ def _standalone(resources: FixtureResources) -> None:
     wait(client, lambda: client.manifest(library), "direct-key viewer did not launch")
     manifest = client.manifest(library)
     viewer = Tmux(json.loads(manifest.read_text())["viewer_socket"])
-    wait(client, lambda: "Detach" in sidebar(viewer), "sidebar did not initialize")
+    wait(client, lambda: "Configure…" in sidebar(viewer), "sidebar did not initialize")
     initial = saved(library)
     first_space = initial.space["id"]
     first_tab = initial.tab["id"]
@@ -335,7 +335,7 @@ def _nested(resources: FixtureResources) -> None:
             > 0
         )
 
-    wait(client, lambda: "Detach" in sidebar(viewer), "nested sidebar did not initialize")
+    wait(client, lambda: "Configure…" in sidebar(viewer), "nested sidebar did not initialize")
     original = saved(library)
     terminal = "=" + Shells.name(original.pane) + ":"
     wait(client, lambda: shells.run("has-session", "-t", terminal) == "", "nested shell missing")

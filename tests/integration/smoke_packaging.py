@@ -155,7 +155,7 @@ def exercise(source: Path, root: Path) -> None:
             manifest = manifest or (lambda: client.manifest(library))
             wait(client, manifest, "installed viewer did not create its runtime manifest")
             viewer = Tmux(json.loads(manifest().read_text())["viewer_socket"])
-            wait(client, lambda: "Detach" in sidebar(viewer), "installed sidebar missing")
+            wait(client, lambda: "Configure…" in sidebar(viewer), "installed sidebar missing")
 
             def installed_command():
                 for line in viewer.run("list-panes", "-F", "#{pane_start_command}").splitlines():

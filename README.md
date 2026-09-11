@@ -14,10 +14,10 @@ a split layout in each one, and come back to the same arrangement tomorrow.
 │ │ ▶ 2 web              1 │ │ $ npm run dev                     │
 │ │     Shell            ⋯ │ │ ready on http://localhost:3000    │
 │ │                        │ │                                   │
-│ │                        │ │                                   │
-│ │ Shortcuts              │ │                                   │
-│ │ Colors…                │ │                                   │
-│ │ Detach                 │ │                                   │
+│ │ reviewer · idle        │ │                                   │
+│ │ Checking split resizi… │ │                                   │
+│ │ Configure…             │ │                                   │
+│ │  ◆   2                 │ │                                   │
 │ ╰────────────────────────╯ │                                   │
 └────────────────────────────┴───────────────────────────────────┘
 ```

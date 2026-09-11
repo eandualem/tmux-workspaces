@@ -25,9 +25,9 @@ def panes(viewer: Tmux) -> list[dict]:
         "list-panes",
         "-F",
         "#{pane_id} #{?@viewer_gutter,1,0} #{pane_left} #{pane_top} #{pane_width} "
-        "#{pane_height} #{pane_active} #{window-style} #{pane-border-style}",
+        "#{pane_height} #{pane_active} #{window-style} #{pane-border-style} #{pane_start_command}",
     ).splitlines():
-        pane, gutter, left, top, width, height, active, style, border = line.split()
+        pane, gutter, left, top, width, height, active, _style, border, *command = line.split()
         rows.append(
             {
                 "id": pane,
@@ -37,7 +37,7 @@ def panes(viewer: Tmux) -> list[dict]:
                 "width": int(width),
                 "height": int(height),
                 "active": active == "1",
-                "band": style == "bg=#31343b",
+                "band": "--rule" in " ".join(command),
                 "border": border,
             }
         )
@@ -56,7 +56,7 @@ def exercise(directory: Path) -> None:
         def sidebar():
             return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
 
-        wait(client, lambda: "Detach" in sidebar(), "sidebar failed to initialize")
+        wait(client, lambda: "Configure…" in sidebar(), "sidebar failed to initialize")
         wait(
             client,
             lambda: sum(p["gutter"] for p in panes(viewer)) == 2,

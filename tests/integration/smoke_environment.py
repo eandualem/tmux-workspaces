@@ -13,6 +13,7 @@ from tests.integration.support import (
     click_button,
     open_terminal,
     saved,
+    session_in_use,
     wait,
 )
 from tmux_workspaces.application import socket_path
@@ -75,7 +76,7 @@ def exercise(resources: FixtureResources) -> None:
         viewer = Tmux(runtime["viewer_socket"])
         wait(
             client,
-            lambda: "Detach" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
+            lambda: "Configure…" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
             "environment viewer did not initialize",
         )
         return client, viewer
@@ -172,9 +173,7 @@ def exercise(resources: FixtureResources) -> None:
     other.click(3, row + 1)
     wait(
         other,
-        lambda: (
-            source.run("display-message", "-p", "-t", "=external:", "#{session_attached}") == "1"
-        ),
+        lambda: session_in_use(source, "=external:"),
         "external attachment did not start",
     )
     assert source.run("show-environment", "-t", "=external:") == external_before

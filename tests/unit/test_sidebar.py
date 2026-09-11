@@ -264,9 +264,16 @@ class SidebarTests(unittest.TestCase):
         self.assertNotIn("Tab actions…", labels)
         self.assertNotIn("Workspaces…", labels)
         self.assertNotIn("Layouts saved", labels)
-        # The application menu, leaving last.
-        footer = [label for label in labels if label in {"Shortcuts", "Colors…", "Detach"}]
-        self.assertEqual(footer, ["Shortcuts", "Colors…", "Detach"])
+        # Infrequent controls live behind Configure…, with leaving last after a rule.
+        self.assertIn("Configure…", labels)
+        for hidden in ("Shortcuts", "Colors…", "Detach"):
+            self.assertNotIn(hidden, labels)
+        self.sidebar.open_menu("configure")
+        options = [label for label, _ in self.sidebar._options({})]
+        self.assertEqual(options[:3], ["Colors…", "Shortcuts", "Refresh viewer…"])
+        self.assertEqual(options[-1], "Detach")
+        self.sidebar.close_menu()
+        self.sidebar.draw()
         for x in range(21, 25):
             self.sidebar.draw()
             previous_count = len(self.model.space["tabs"])
@@ -281,12 +288,6 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.draw()
         labels = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
         self.assertNotIn("workspaces", labels)
-        self.assertFalse(
-            any(
-                label in {"1", "2"} and call.args[0] > 30
-                for label, call in zip(labels, self.screen.addnstr.call_args_list, strict=True)
-            )
-        )
         # Every cell of the chevron button opens the chooser.
         for x in (23, 24):
             self.sidebar.draw()
@@ -334,8 +335,8 @@ class SidebarTests(unittest.TestCase):
         labels = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
         self.assertTrue(any("9 Tab 9" in label for label in labels))
         # 28 rows inside the outline, less the heading, the label, the
-        # selected tab's detail row and the three-row application menu.
-        self.assertEqual(self.sidebar.tab_capacity(), 22)
+        # selected tab's detail row and the four-row footer.
+        self.assertEqual(self.sidebar.tab_capacity(), 21)
         self.assertEqual(self.sidebar.tab_offset, 0)
 
     def test_compact_rows_keep_counts_and_click_targets_separate(self):
@@ -380,9 +381,9 @@ class SidebarTests(unittest.TestCase):
                 occupied.add((row, column))
         labels = [c.args[2] for c in self.screen.addnstr.call_args_list]
         self.assertTrue(any("31 Tab 31" in text for text in labels))
-        # The application menu starts right under the scrolled list.
-        self.mouse(3, 15, curses.BUTTON1_PRESSED)
-        self.assertEqual(self.sidebar.menu, "shortcuts")
+        # Configure… sits above the icon row, right under the bounded footer's context.
+        self.mouse(3, 16, curses.BUTTON1_PRESSED)
+        self.assertEqual(self.sidebar.menu, "configure")
 
     def test_workspace_actions_create_rename_and_wrap_without_changing_saved_tabs(self):
         first = copy.deepcopy(self.model.space)
@@ -1133,6 +1134,8 @@ class ThemeMenuTests(unittest.TestCase):
 
     def test_colors_button_and_local_key_open_the_same_editor(self):
         self.sidebar.draw()
+        self.click("Configure…")
+        self.sidebar.draw()
         self.click("Colors…")
         self.assertEqual(self.sidebar.menu, "theme")
         editor = self.sidebar.theme_editor
@@ -1286,6 +1289,8 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(header[4], self.sidebar.style("normal") | curses.A_BOLD)
 
     def test_the_application_menu_reaches_the_same_editor(self):
+        self.sidebar.draw()
+        self.click("Configure…")
         self.sidebar.draw()
         self.click("Colors…")
         self.assertEqual(self.sidebar.menu, "theme")

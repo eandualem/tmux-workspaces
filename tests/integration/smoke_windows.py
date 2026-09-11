@@ -11,7 +11,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.integration.support import OUTLINE, FixtureResources, click_button, saved, wait
+from tests.integration.support import (
+    OUTLINE,
+    FixtureResources,
+    click_button,
+    saved,
+    user_sessions,
+    wait,
+)
 from tmux_workspaces.application import start_demo
 from tmux_workspaces.tmux import Tmux
 
@@ -71,7 +78,7 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
         viewer = Tmux(runtime["viewer_socket"])
         wait(
             client,
-            lambda: "Detach" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
+            lambda: "Configure…" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
             "sidebar failed to start",
         )
         return client, viewer, manifest
@@ -89,9 +96,7 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     assert first_view.socket != second_view.socket
     if terminfo:
         assert first_view.run("list-clients", "-F", "#{client_termname}") == "xterm-ghostty"
-    identities = source.run(
-        "list-sessions", "-F", "#{session_id}:#{session_created}:#{session_name}"
-    )
+    identities = user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     shell_socket = json.loads(first_manifest.read_text())["shell_socket"]
     assert json.loads(second_manifest.read_text())["shell_socket"] == shell_socket
     shells = Tmux(shell_socket)
@@ -141,9 +146,7 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     first.close_terminal()
     assert not first_manifest.exists()
     assert "reviewer" in sidebar(second_view)
-    assert identities == source.run(
-        "list-sessions", "-F", "#{session_id}:#{session_created}:#{session_name}"
-    )
+    assert identities == user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     third, third_view, third_manifest = open_window(env)
     click(second, second_view, "Exit")
     wait(second, lambda: second.process.poll() is not None, "second window did not exit")
@@ -152,9 +155,7 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     click(third, third_view, "Exit")
     wait(third, lambda: third.process.poll() is not None, "third window did not exit")
     assert not third_manifest.exists()
-    assert identities == source.run(
-        "list-sessions", "-F", "#{session_id}:#{session_created}:#{session_name}"
-    )
+    assert identities == user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     assert not list((library / "windows").glob("*/runtime.json"))
     print("PASS: concurrent windows, independent selection and input, shared workspace/tab edits,")
     print(

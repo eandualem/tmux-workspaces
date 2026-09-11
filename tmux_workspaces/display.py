@@ -97,7 +97,7 @@ class Display:
         self.separator = "default"
         self._empty_panes: set[str] = set()
         self._setup_done = False
-        self._band_gutters: set[str] = set()
+        self._band_gutters: dict[str, bool] = {}
         self._blank_gutters: set[str] = set()
         self._surface_panes: set[str] = set()
         self._tab_id = ""
@@ -265,19 +265,20 @@ class Display:
         """Give a pane the panel background, or the terminal's own."""
         return self._ground_commands(pane, "panel" if panel else "default")
 
-    def _rule_command(self) -> str:
-        """A horizontal separator: one thin rule in the outline color."""
-        return script_command("_leaf", "--rule", "--color", self.separator)
+    def _rule_command(self, vertical: bool) -> str:
+        """A separator: one thin rule in the outline color, across or down."""
+        return script_command(
+            "_leaf", "--rule", *(["--vertical"] if vertical else []), "--color", self.separator
+        )
 
     def _gutter(self, target: str, *, vertical: bool, before: bool, band: bool) -> str:
         """Split a one-cell gutter off ``target``.
 
         A blank gutter pads a pane in the surface color. A band separates two
-        split panes: side by side it is a column of the outline color; stacked,
-        it draws one thin rule, since a whole row of color would weigh more
-        than a column does.
+        split panes with one thin rule in the outline color, drawn down a
+        column or across a row, so both directions weigh the same.
         """
-        command = self._rule_command() if band and vertical else GUTTER_COMMAND
+        command = self._rule_command(vertical=not vertical) if band else GUTTER_COMMAND
         pane = self.tmux.run(
             "split-window",
             "-d",
@@ -292,15 +293,15 @@ class Display:
             "#{pane_id}",
             command,
         )
-        ground = "separator" if band and not vertical else "surface"
         self.tmux.batch(
             [
                 ["set-option", "-p", "-t", pane, "@viewer_gutter", "1"],
-                *self._ground_commands(pane, ground),
+                *self._ground_commands(pane, "surface"),
             ]
         )
-        if band and not vertical:
-            self._band_gutters.add(pane)
+        if band:
+            # Remembered with its direction, so a new outline color can redraw it.
+            self._band_gutters[pane] = not vertical
         else:
             self._blank_gutters.add(pane)
         return pane
@@ -332,10 +333,11 @@ class Display:
         ]
         for pane in sorted(self._empty_panes):
             commands += self._ground_commands(pane, "panel")
-        for pane in sorted(self._surface_panes | self._blank_gutters):
+        for pane in sorted(self._surface_panes | self._blank_gutters | set(self._band_gutters)):
             commands += self._ground_commands(pane, "surface")
-        for pane in sorted(self._band_gutters):
-            commands += self._ground_commands(pane, "separator")
+        for pane, vertical in sorted(self._band_gutters.items()):
+            # The rule carries its color; a new one is drawn by a new process.
+            commands.append(["respawn-pane", "-k", "-t", pane, self._rule_command(vertical)])
         self.tmux.batch(commands)
 
     @contextlib.contextmanager
@@ -611,7 +613,7 @@ class Display:
         )
         first = leaves(tree)[0] if tree else None
         command = self._leaf_command(first)
-        self._band_gutters, self._blank_gutters = set(), set()
+        self._band_gutters, self._blank_gutters = {}, set()
         if everything:
             # Keep a content pane beside the sidebar. Removing all of them lets
             # tmux expand/reflow the sidebar across the entire terminal. Batch
@@ -621,6 +623,9 @@ class Display:
             commands = [["kill-pane", "-t", sibling] for sibling in everything if sibling != pane]
             commands += [
                 ["resize-pane", "-t", self.sidebar, "-x", str(sidebar_width)],
+                # The survivor may be a gutter; respawn-pane keeps pane options,
+                # and a content pane still flagged as one would bounce focus.
+                ["set-option", "-p", "-t", pane, "-u", "@viewer_gutter"],
                 ["set-option", "-p", "-t", pane, "@viewer_leaf_id", ""],
                 ["set-option", "-p", "-t", pane, "@viewer_tab_id", ""],
                 ["respawn-pane", "-k", "-t", pane, command],

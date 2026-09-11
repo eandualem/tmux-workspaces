@@ -124,11 +124,13 @@ class GutterLayoutTests(unittest.TestCase):
         self.assertEqual(len(display.panes), len(leaves(tab["tree"])))
         self.assertEqual(len(gutters), 4)
         # tmux quotes the start command it reports.
-        # Blank gutters and the column separator hold a silent process; the
-        # rule between stacked panes draws itself.
+        # Blank gutters hold a silent process; both separators draw one thin
+        # rule, down a column between panes side by side and across a row
+        # between stacked ones, so the two directions weigh the same.
         commands = [info["command"].strip('"') for info in gutters.values()]
-        self.assertEqual(sum(command == GUTTER_COMMAND for command in commands), 3)
-        self.assertEqual(sum("--rule" in command for command in commands), 1)
+        self.assertEqual(sum(command == GUTTER_COMMAND for command in commands), 2)
+        self.assertEqual(sum("--rule" in command for command in commands), 2)
+        self.assertEqual(sum("--vertical" in command for command in commands), 1)
         # Every border, the sidebar's included, vanishes into the surface; the
         # panel's own outline is what separates it.
         hidden = "fg=#1f1f1f,bg=#1f1f1f"
@@ -145,16 +147,15 @@ class GutterLayoutTests(unittest.TestCase):
                 "sidebar"
                 if i is panes[self.sidebar]
                 else "band"
-                if i["style"] == "bg=#31343b"
+                if "--rule" in i["command"]
                 else "blank"
                 if i["gutter"]
                 else "content"
             )
             for i in top_row
         ]
-        # The blank gutters and every content pane sit on the surface.
-        surface = [i["style"] for i in top_row[1:] if i["style"] != "bg=#31343b"]
-        self.assertEqual(surface, ["bg=#1f1f1f"] * 4, top_row)
+        # Every gutter and content pane sits on the surface; the rule is a line.
+        self.assertEqual([i["style"] for i in top_row[1:]], ["bg=#1f1f1f"] * 5, top_row)
         self.assertEqual(kinds, ["sidebar", "blank", "content", "band", "content", "blank"])
         for earlier, later in pairwise(top_row):
             self.assertEqual(later["left"], earlier["left"] + earlier["width"] + 1)
@@ -231,8 +232,12 @@ class GutterLayoutTests(unittest.TestCase):
         with patch.dict(os.environ, {"SHELL": "/bin/sh"}):
             display.render(model.tab, False)
         display.style_panel("#202030", "#101010", "#404050")
-        styles = {p: i["style"] for p, i in self.panes().items() if i["gutter"]}
-        self.assertEqual(sorted(styles.values()), ["bg=#101010", "bg=#101010", "bg=#404050"])
+        gutters = {p: i for p, i in self.panes().items() if i["gutter"]}
+        self.assertEqual(sorted(i["style"] for i in gutters.values()), ["bg=#101010"] * 3)
+        # The separator is redrawn in the new outline color by a new rule process.
+        rules = [i["command"] for i in gutters.values() if "--rule" in i["command"]]
+        self.assertEqual(len(rules), 1)
+        self.assertIn("--color '#404050'", rules[0])
         self.assertEqual(
             self.viewer.run("show-window-options", "-gv", "pane-border-style"),
             "fg=#101010,bg=#101010",

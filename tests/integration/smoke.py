@@ -61,7 +61,7 @@ def _exercise(resources: FixtureResources):
             int(shells.run("display-message", "-p", "-t", target, "#{session_attached}") or "0") > 0
         )
 
-    wait(client, lambda: "Detach" in sidebar(), "sidebar failed to initialize")
+    wait(client, lambda: "Configure…" in sidebar(), "sidebar failed to initialize")
     initial = saved(library)
     assert len(initial.space["tabs"]) == 1
     assert initial.pane["agent"] is None

@@ -77,7 +77,7 @@ def _exercise(resources: FixtureResources) -> None:
         viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
         wait(
             client,
-            lambda: "Detach" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
+            lambda: "Configure…" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
             "launched sidebar did not initialize",
         )
         return viewer

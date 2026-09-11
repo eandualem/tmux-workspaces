@@ -81,7 +81,7 @@ def exercise(resources: FixtureResources) -> None:
         viewer = Tmux(runtime["viewer_socket"])
         wait(
             client,
-            lambda: "Detach" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
+            lambda: "Configure…" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
             "plugin viewer sidebar failed to initialize",
         )
         assert "workspaces" in source.run("list-windows", "-t", "=host:", "-F", "#{window_name}")

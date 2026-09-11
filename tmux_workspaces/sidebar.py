@@ -13,7 +13,7 @@ from .controls import Actions, mouse_action, pane_choice
 from .display import Display
 from .events import InputEvents
 from .keymap import ACTION_LABELS, DEFAULT_KEYMAP, KeymapFile, tmux_key_label
-from .menu import Entry, Selection
+from .menu import RULE, Entry, Selection
 from .model import LayoutConflict, Model, is_empty, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
@@ -27,6 +27,27 @@ from .theme_editor import FIELD_HINT, ThemeEditor, failed, failure, fit_labels, 
 
 def visible(text: str) -> str:
     return "".join(char for char in str(text) if char.isprintable())
+
+
+MENU_RULE = RULE
+
+# Glyphs a workspace may carry: one cell wide in the monospace fonts terminals
+# use, and common to their box-drawing and symbol ranges. A workspace without
+# one shows its number.
+WORKSPACE_ICONS: tuple[tuple[str, str], ...] = (
+    ("◆", "Diamond"),
+    ("●", "Circle"),
+    ("▲", "Triangle"),
+    ("■", "Square"),
+    ("★", "Star"),
+    ("✦", "Spark"),
+    ("◈", "Gem"),
+    ("⚑", "Flag"),
+    ("⌂", "House"),
+    ("✎", "Pencil"),
+    ("⚙", "Gear"),
+    ("♪", "Note"),
+)
 
 
 class Sidebar:
@@ -1016,9 +1037,36 @@ class Sidebar:
                 ("Switch workspace", lambda: self.open_menu("spaces")),
                 ("New workspace", lambda: self.rename("new-workspace")),
                 ("Rename workspace", lambda: self.rename("rename-workspace")),
+                ("Set icon…", lambda: self.open_menu("icon")),
                 ("Delete empty workspace", self.delete_workspace),
             ]
+        if self.menu == "icon":
+            return [
+                *(
+                    (f"{glyph}  {label}", lambda glyph=glyph: self.set_icon(glyph))
+                    for glyph, label in WORKSPACE_ICONS
+                ),
+                ("Number", lambda: self.set_icon(None)),
+            ]
+        if self.menu == "configure":
+            # Everything infrequent in one place; leaving last, after a rule,
+            # and named for what it does: shells and attached sessions keep running.
+            return [
+                ("Colors…", self.open_theme),
+                ("Shortcuts", lambda: self.open_menu("shortcuts")),
+                ("Refresh viewer…", self.refresh_viewer),
+                (MENU_RULE, lambda: None),
+                ("Detach", self.quit),
+            ]
         return []
+
+    def set_icon(self, glyph: str | None) -> None:
+        """Give the current workspace an icon, or none, and show the row again."""
+        if glyph is None:
+            self.model.space.pop("icon", None)
+        else:
+            self.model.space["icon"] = glyph
+        self.show()
 
     def workspace_options(self) -> list[dict]:
         """Workspaces the open list offers, in the order _options() draws them."""
@@ -1140,9 +1188,66 @@ class Sidebar:
         return ""
 
     def footer_rows(self) -> int:
-        """Rows the bottom of the panel keeps: the application menu, and the
-        message row only while there is a message."""
-        return 3 + (1 if self.status_text() else 0)
+        """Rows the bottom of the panel keeps: two of agent context, Configure…,
+        the workspace icons, and the message row only while there is a message."""
+        return 4 + (1 if self.status_text() else 0)
+
+    def context_rows(self, agents: dict) -> tuple[str, str]:
+        """Who the focused pane is: its agent and state, then its task if known.
+
+        States come from the roster, never from a running process; a task is
+        shown only when the integration reports one (the roster's ``work``).
+        A shell shows its directory instead; an empty pane, what it awaits.
+        """
+        pane = self.model.pane
+        if not pane:
+            return "", ""
+        if pane["agent"]:
+            session = agents.get(pane["agent"], {})
+            state = str(session.get("state", "offline")) if session.get("online") else "offline"
+            work = session.get("work")
+            return f"{pane['agent']} · {state}", work.strip() if isinstance(work, str) else ""
+        if is_empty(pane):
+            return "Empty pane", "Choose a terminal or a session"
+        cwd = pane.get("cwd") or ""
+        return "Shell", cwd.replace(os.path.expanduser("~"), "~", 1) if cwd else ""
+
+    def workspace_icon(self, space: dict, index: int) -> str:
+        """The workspace's glyph, or its number when none is set."""
+        icon = space.get("icon")
+        return icon if isinstance(icon, str) and icon.isprintable() and icon else str(index + 1)
+
+    def icon_row(self, row: int, width: int) -> None:
+        """One-click workspace switching: fixed three-cell slots, the current
+        one filled; when the row is full, the last slot opens the full list."""
+        spaces = self.model.state["workspaces"]
+        slots = max(1, (width - 2) // 4)
+        overflow = len(spaces) > slots
+        shown = spaces[: slots - 1] if overflow else spaces
+        for index, space in enumerate(shown):
+            active = space["id"] == self.model.space["id"]
+            label = self.workspace_icon(space, index)
+            if len(label) > 2:
+                label = label[:2]
+            self.button(
+                row,
+                f"{label:^3}",
+                lambda space=space: self.choose_workspace(space),
+                x=1 + index * 4,
+                width=3,
+                active=active,
+                context=lambda space=space: self.context_workspace(space),
+                style=None if active else self.style("muted"),
+            )
+        if overflow:
+            self.button(
+                row,
+                " … ",
+                lambda: self.open_menu("spaces"),
+                x=1 + len(shown) * 4,
+                width=3,
+                style=self.style("muted"),
+            )
 
     def tab_capacity(self) -> int:
         # One row per tab, and one detail row for the selected tab; the heading
@@ -1211,6 +1316,8 @@ class Sidebar:
                 "move": "Move tab to",
                 "tab": "Tab options",
                 "workspace": "Workspace options",
+                "icon": "Workspace icon",
+                "configure": "Configure",
                 "name": "Type a name",
                 "theme": (
                     "Viewer colors · preview"
@@ -1249,6 +1356,9 @@ class Sidebar:
                 for row, line in enumerate(command_rows, start):
                     self.put(row, 1, line, self.style("normal"))
                 for row, entry in enumerate(rows, start):
+                    if entry.label == MENU_RULE:
+                        self.put(row, 1, "─" * (width - 2), self.style("muted"))
+                        continue
                     self.button(
                         row,
                         entry.label,
@@ -1318,7 +1428,7 @@ class Sidebar:
             tab = self.model.tab
             tabs = self.model.space["tabs"]
             status = self.status_text()
-            bottom = height - 3
+            bottom = height - 4
             available = self.tab_capacity()
             self.tab_offset = min(self.tab_offset, max(0, len(tabs) - available))
             if len(tabs) > available and not workspace_edit:
@@ -1405,11 +1515,13 @@ class Sidebar:
                 self.put(
                     bottom - 1, 1, status, self.message_style(status, bool(error or self.message))
                 )
-            # The application menu, anchored at the bottom, with leaving last.
-            # Leaving detaches: shells and attached sessions keep running.
-            self.button(bottom, "Shortcuts", lambda: self.open_menu("shortcuts"))
-            self.button(bottom + 1, "Colors…", self.open_theme)
-            self.button(bottom + 2, "Detach", self.quit)
+            # Who the focused pane is, then the one place for everything
+            # infrequent, then the workspace icons anchored at the bottom.
+            who, what = self.context_rows(agents)
+            self.put(bottom, 1, who, self.style("normal"), width - 2)
+            self.put(bottom + 1, 1, what, self.style("muted"), width - 2)
+            self.button(bottom + 2, "Configure…", lambda: self.open_menu("configure"))
+            self.icon_row(bottom + 3, width)
         if cursor:
             with contextlib.suppress(curses.error):
                 curses.curs_set(1)

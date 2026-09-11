@@ -44,9 +44,17 @@ working directory. Four panes still belong to one tab. Click a pane to select
 and type there. Drag the gap between panes to adjust sizes. **Focus pane** in
 the tab menu temporarily shows one pane; **Next pane** cycles panes and
 **Show layout** restores the splits. Narrow terminals use temporary focus
-without discarding the arrangement. The panel's bottom holds the application
-menu, three rows: **Shortcuts**, **Colors…** and **Detach**, which leaves the
+without discarding the arrangement. The panel's bottom is four rows: two of
+context for the focused pane, **Configure…**, and the workspace icons.
+**Configure…** gathers everything infrequent — **Colors…**, **Shortcuts**,
+**Refresh viewer…** — and, last after a rule, **Detach**, which leaves the
 viewer with every shell and attached session still running.
+
+The context rows say who the focused pane is: an attached session's name and
+the state its roster reports (never inferred from a running process), with the
+task it reports on the second row when the integration supplies one; for a
+shell, its directory; for an empty pane, what it awaits. The description is
+truncated to the panel; nothing widens the sidebar for it.
 
 To attach a session to a pane that already has a shell, select the pane, open
 the tab menu's **Attach session**, then choose a tmux session for that pane.
@@ -55,7 +63,15 @@ Type to filter the chooser. The pane's original shell stays running;
 remain an ordinary terminal. Attachment names and states appear as secondary
 information, below the active tab’s name. Offline attachments stay associated with
 their pane and reconnect when the session returns; the viewer never starts
-an external session. The roster is only an attachment chooser, never a source of tabs.
+an external session. An attached session is joined through a grouped tmux
+session of the viewer's own, which shares the session's windows but carries
+its own options: it starts with the settings of the session you attached
+(mouse mode included) and turns its status line off, so the row it took
+returns to the program inside, while the session you attached keeps its own
+status line and every other setting untouched. The grouped session disappears
+when the pane lets go of it, or as soon as the session it joined is gone, so
+a session that ends shows as offline instead of living on inside the viewer.
+The roster is only an attachment chooser, never a source of tabs.
 
 The navigation panel is a rounded, outlined panel inset in the window, and
 the terminals sit on a slightly lighter surface beside it. Split panes are
@@ -73,9 +89,15 @@ from the updated pane instead of replacing the peer's change.
 
 The workspace name at the top of the panel is the workspace chooser: click its
 **▾** (or right-click the name) to switch to another workspace, create one,
-rename it or delete an empty one; the workspace shortcuts cycle and select by
-number as before. The tab menu also reorders tabs or moves one to another
-workspace. Scroll the navigation panel with the wheel or its arrow controls.
+rename it, give it an icon or delete an empty one. The icon row at the very
+bottom switches with one click: each workspace has a three-cell slot showing
+its icon, or its number when it has none, with the current one filled; a
+right-click on a slot opens that workspace's options, and when the row is
+full its last slot, **…**, opens the full list. **Set icon…** offers a small
+set of glyphs that render one cell wide in the usual terminal fonts, and
+**Number** takes the icon away again; the choice is saved with the workspace.
+The workspace shortcuts cycle and select by number as before. The tab menu
+also reorders tabs or moves one to another workspace. Scroll the navigation panel with the wheel or its arrow controls.
 
 **Colors…** opens the color editor. Its last row, **Preset**, steps through the
 shipped looks — `default`, `plain`, `forest`, `paper` and `mono` — with a live

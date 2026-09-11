@@ -321,8 +321,8 @@ def write_config(path: Path, text: str) -> Path:
 
 
 def status(viewer: Tmux) -> str:
-    """The message row: above the three-row application menu, inside the outline."""
-    return screen(viewer).plain().splitlines()[-5].strip().strip("│").strip()
+    """The message row: above the four-row footer, inside the outline."""
+    return screen(viewer).plain().splitlines()[-6].strip().strip("│").strip()
 
 
 def configured_colors(directory: Path) -> None:

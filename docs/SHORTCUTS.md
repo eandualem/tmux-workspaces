@@ -25,7 +25,7 @@ an exact reopen command. Refresh uses a fresh viewer interpreter and picks up
 already-installed Python dependency changes; it does not install them. Changes to
 the interpreter or launcher installation still need reopening with the intended
 launcher. See [refresh scope and recovery](REFRESH.md).
-Do not close its tabs to upgrade: **Detach** preserves shells and programs;
+Do not close its tabs to upgrade: **Configure… → Detach** preserves shells and programs;
 closing a pane or tab ends that pane/tab's ordinary shells. Existing views can also
 remain open alongside the new window; they share arrangements and shells.
 
@@ -144,7 +144,7 @@ passes the quoted Python executable and arguments without that extra word.
 shows the wrapper. Configuration validation alone does not execute the command;
 the regression checks now include that execution step.
 
-The same test also caught an unsuccessful exit status on **Detach**. Normal
+The same test also caught an unsuccessful exit status on **Detach** (now under **Configure…**). Normal
 exit now detaches the private tmux client before shutting its viewer server down,
 so Ghostty receives success. Unexpected server failures still return an error.
 

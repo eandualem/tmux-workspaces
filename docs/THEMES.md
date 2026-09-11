@@ -13,7 +13,7 @@ the viewer does not offer one, and it never edits Ghostty, terminal profiles or
 operating-system settings to get one. If a glyph such as `▶` or `─` renders as a
 box, that is the terminal's font, not the theme.
 
-Colors may be exact `#rrggbb` values. The four text roles are curses color
+Colors may be exact `#rrggbb` values. The five roles are curses color
 pairs, and curses cannot name an RGB color, so the viewer defines each such
 value in one of its own pane's palette slots (16 to 23) through tmux, which
 keeps a palette per pane: nothing outside the viewer is recolored. That needs
@@ -105,8 +105,7 @@ the viewer does not know.
 
 ## Roles
 
-Four semantic roles map onto the four color pairs the viewer has always
-installed. Every role accepts `foreground`, `background` and `attributes`, and
+Five semantic roles map onto the five color pairs the viewer installs. Every role accepts `foreground`, `background` and `attributes`, and
 every key is optional — anything you leave out keeps its preset's value.
 
 | Role | Where it is drawn |
@@ -140,7 +139,7 @@ are what keeps selection, focus and errors distinguishable when color is not
 available or not perceived, alongside the `▶` marker on the selected row, which
 is never removed.
 
-Failures share the `accent` pair, because four roles mean four color pairs and
+Failures share the `accent` pair, because five roles mean five color pairs and
 the startup floor allows no more. A failure is therefore labelled `Error:` and
 drawn with `bold`, and never by color alone; progress messages such as `Colors
 saved` or `Defaults shown` are neither labelled nor bold, so the two are
@@ -152,13 +151,13 @@ last, because a narrow sidebar shows only the first few words.
 
 Two other things are drawn in these colors, so the window reads as one layer:
 
-- **The separators between split panes.** Side by side, two panes are set
-  apart by one column of the `outline` foreground; stacked, by one thin rule
-  in that color drawn on the surface, since a whole row of color would weigh
-  more than a column does. On each side of a separator sits one blank column
-  (or row) of surface, the padding of the pane beside it. No border marks the
-  focused pane. Everything here changes the moment a theme installs,
-  including while previewing in the editor.
+- **The separators between split panes.** One thin rule in the `outline`
+  foreground, drawn on the surface: down a column between panes side by side,
+  across a row between stacked ones, so both directions weigh the same. On
+  each side of a separator sits one blank column (or row) of surface, the
+  padding of the pane beside it. No border marks the focused pane. Everything
+  here changes the moment a theme installs, including while previewing in the
+  editor.
 - **The padding inside panes.** Each content pane is a tmux pane with a
   one-cell gutter pane on either side, drawn in the surface, and tmux's
   border glyphs are painted in the surface too so they vanish. Padding
@@ -212,7 +211,7 @@ The editor closes only once the colors it is leaving you with are actually
 installed. In the rare case where the terminal refuses them, it stays open with
 the reason instead of leaving the colors you cancelled on screen.
 
-Applying changes the running viewer at once. It updates four color pairs; it
+Applying changes the running viewer at once. It updates five color pairs; it
 does not reopen the viewer, restart a shell, redraw on a timer or run a
 subprocess, and nothing about the theme is read or written on an idle frame.
 

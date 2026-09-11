@@ -20,6 +20,7 @@ from contextlib import closing, suppress
 from pathlib import Path
 
 from tmux_workspaces.application import socket_path
+from tmux_workspaces.attachments import GROUPED_PREFIX
 from tmux_workspaces.model import Model
 from tmux_workspaces.tmux import Tmux, clean_env
 
@@ -352,6 +353,27 @@ def right_click(client: Client, viewer: Tmux, row: int, column: int = 3) -> None
 OUTLINE = str.maketrans(dict.fromkeys("╭╮╰╯│─", " "))
 
 
+def user_sessions(server: Tmux, fields: str = "#{session_name}") -> list[str]:
+    """The sessions people run on a server: every session that is not one of the
+    viewer's own grouped attach sessions."""
+    listed = server.run("list-sessions", "-F", "#{session_name}\t" + fields, check=False)
+    kept = []
+    for line in listed.splitlines():
+        name, _tab, rest = line.partition("\t")
+        if not name.startswith(GROUPED_PREFIX):
+            kept.append(rest)
+    return kept
+
+
+def grouped_sessions(server: Tmux) -> list[str]:
+    """The viewer's grouped attach sessions currently on a server."""
+    return [
+        line
+        for line in server.run("list-sessions", "-F", "#{session_name}", check=False).splitlines()
+        if line.startswith(GROUPED_PREFIX)
+    ]
+
+
 def content_panes(viewer: Tmux) -> list[str]:
     """The sidebar and content pane ids: every pane that is not a gutter."""
     return [
@@ -437,6 +459,20 @@ def open_terminal(client, viewer, library: Path) -> None:
     wait(client, lambda: shell_attached(shells, name), "the chosen terminal did not attach")
 
 
+def session_in_use(server: Tmux, target: str) -> bool:
+    """Whether a client is attached to the session or, for an external session
+    the viewer joins through a grouped session of its own, to its group."""
+    counts = server.run(
+        "display-message",
+        "-p",
+        "-t",
+        target,
+        "#{session_attached} #{session_group_attached}",
+        check=False,
+    ).split()
+    return sum(int(count) for count in counts if count.isdigit()) > 0
+
+
 def shell_attached(shells: Tmux, name: str) -> bool:
     attached = shells.run(
         "display-message", "-p", "-t", "=" + name + ":", "#{session_attached}", check=False
@@ -482,10 +518,14 @@ MENU_ROUTES = {
 }
 # Leaving is labelled for what it does: shells and sessions keep running.
 RENAMED = {"Exit": "Detach"}
+# Infrequent controls sit behind Configure…; scenarios keep naming them.
+CONFIGURE = {"Shortcuts", "Colors…", "Detach", "Refresh viewer…"}
 
 
 def click_button(client, viewer, text):
     text = RENAMED.get(text, text)
+    if text in CONFIGURE:
+        click_button(client, viewer, "Configure…")
     if text == "+ Tab":
         # The plus sits at the right end of the tabs label row.
         text = "+"

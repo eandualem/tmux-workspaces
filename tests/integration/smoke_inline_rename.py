@@ -37,7 +37,7 @@ def _exercise(resources: FixtureResources) -> None:
     shells = Tmux(socket_path(library, "terminals"))
     wait(client, lambda: client.manifest(library), "inline viewer did not start")
     viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
-    wait(client, lambda: "Detach" in sidebar(viewer), "sidebar did not draw")
+    wait(client, lambda: "Configure…" in sidebar(viewer), "sidebar did not draw")
     original = saved(library)
     first_id, first_name = original.tab["id"], original.tab["name"]
     terminal = "=" + Shells.name(original.pane) + ":"

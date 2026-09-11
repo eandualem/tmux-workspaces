@@ -36,14 +36,19 @@ The panel is a rounded, outlined rectangle inset one cell inside its pane. Its
 first row is the workspace heading with a ▾ chooser at the right; the `tabs`
 label follows with the + that adds a tab; then the tab rows. The selected tab
 has a detail row saying what it holds, with a ⋯ that opens the tab menu. The
-bottom three rows are the application menu: Shortcuts, Colors…, Detach. A
-message row appears above them only while there is something to say; saving
-is quiet. Double-click the active tab name or the workspace name to edit it in
-place.
+bottom four rows are: two rows of context for the focused pane (an attached
+session and its reported state, then its reported task; a shell and its
+directory; an empty pane and what it awaits), Configure… (Colors…, Shortcuts,
+Refresh viewer…, then Detach after a rule), and the workspace icon row, one
+three-cell slot per workspace with the current one filled and an … slot when
+the row is full. A message row appears above them only while there is
+something to say; saving is quiet. Double-click the active tab name or the
+workspace name to edit it in place.
 
 Content panes keep the full available content height and sit on the surface
 color beside the panel; each is padded by one blank column on either side, and
-split panes are separated by one thin line in the outline color. No border
+split panes are separated by one thin line in the outline color, down or
+across. No border
 marks the focused pane. Colors… in the panel switches presets and edits each
 role and ground; see [THEMES.md](THEMES.md).
 
