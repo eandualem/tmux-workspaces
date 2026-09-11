@@ -1057,7 +1057,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.colors, 256)
         self.assertEqual(
             [call.args for call in self.init_pair.call_args_list],
-            [(1, 16, -1), (2, 17, 18), (3, 19, -1), (4, 20, -1)],
+            [(1, 16, 17), (2, 16, 18), (3, 19, 17), (4, 20, 17), (5, 21, 22)],
         )
         self.assertEqual(self.sidebar.message, "")
 
@@ -1067,15 +1067,15 @@ class ThemeMenuTests(unittest.TestCase):
             self.sidebar.setup_theme()
         self.assertEqual(self.sidebar.colors, 8)
         self.assertEqual(
-            [call.args for call in self.init_pair.call_args_list[-4:]],
-            [(1, 7, -1), (2, 7, 4), (3, 6, -1), (4, 7, -1)],
+            [call.args for call in self.init_pair.call_args_list[-5:]],
+            [(1, 7, 0), (2, 7, 4), (3, 6, 0), (4, 7, 0), (5, 7, 0)],
         )
 
     def test_the_sidebar_base_takes_the_normal_role(self):
         configured = DEFAULT_THEME.with_role("normal", background=["blue"])
         self.path.write_text(configured.to_toml())
         self.sidebar.setup_theme()
-        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, 16, 4))
+        self.assertEqual(self.init_pair.call_args_list[-5].args, (1, 16, 4))
         self.screen.bkgdset.assert_called_with(" ", self.sidebar.style("normal"))
         self.screen.getmaxyx.return_value = (10, 10)
         self.sidebar.draw()
@@ -1127,7 +1127,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("▶ Normal fg") for line in text))
         for label in ("Apply", "Cancel", "Restore defaults", "‹ Back"):
             self.assertTrue(any(line.startswith(label) for line in text), label)
-        self.assertTrue(any("#cccccc on terminal default" in line for line in text))
+        self.assertTrue(any("#cccccc on #22252b" in line for line in text))
 
     def test_a_refused_restore_keeps_the_editor_and_its_reason_on_screen(self):
         self.sidebar.input("t")
@@ -1271,7 +1271,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.type("blue")
         self.sidebar.input("\n")
         self.assertEqual(self.sidebar.theme.roles["active"].background, ("blue",))
-        self.assertEqual(self.init_pair.call_args_list[-3].args, (2, 17, 4))
+        self.assertEqual(self.init_pair.call_args_list[-4].args, (2, 16, 4))
         self.assertFalse(self.path.exists())
         self.sidebar.input("a")
         self.assertEqual(load_theme(self.path).theme, self.sidebar.theme)
@@ -1287,7 +1287,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.theme.roles["normal"].foreground, ("blue",))
         self.sidebar.input("\x1b")
         self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
-        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, 16, -1))
+        self.assertEqual(self.init_pair.call_args_list[-5].args, (1, 16, 17))
         self.assertFalse(self.path.exists())
         self.assertEqual(self.sidebar.message, "")
 

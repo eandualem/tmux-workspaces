@@ -26,8 +26,9 @@ class PaneState:
 
 
 # A gutter is a one-cell pane that holds nothing: the blank column that pads a
-# content pane on each side, or the band between two split panes. It runs a
-# process that never writes, and is never selected for long.
+# content pane on each side, or the separator between two split panes. A blank
+# one runs a process that never writes; a horizontal separator draws one thin
+# rule. Neither is ever selected for long.
 GUTTER_COMMAND = "tail -f /dev/null"
 
 
@@ -71,7 +72,6 @@ class Display:
         host_pane: str | None = None,
         keymap: Keymap | None = None,
         roster_args: tuple[str, ...] = (),
-        background: str | None = None,
     ):
         if len({os.path.realpath(p) for p in (viewer_socket, source_socket, shell_socket)}) != 3:
             raise ValueError("Viewer, terminal and source sockets must differ")
@@ -84,21 +84,22 @@ class Display:
         self.keymap = keymap or DEFAULT_KEYMAP
         # How a chooser pane builds the sidebar's session roster for itself.
         self.roster_args = tuple(roster_args)
-        # The panel color: the sidebar's background, an empty pane's background
-        # and the band tmux draws where its borders would be, so the panel and
-        # each terminal are set apart by a color gap rather than a rule, and no
-        # border is highlighted. tmux paints all of it, so an RGB value works.
-        # Until a theme installs, this is the terminal's own background.
+        # Two grounds, both painted by tmux so RGB values work. The panel is
+        # the sidebar's; the surface is the terminals'. With a surface of its
+        # own, every content pane is padded by a blank gutter column on each
+        # side and tmux's border glyphs are painted in the surface so they
+        # vanish; the separators between split panes are then thin gutters in
+        # the outline color. With the terminal's own surface (``default``)
+        # there are no gutters, since a border on an unknown ground cannot be
+        # hidden, and the borders form a band of the panel color instead.
         self.panel_color = "default"
+        self.surface = "default"
+        self.separator = "default"
         self._empty_panes: set[str] = set()
         self._setup_done = False
-        # The terminal's own background, when it answered. With it, every
-        # content pane is padded by a blank gutter column on each side, and the
-        # border glyph beside a gutter is painted in this color so it vanishes.
-        # Without it there are no gutters: tmux cannot hide a border whose
-        # ground it does not know, and the viewer keeps its plain gap.
-        self.background = background
         self._band_gutters: set[str] = set()
+        self._blank_gutters: set[str] = set()
+        self._surface_panes: set[str] = set()
         self._tab_id = ""
         self.panes: dict[str, str] = {}
         self.last_size = (0, 0)
@@ -140,16 +141,17 @@ class Display:
         }.items():
             self.tmux.run("set-window-option", "-g", name, value)
         self.tmux.run("set-option", "-p", "-t", self.sidebar, "@viewer_agent", "Workspaces")
-        self.tmux.batch(self._panel_commands(self.sidebar, True))
-        if self.background:
-            # A click lands focus on a gutter as on any pane; send it straight
-            # back to the pane that had it, so typing never goes nowhere.
-            self.tmux.run(
-                "set-hook",
-                "-g",
-                "after-select-pane",
-                'if-shell -F "#{@viewer_gutter}" "select-pane -l"',
-            )
+        self.tmux.batch(
+            self._ground_commands(self.sidebar, "surface" if self.padded else "panel")
+        )
+        # A click lands focus on a gutter as on any pane; send it straight
+        # back to the pane that had it, so typing never goes nowhere.
+        self.tmux.run(
+            "set-hook",
+            "-g",
+            "after-select-pane",
+            'if-shell -F "#{@viewer_gutter}" "select-pane -l"',
+        )
         # Forward wheel events to nested tmux, whose copy-mode owns agent scrollback.
         for key in ("WheelUpPane", "WheelDownPane"):
             self.tmux.run("bind-key", "-n", key, "send-keys", "-M")
@@ -237,36 +239,47 @@ class Display:
                 ),
             )
 
-    def _band_style(self) -> str:
-        # Foreground and background alike: the line glyphs vanish into a band.
-        return f"fg={self.panel_color},bg={self.panel_color}"
+    @property
+    def padded(self) -> bool:
+        """Whether panes are padded: only on a surface of the theme's own."""
+        return self.surface != "default"
 
-    def _panel_commands(self, pane: str, panel: bool) -> list[list[str]]:
-        """Give a pane the panel background, or the terminal's own."""
-        style = f"bg={self.panel_color}" if panel else "default"
+    def _band_style(self) -> str:
+        # Foreground and background alike: the line glyphs vanish into the
+        # surface between padded panes, or into a band of the panel otherwise.
+        ground = self.surface if self.padded else self.panel_color
+        return f"fg={ground},bg={ground}"
+
+    def _ground_commands(self, pane: str, ground: str) -> list[list[str]]:
+        """Give a pane one of the grounds: panel, surface, separator or default."""
+        color = {
+            "panel": self.panel_color,
+            "surface": self.surface,
+            "separator": self.separator,
+        }.get(ground, "default")
+        style = "default" if color == "default" else f"bg={color}"
         return [
             ["set-option", "-p", "-t", pane, name, style]
             for name in ("window-style", "window-active-style")
         ]
 
-    def _hidden_border_commands(self, pane: str) -> list[list[str]]:
-        """Paint a pane's borders in the terminal background, so they vanish.
+    def _panel_commands(self, pane: str, panel: bool) -> list[list[str]]:
+        """Give a pane the panel background, or the terminal's own."""
+        return self._ground_commands(pane, "panel" if panel else "default")
 
-        tmux draws the border between two panes in the style of the one it
-        created first. Content panes are always older than the gutters beside
-        them, so hiding a content pane's borders hides every border next to a
-        gutter; the sidebar, older still, keeps the band beside its own gutter.
-        """
-        if not self.background:
-            return []
-        style = f"fg={self.background},bg={self.background}"
-        return [
-            ["set-option", "-p", "-t", pane, name, style]
-            for name in ("pane-border-style", "pane-active-border-style")
-        ]
+    def _rule_command(self) -> str:
+        """A horizontal separator: one thin rule in the outline color."""
+        return script_command("_leaf", "--rule", "--color", self.separator)
 
     def _gutter(self, target: str, *, vertical: bool, before: bool, band: bool) -> str:
-        """Split a one-cell gutter off ``target``; a band is panel colored."""
+        """Split a one-cell gutter off ``target``.
+
+        A blank gutter pads a pane in the surface color. A band separates two
+        split panes: side by side it is a column of the outline color; stacked,
+        it draws one thin rule, since a whole row of color would weigh more
+        than a column does.
+        """
+        command = self._rule_command() if band and vertical else GUTTER_COMMAND
         pane = self.tmux.run(
             "split-window",
             "-d",
@@ -279,39 +292,52 @@ class Display:
             "-P",
             "-F",
             "#{pane_id}",
-            GUTTER_COMMAND,
+            command,
         )
+        ground = "separator" if band and not vertical else "surface"
         self.tmux.batch(
             [
                 ["set-option", "-p", "-t", pane, "@viewer_gutter", "1"],
-                *self._panel_commands(pane, band),
-                *self._hidden_border_commands(pane),
+                *self._ground_commands(pane, ground),
             ]
         )
-        if band:
+        if band and not vertical:
             self._band_gutters.add(pane)
+        else:
+            self._blank_gutters.add(pane)
         return pane
 
-    def style_panel(self, color: str) -> None:
-        """Paint the panel: the sidebar, empty panes and the band between panes.
+    def style_panel(
+        self, panel: str, surface: str = "default", separator: str | None = None
+    ) -> None:
+        """Paint the grounds: the sidebar's panel, the terminals' surface and
+        the separators between split panes.
 
         Called whenever a palette installs, including a preview in the colors
-        editor, so the gap changes with the sidebar rather than a step behind
-        it. The focused pane is not marked by its border: the owner asked for
-        no highlighted border at all. Before ``setup`` the value is only
-        remembered; ``setup`` applies it with the rest of the window options.
+        editor, so every ground changes with the sidebar rather than a step
+        behind it. The focused pane is not marked by its border: the owner
+        asked for no highlighted border at all. Before ``setup`` the values are
+        only remembered; ``setup`` applies them with the window options. A
+        change that turns padding on or off takes effect at the next render.
         """
-        self.panel_color = color
+        self.panel_color, self.surface = panel, surface
+        self.separator = separator or panel
         if not self._setup_done:
             return
         style = self._band_style()
         commands = [
             ["set-window-option", "-g", "pane-border-style", style],
             ["set-window-option", "-g", "pane-active-border-style", style],
-            *self._panel_commands(self.sidebar, True),
+            # The sidebar's own cells are curses'; its ground shows only where
+            # curses leaves a cell alone, such as inside a rounded corner.
+            *self._ground_commands(self.sidebar, "surface" if self.padded else "panel"),
         ]
-        for pane in sorted(self._empty_panes | self._band_gutters):
-            commands += self._panel_commands(pane, True)
+        for pane in sorted(self._empty_panes):
+            commands += self._ground_commands(pane, "panel")
+        for pane in sorted(self._surface_panes | self._blank_gutters):
+            commands += self._ground_commands(pane, "surface")
+        for pane in sorted(self._band_gutters):
+            commands += self._ground_commands(pane, "separator")
         self.tmux.batch(commands)
 
     @contextlib.contextmanager
@@ -427,7 +453,7 @@ class Display:
         # the existing safe no-op selection while still applying pane metadata.
         select = [["select-pane", "-t", focused]] if focused else []
         commands = []
-        self._empty_panes = set()
+        self._empty_panes, self._surface_panes = set(), set()
         for leaf in leaves(tab["tree"]):
             pane = panes.get(leaf["id"])
             if not pane:
@@ -440,13 +466,18 @@ class Display:
                 ),
             }.items():
                 commands.append(["set-option", "-p", "-t", pane, name, value])
-            # An empty pane is part of the panel until something runs in it;
-            # a pane is reused across respawns, so the style is reset as well.
-            # Padded panes keep the terminal's ground, gutters included.
-            commands += self._panel_commands(pane, is_empty(leaf) and not self.background)
-            commands += self._hidden_border_commands(pane)
-            if is_empty(leaf) and not self.background:
+            # On a surface of its own every content pane sits on it, chooser
+            # included; on the terminal's own, an empty pane is part of the
+            # panel until something runs in it. A pane is reused across
+            # respawns, so the ground is set every time.
+            if self.padded:
+                commands += self._ground_commands(pane, "surface")
+                self._surface_panes.add(pane)
+            elif is_empty(leaf):
+                commands += self._ground_commands(pane, "panel")
                 self._empty_panes.add(pane)
+            else:
+                commands += self._ground_commands(pane, "default")
         return commands + select
 
     def _pane_identity(self, tab: dict | None) -> None:
@@ -540,7 +571,7 @@ class Display:
         tree = tab["tree"] if tab else None
         # Narrow displays use temporary focus. The saved tree is never replaced.
         needed_cols, needed_rows = minimum_size(tree)
-        if self.background:
+        if self.padded:
             extra_cols, extra_rows = gutter_allowance(tree)
             needed_cols, needed_rows = needed_cols + extra_cols, needed_rows + extra_rows
         self.small = cols - sidebar_width - 1 < needed_cols or rows < needed_rows
@@ -582,7 +613,7 @@ class Display:
         )
         first = leaves(tree)[0] if tree else None
         command = self._leaf_command(first)
-        self._band_gutters = set()
+        self._band_gutters, self._blank_gutters = set(), set()
         if everything:
             # Keep a content pane beside the sidebar. Removing all of them lets
             # tmux expand/reflow the sidebar across the entire terminal. Batch
@@ -612,10 +643,9 @@ class Display:
                 command,
             )
             self.tmux.run("resize-pane", "-t", self.sidebar, "-x", str(sidebar_width))
-        if self.background:
+        if self.padded:
             # The padding at both edges of the content area, split off before
-            # the tree so they span its full height and outrank every later
-            # pane beside them.
+            # the tree so they span its full height.
             self._gutter(pane, vertical=False, before=True, band=False)
             self._gutter(pane, vertical=False, before=False, band=False)
         if tree:
@@ -647,9 +677,9 @@ class Display:
             "#{pane_id}",
             self._leaf_command(second_leaf),
         )
-        if self.background:
-            # Between the two: a blank column, the band, a blank column, the
-            # band being a one-cell gutter and the blanks its hidden borders.
+        if self.padded:
+            # Between the two: a blank cell, the separator, a blank cell; the
+            # separator is a one-cell gutter and the blanks its hidden borders.
             self._gutter(sibling, vertical=tree["direction"] != "right", before=True, band=True)
         self._tree(tree["first"], pane)
         self._tree(tree["second"], sibling)

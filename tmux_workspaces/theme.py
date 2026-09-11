@@ -5,8 +5,8 @@ escape sequences. A file may start from a named preset and override any part of
 it. The panel is painted by tmux rather than curses, so it may be an RGB value.
 This module never imports curses: the caller injects the module, as
 ``preflight.load_curses`` does, so resolution and pair installation stay testable
-without a terminal. Roles map one-to-one onto curses pairs 1-4, which keeps the
-documented startup floor of eight colors and five pairs intact.
+without a terminal. Roles map one-to-one onto curses pairs 1-5, which keeps the
+documented startup floor of eight colors and six pairs intact.
 
 The viewer styles its own layer only. Fonts, glyph availability and the colors a
 shell program prints remain the terminal's, because a curses application cannot
@@ -34,25 +34,29 @@ SUBSTITUTE_BACKGROUND = 0
 
 # Order is the curses pair number minus one, matching the pairs the viewer has
 # always installed: normal=1, active=2, accent=3, muted=4.
-ROLES = ("normal", "active", "accent", "muted")
+ROLES = ("normal", "active", "accent", "muted", "outline")
 ROLE_LABELS = MappingProxyType(
     {
         "normal": "Normal",
         "active": "Selected",
         "accent": "Accent",
         "muted": "Muted",
+        "outline": "Outline",
     }
 )
 ROLE_DETAILS = MappingProxyType(
     {
         "normal": "Body text and buttons, drawn over the panel.",
-        "active": "The selected tab, the selected workspace and the inline name editor.",
+        "active": "The selected tab and the inline name editor.",
         "accent": (
-            "Hints, the tab detail row, the indicator light and error text. Error text "
-            "shares this pair, so it always adds bold: with four pairs the colour alone "
-            "cannot distinguish it."
+            "Hints, the tab detail row, the selection marker and error text. Error text "
+            "shares this pair, so it always adds bold: the colour alone cannot "
+            "distinguish it."
         ),
-        "muted": "Section labels, tab numbers and counts and the idle status.",
+        "muted": "Section labels, tab numbers and counts.",
+        "outline": (
+            "The panel's perimeter, drawn on the surface, and the separators between split panes."
+        ),
     }
 )
 ATTRIBUTES = ("bold", "dim", "reverse", "standout", "underline")
@@ -240,99 +244,121 @@ class Role:
 DEFAULT_PANEL = "default"
 
 
-def canonical_panel(value) -> str:
-    """The tmux spelling of a panel color: default, a name, 0-255 or #rrggbb."""
+def canonical_panel(value, what: str = "panel") -> str:
+    """The tmux spelling of a surface color: default, a name, 0-255 or #rrggbb."""
     if isinstance(value, bool) or not isinstance(value, (str, int)):
-        raise ValueError("panel: expected 'default', a color name, 0-255 or '#rrggbb'")
+        raise ValueError(f"{what}: expected 'default', a color name, 0-255 or '#rrggbb'")
     if isinstance(value, int):
         if not 0 <= value <= 255:
-            raise ValueError(f"panel: color index {value} is outside 0-255")
+            raise ValueError(f"{what}: color index {value} is outside 0-255")
         return f"colour{value}"
     text = value.strip().lower().replace("_", "-")
     if _HEX_COLOR.fullmatch(text):
         return text
     if text.isdigit():
-        return canonical_panel(int(text))
+        return canonical_panel(int(text), what)
     if text == DEFAULT_PANEL:
         return DEFAULT_PANEL
     if text.startswith("colour") and text[6:].isdigit():
-        return canonical_panel(int(text[6:]))
+        return canonical_panel(int(text[6:]), what)
     if text in _NAME_TO_INDEX:
         return text.replace("bright-", "bright")
     raise ValueError(
-        f"panel: unsupported color {value!r}; use 'default', a color name, 0-255 or '#rrggbb'"
+        f"{what}: unsupported color {value!r}; use 'default', a color name, 0-255 or '#rrggbb'"
     )
+
+
+def tmux_spelling(name: str) -> str:
+    """A canonical role color as tmux writes it, for the separators between panes."""
+    if name == DEFAULT_COLOR or is_rgb(name):
+        return name
+    if name.isdigit():
+        return f"colour{name}"
+    return name.replace("bright-", "bright")
 
 
 # Named starting points. The second entry of each color list is the deliberate
 # basic-palette choice: nearest-color approximation would pick black for 238 and
 # green for 108, silently changing the look on an eight-color terminal. Every
 # preset keeps the terminal's font and the colors shell programs print.
-_PRESETS: tuple[tuple[str, str, str, dict[str, Role]], ...] = (
-    # VS Code's Dark Modern: its side bar (#181818), foreground (#cccccc),
-    # description text (#9d9d9d), link blue (#4daafc) and the list selection
-    # (#ffffff on #04395e). Each carries a 256-color and a basic fallback.
+# Each preset: name, description, panel (the sidebar's ground), surface (the
+# terminals' ground) and the roles. The shipped palette is the one the owner
+# specified from VS Code: surface #292c33, panel #22252b, outline #31343b,
+# selection #343841, text #cccccc, secondary #999999, accent #608af7.
+_DARK_PANEL, _DARK_SURFACE = "#22252b", "#292c33"
+_LIGHT_PANEL, _LIGHT_SURFACE = "#f8f8f8", "#ffffff"
+_PRESETS: tuple[tuple[str, str, str, str, dict[str, Role]], ...] = (
     (
         "default",
-        "VS Code Dark Modern: a darker panel, grey text, a blue selection",
-        "#181818",
+        "A slate panel inset in a slightly lighter surface, grey text, blue accent",
+        _DARK_PANEL,
+        _DARK_SURFACE,
         {
-            "normal": Role(("#cccccc", "252", "white"), (DEFAULT_COLOR,), ()),
-            "active": Role(("#ffffff", "231", "white"), ("#04395e", "24", "blue"), ()),
-            "accent": Role(("#4daafc", "75", "cyan"), (DEFAULT_COLOR,), ()),
-            "muted": Role(("#9d9d9d", "247", "white"), (DEFAULT_COLOR,), ()),
+            "normal": Role(("#cccccc", "252", "white"), (_DARK_PANEL, "235", "black"), ()),
+            "active": Role(("#cccccc", "252", "white"), ("#343841", "237", "blue"), ()),
+            "accent": Role(("#608af7", "69", "cyan"), (_DARK_PANEL, "235", "black"), ()),
+            "muted": Role(("#999999", "246", "white"), (_DARK_PANEL, "235", "black"), ()),
+            "outline": Role(("#31343b", "237", "white"), (_DARK_SURFACE, "236", "black"), ()),
         },
     ),
     (
         "plain",
-        "The Dark Modern colors on the terminal's own background",
+        "The same colors on the terminal's own background, no panel or padding",
+        DEFAULT_PANEL,
         DEFAULT_PANEL,
         {
             "normal": Role(("#cccccc", "252", "white"), (DEFAULT_COLOR,), ()),
-            "active": Role(("#ffffff", "231", "white"), ("#04395e", "24", "blue"), ()),
-            "accent": Role(("#4daafc", "75", "cyan"), (DEFAULT_COLOR,), ()),
-            "muted": Role(("#9d9d9d", "247", "white"), (DEFAULT_COLOR,), ()),
+            "active": Role(("#cccccc", "252", "white"), ("#343841", "237", "blue"), ()),
+            "accent": Role(("#608af7", "69", "cyan"), (DEFAULT_COLOR,), ()),
+            "muted": Role(("#999999", "246", "white"), (DEFAULT_COLOR,), ()),
+            "outline": Role(("#31343b", "237", "white"), (DEFAULT_COLOR,), ()),
         },
     ),
     (
         "forest",
         "Terminal background with a sage-green accent",
         DEFAULT_PANEL,
+        DEFAULT_PANEL,
         {
             "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
             "active": Role(("231", "white"), ("238", "blue"), ()),
             "accent": Role(("108", "cyan"), (DEFAULT_COLOR,), ()),
             "muted": Role(("245", "white"), (DEFAULT_COLOR,), ()),
+            "outline": Role(("238", "white"), (DEFAULT_COLOR,), ()),
         },
     ),
-    # VS Code's Light Modern, for a light terminal.
     (
         "paper",
-        "VS Code Light Modern: a pale panel, dark text, a blue selection",
-        "#f8f8f8",
+        "VS Code Light Modern: a pale panel on white, dark text, a blue accent",
+        _LIGHT_PANEL,
+        _LIGHT_SURFACE,
         {
-            "normal": Role(("#3b3b3b", "237", "black"), (DEFAULT_COLOR,), ()),
-            "active": Role(("#ffffff", "231", "white"), ("#0060c0", "25", "blue"), ()),
-            "accent": Role(("#005fb8", "25", "blue"), (DEFAULT_COLOR,), ()),
-            "muted": Role(("#6b6b6b", "243", "black"), (DEFAULT_COLOR,), ()),
+            "normal": Role(("#3b3b3b", "237", "black"), (_LIGHT_PANEL, "255", "white"), ()),
+            "active": Role(("#3b3b3b", "237", "black"), ("#e8e8e8", "254", "cyan"), ()),
+            "accent": Role(("#005fb8", "25", "blue"), (_LIGHT_PANEL, "255", "white"), ()),
+            "muted": Role(("#6e6e6e", "243", "black"), (_LIGHT_PANEL, "255", "white"), ()),
+            "outline": Role(("#e5e5e5", "254", "black"), (_LIGHT_SURFACE, "231", "white"), ()),
         },
     ),
     (
         "mono",
         "The terminal's own two colors, with bold, dim and reverse only",
         DEFAULT_PANEL,
+        DEFAULT_PANEL,
         {
             "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
             "active": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("reverse",)),
             "accent": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("bold",)),
             "muted": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("dim",)),
+            "outline": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("dim",)),
         },
     ),
 )
-PRESET_NAMES: tuple[str, ...] = tuple(name for name, _, _, _ in _PRESETS)
-PRESET_DETAILS = MappingProxyType({name: detail for name, detail, _, _ in _PRESETS})
-_PRESET_ROLES = MappingProxyType({name: roles for name, _, _, roles in _PRESETS})
-_PRESET_PANELS = MappingProxyType({name: panel for name, _, panel, _ in _PRESETS})
+PRESET_NAMES: tuple[str, ...] = tuple(name for name, *_ in _PRESETS)
+PRESET_DETAILS = MappingProxyType({name: detail for name, detail, *_ in _PRESETS})
+_PRESET_ROLES = MappingProxyType({name: roles for name, _, _, _, roles in _PRESETS})
+_PRESET_PANELS = MappingProxyType({name: panel for name, _, panel, _, _ in _PRESETS})
+_PRESET_SURFACES = MappingProxyType({name: surface for name, _, _, surface, _ in _PRESETS})
 DEFAULT_PRESET = PRESET_NAMES[0]
 
 
@@ -345,7 +371,9 @@ def preset_theme(name: str) -> Theme:
     if not isinstance(name, str) or name.strip().lower() not in _PRESET_ROLES:
         raise ValueError(f"unknown preset {name!r}; use one of {', '.join(PRESET_NAMES)}")
     key = name.strip().lower()
-    return Theme(MappingProxyType(dict(_PRESET_ROLES[key])), _PRESET_PANELS[key])
+    return Theme(
+        MappingProxyType(dict(_PRESET_ROLES[key])), _PRESET_PANELS[key], _PRESET_SURFACES[key]
+    )
 
 
 def tmux_color(index: int) -> str:
@@ -520,33 +548,46 @@ def _distance(left: tuple[int, int, int], right: tuple[int, int, int]) -> int:
 
 @dataclass(frozen=True)
 class Theme:
-    """An immutable, validated set of semantic roles plus the panel color."""
+    """An immutable, validated set of semantic roles plus two grounds: the
+    panel the sidebar sits on and the surface the terminals sit on."""
 
     roles: Mapping[str, Role]
     panel: str = DEFAULT_PANEL
+    surface: str = DEFAULT_PANEL
 
     @classmethod
     def from_dict(cls, data: Mapping) -> Theme:
         if not isinstance(data, Mapping):
             raise ValueError("theme must be a TOML table")
-        unknown = set(data) - set(ROLES) - {"preset", "panel"}
+        unknown = set(data) - set(ROLES) - {"preset", "panel", "surface"}
         if unknown:
             raise ValueError(
                 f"unknown theme section {next(iter(sorted(unknown)))!r}; "
-                f"use preset, panel, {', '.join(ROLES)}"
+                f"use preset, panel, surface, {', '.join(ROLES)}"
             )
-        # A preset is the starting point; a panel value or role table overrides it.
+        # A preset is the starting point; a ground value or role table overrides it.
         base = preset_theme(data["preset"]) if "preset" in data else DEFAULT_THEME
         roles = dict(base.roles)
         for role in ROLES:
             if role in data:
                 roles[role] = Role.from_dict(data[role], role=role, base=roles[role])
         panel = canonical_panel(data["panel"]) if "panel" in data else base.panel
-        return cls(MappingProxyType(roles), panel)
+        surface = canonical_panel(data["surface"], "surface") if "surface" in data else base.surface
+        return cls(MappingProxyType(roles), panel, surface)
 
     def with_panel(self, value) -> Theme:
         """Return a copy with another panel color. Pure; raises ValueError."""
-        return Theme(self.roles, canonical_panel(value))
+        return Theme(self.roles, canonical_panel(value), self.surface)
+
+    def with_surface(self, value) -> Theme:
+        """Return a copy with another surface color. Pure; raises ValueError."""
+        return Theme(self.roles, self.panel, canonical_panel(value, "surface"))
+
+    def separator(self) -> str:
+        """The tmux color for the separators between split panes: the outline's
+        foreground, or the panel where the outline is the terminal's own."""
+        name = self.roles["outline"].foreground[0]
+        return self.panel if name == DEFAULT_COLOR else tmux_spelling(name)
 
     def with_role(self, role: str, **changes) -> Theme:
         """Return a copy for preview or editing. Pure; the original is unchanged."""
@@ -568,7 +609,7 @@ class Theme:
                 what=f"{role}.attributes",
             ),
         )
-        return Theme(MappingProxyType(dict(self.roles) | {role: updated}), self.panel)
+        return Theme(MappingProxyType(dict(self.roles) | {role: updated}), self.panel, self.surface)
 
     def preset_name(self) -> str | None:
         """The preset this theme equals exactly, or None for custom colors."""
@@ -579,9 +620,10 @@ class Theme:
             "# tmux-workspaces viewer colors. A color is '#rrggbb', a name, 'default'\n"
             "# or 0-255; a list is ordered fallbacks and the first value this terminal\n"
             "# supports wins ('#rrggbb' needs 256 colors). The panel is the sidebar's\n"
-            "# background and the gap between panes. Fonts and shell colors stay\n"
-            "# under terminal control.\n"
-            f"# Presets: {', '.join(PRESET_NAMES)}. panel and [role] tables override a preset.\n"
+            "# ground and the surface the terminals' ground. Fonts and shell colors\n"
+            "# stay under terminal control.\n"
+            f"# Presets: {', '.join(PRESET_NAMES)}. panel, surface and [role] tables "
+            "override a preset.\n"
         )
         preset = self.preset_name()
         if preset is not None:
@@ -589,14 +631,15 @@ class Theme:
                 header
                 + "\n"
                 + f"preset = {json.dumps(preset)}\n"
-                + "\n# Add a panel value or a role table below to change part of this\n"
+                + "\n# Add a ground value or a role table below to change part of this\n"
                 + "# preset, for example:\n"
                 + '# panel = "#1f2430"\n'
                 + "# [accent]\n"
                 + '# foreground = "red"\n'
             )
         tables = "\n".join(self.roles[role].to_toml_table(role) for role in ROLES)
-        return header + "\n" + f"panel = {json.dumps(self.panel)}\n\n" + tables
+        grounds = f"panel = {json.dumps(self.panel)}\nsurface = {json.dumps(self.surface)}\n"
+        return header + "\n" + grounds + "\n" + tables
 
     def resolve(self, colors: int) -> Palette:
         """Resolve against a real palette size. Never raises: colors always render."""
@@ -672,7 +715,9 @@ def palette_sequence(slots: Mapping[str, int]) -> str:
     )
 
 
-DEFAULT_THEME = Theme(MappingProxyType(_shipped()), _PRESET_PANELS[DEFAULT_PRESET])
+DEFAULT_THEME = Theme(
+    MappingProxyType(_shipped()), _PRESET_PANELS[DEFAULT_PRESET], _PRESET_SURFACES[DEFAULT_PRESET]
+)
 
 
 def _read_file(path: Path) -> bytes:

@@ -135,7 +135,6 @@ def sidebar_main(args) -> int:
                 args.host_pane,
                 effective_keymap(args),
                 roster_args=roster_args(args),
-                background=args.terminal_background,
             )
             relaunch.started(args.instance_dir)
             try:
@@ -259,12 +258,6 @@ def window_main(args) -> int:
         args.terminal_colors = curses.tigetnum("colors")
     except curses.error:
         args.terminal_colors = None
-    # The terminal's own background, so panes can be padded in it. Asked once,
-    # here, where the real terminal is still on the other end of the tty.
-    if not args.terminal_background:
-        from .terminal_colors import terminal_background
-
-        args.terminal_background = terminal_background()
     args.data_dir = args.data_dir.expanduser().resolve()
     if args.backbone and args.backbone_data_dir is None:
         raise ValueError("Use --backbone-data-dir with --backbone")
@@ -337,8 +330,6 @@ def run_instance(args) -> tuple[int, dict | None, bool]:
         ]
         if args.terminal_colors is not None:
             child_args += ["--terminal-colors", str(args.terminal_colors)]
-        if args.terminal_background:
-            child_args += ["--terminal-background", args.terminal_background]
         if args.manual_reopen:
             # An outer launcher fixed this window's map and generated a matching
             # terminal profile from it. Reloading into that surface would leave

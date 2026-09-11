@@ -96,9 +96,10 @@ class ThemeEditorTests(unittest.TestCase):
 
     def test_rows_cover_every_role_and_field_with_one_selection(self):
         rows = self.editor.rows()
-        # One row per role field, then the panel row and the preset row.
-        self.assertEqual(len(rows), len(ROLES) * len(FIELDS) + 2)
-        self.assertEqual(rows[-2][:3], ("Panel", "panel", "default"))
+        # One row per role field, then the panel, surface and preset rows.
+        self.assertEqual(len(rows), len(ROLES) * len(FIELDS) + 3)
+        self.assertEqual(rows[-3][:3], ("Panel", "panel", "default"))
+        self.assertEqual(rows[-2][:3], ("Surface", "surface", "default"))
         self.assertEqual(rows[-1][:3], ("Preset", "preset", "custom"))
         self.assertEqual([role for role, *_ in rows[:3]], ["Normal"] * 3)
         self.assertEqual([field for _, field, *_ in rows[:3]], list(FIELDS))
@@ -166,6 +167,8 @@ class ThemeEditorTests(unittest.TestCase):
         self.editor.key(curses.KEY_UP)
         self.editor.key(curses.KEY_UP)
         self.assertEqual(self.editor.target, ("preset", "preset"))
+        self.editor.key(curses.KEY_UP)
+        self.assertEqual(self.editor.target, ("surface", "surface"))
         self.editor.key(curses.KEY_UP)
         self.assertEqual(self.editor.target, ("panel", "panel"))
         self.editor.key(curses.KEY_UP)

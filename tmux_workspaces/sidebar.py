@@ -131,7 +131,7 @@ class Sidebar:
         # separated by a color gap rather than a line. A display that cannot
         # be reached keeps its panel; the sidebar's own colors still apply.
         with contextlib.suppress(RuntimeError, OSError, ValueError):
-            self.display.style_panel(theme.panel)
+            self.display.style_panel(theme.panel, theme.surface, theme.separator())
         # The role names the sidebar's own base, so its empty cells and the
         # cleared frame carry the configured background rather than the
         # terminal's, which is only visible once someone configures one.

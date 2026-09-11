@@ -18,6 +18,8 @@ FIELDS = ("foreground", "background", "attributes")
 # The panel and preset rows follow the roles: one word each, no field name.
 PANEL = "panel"
 PANEL_LABEL = "Panel"
+SURFACE = "surface"
+SURFACE_LABEL = "Surface"
 PRESET = "preset"
 PRESET_LABEL = "Preset"
 CUSTOM = "custom"
@@ -26,6 +28,7 @@ FIELD_LABELS = {
     "background": "background",
     "attributes": "style",
     PANEL: "",
+    SURFACE: "",
     PRESET: "",
 }
 SHORT_FIELDS = {
@@ -33,9 +36,11 @@ SHORT_FIELDS = {
     "background": "bg",
     "attributes": "style",
     PANEL: "",
+    SURFACE: "",
     PRESET: "",
 }
-PANEL_DETAIL = "The sidebar's background and the gap between panes; a name, 0-255 or #rrggbb"
+PANEL_DETAIL = "The sidebar's ground; a name, 0-255 or #rrggbb"
+SURFACE_DETAIL = "The terminals' ground, padding included; default turns padding off"
 HINTS = (
     "↵ edit · a apply · d defaults",
     "↵ edit · a apply · d reset",
@@ -131,6 +136,7 @@ class ThemeEditor:
         return (
             *((role, field) for role in self.draft.roles for field in FIELDS),
             (PANEL, PANEL),
+            (SURFACE, SURFACE),
             (PRESET, PRESET),
         )
 
@@ -145,12 +151,17 @@ class ThemeEditor:
     def panel(self) -> str:
         return str(getattr(self.draft, "panel", "default"))
 
+    def surface(self) -> str:
+        return str(getattr(self.draft, "surface", "default"))
+
     def status(self) -> str | None:
         """What the panel or preset row means, for the status line; None on a role."""
         if self.on_preset:
             return self.describe_preset()
         if self.on_panel:
             return PANEL_DETAIL
+        if self.target == (SURFACE, SURFACE):
+            return SURFACE_DETAIL
         return None
 
     def preset(self) -> str:
@@ -169,12 +180,14 @@ class ThemeEditor:
     def value(self, role: str, field: str) -> str:
         if field == PANEL:
             return self.panel()
+        if field == SURFACE:
+            return self.surface()
         return ", ".join(getattr(self.draft.roles[role], field))
 
     def rows(self) -> list[tuple[str, str, str, bool]]:
         """Label, field, value and selection for every row: the role fields, the
         panel and the preset."""
-        labels = {PRESET: PRESET_LABEL, PANEL: PANEL_LABEL}
+        labels = {PRESET: PRESET_LABEL, PANEL: PANEL_LABEL, SURFACE: SURFACE_LABEL}
         return [
             (
                 labels.get(field) or self.labels.get(role, role.title()),
@@ -256,6 +269,8 @@ class ThemeEditor:
         try:
             if field == PANEL:
                 theme = self.draft.with_panel(text)
+            elif field == SURFACE:
+                theme = self.draft.with_surface(text)
             else:
                 theme = self.draft.with_role(role, **{field: [part for part in values if part]})
         except (ValueError, KeyError) as error:

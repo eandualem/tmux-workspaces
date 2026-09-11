@@ -118,11 +118,11 @@ class PresetThemeTests(unittest.TestCase):
     def test_an_rgb_slot_never_takes_a_number_a_role_already_uses(self):
         theme = DEFAULT_THEME.with_role("muted", foreground=["16"])
         palette = theme.resolve(256)
-        self.assertEqual(palette.entries["muted"][:2], (16, -1))
+        self.assertEqual(palette.entries["muted"][:2], (16, 18))
         self.assertNotIn(16, palette.rgb)
-        self.assertEqual(palette.describe("muted"), "color 16 on terminal default")
+        self.assertEqual(palette.describe("muted"), "color 16 on #22252b")
         # Every remaining exact color still has a slot, from 17 upward.
-        self.assertEqual(sorted(palette.rgb), [17, 18, 19, 20])
+        self.assertEqual(sorted(palette.rgb), [17, 18, 19, 20, 21, 22])
 
     def test_tmux_spelling_of_installed_colors(self):
         self.assertEqual(tmux_color(-1), "default")
@@ -150,8 +150,9 @@ class PresetRowTests(unittest.TestCase):
     def test_the_preset_row_names_the_preset_or_custom(self):
         rows = self.editor.rows()
         self.assertEqual(rows[-1][:3], ("Preset", PRESET, "default"))
-        self.assertEqual(rows[-2][:3], ("Panel", "panel", "#181818"))
-        self.assertEqual(len(rows), len(ROLES) * 3 + 2)
+        self.assertEqual(rows[-2][:3], ("Surface", "surface", "#292c33"))
+        self.assertEqual(rows[-3][:3], ("Panel", "panel", "#22252b"))
+        self.assertEqual(len(rows), len(ROLES) * 3 + 3)
         self.editor.preview(DEFAULT_THEME.with_role("muted", foreground=["red"]))
         self.assertEqual(self.editor.rows()[-1][2], "custom")
         self.assertIn("Custom", self.editor.describe_preset())
@@ -226,10 +227,10 @@ class PanelColorTests(unittest.TestCase):
             "/tmp/view.sock", "/tmp/source.sock", "%0", "/tmp/shells.sock", "/tmp/action.sock"
         )
 
-    def test_a_panel_set_before_setup_is_applied_by_setup(self):
+    def test_grounds_set_before_setup_are_applied_by_setup(self):
         display = self.display()
         display.tmux = Mock()
-        display.style_panel("#272c36")
+        display.style_panel("#22252b", "#292c33", "#31343b")
         display.tmux.batch.assert_not_called()
         display.setup()
         options = {
@@ -237,17 +238,33 @@ class PanelColorTests(unittest.TestCase):
             for call in display.tmux.run.call_args_list
             if call.args[:2] == ("set-window-option", "-g")
         }
-        # A band, not a line: the glyphs take the same color as their ground,
-        # and the focused pane's border is not marked.
-        self.assertEqual(options["pane-border-style"], "fg=#272c36,bg=#272c36")
-        self.assertEqual(options["pane-active-border-style"], "fg=#272c36,bg=#272c36")
-        # The sidebar pane itself carries the panel as its background.
+        # With a surface of its own the border glyphs vanish into it, so the
+        # padding beside each pane reads as blank and no border is marked.
+        self.assertEqual(options["pane-border-style"], "fg=#292c33,bg=#292c33")
+        self.assertEqual(options["pane-active-border-style"], "fg=#292c33,bg=#292c33")
+        # The sidebar's own cells are curses'; its ground is the surface, which
+        # shows only where curses leaves a cell alone.
         display.tmux.batch.assert_called_once_with(
             [
-                ["set-option", "-p", "-t", "%0", "window-style", "bg=#272c36"],
-                ["set-option", "-p", "-t", "%0", "window-active-style", "bg=#272c36"],
+                ["set-option", "-p", "-t", "%0", "window-style", "bg=#292c33"],
+                ["set-option", "-p", "-t", "%0", "window-active-style", "bg=#292c33"],
             ]
         )
+        self.assertTrue(display.padded)
+
+    def test_the_panel_alone_makes_a_band_and_no_padding(self):
+        display = self.display()
+        display.tmux = Mock()
+        display.style_panel("#22252b")
+        display.setup()
+        options = {
+            call.args[2]: call.args[3]
+            for call in display.tmux.run.call_args_list
+            if call.args[:2] == ("set-window-option", "-g")
+        }
+        self.assertEqual(options["pane-border-style"], "fg=#22252b,bg=#22252b")
+        self.assertFalse(display.padded)
+        self.assertEqual(display.separator, "#22252b")
 
     def test_a_panel_set_after_setup_reaches_tmux_in_one_batch(self):
         display = self.display()
@@ -260,10 +277,10 @@ class PanelColorTests(unittest.TestCase):
             [
                 ["set-window-option", "-g", "pane-border-style", "fg=default,bg=default"],
                 ["set-window-option", "-g", "pane-active-border-style", "fg=default,bg=default"],
-                ["set-option", "-p", "-t", "%0", "window-style", "bg=default"],
-                ["set-option", "-p", "-t", "%0", "window-active-style", "bg=default"],
-                ["set-option", "-p", "-t", "%3", "window-style", "bg=default"],
-                ["set-option", "-p", "-t", "%3", "window-active-style", "bg=default"],
+                ["set-option", "-p", "-t", "%0", "window-style", "default"],
+                ["set-option", "-p", "-t", "%0", "window-active-style", "default"],
+                ["set-option", "-p", "-t", "%3", "window-style", "default"],
+                ["set-option", "-p", "-t", "%3", "window-active-style", "default"],
             ]
         )
         self.assertEqual(display.panel_color, "default")

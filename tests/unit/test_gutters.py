@@ -15,17 +15,7 @@ from unittest.mock import patch
 
 from tmux_workspaces.display import GUTTER_COMMAND, Display, gutter_allowance
 from tmux_workspaces.model import Model, leaves
-from tmux_workspaces.terminal_colors import parse_reply
 from tmux_workspaces.tmux import Tmux
-
-
-class BackgroundReplyTests(unittest.TestCase):
-    def test_terminal_replies_are_read_in_both_spellings(self):
-        self.assertEqual(parse_reply(b"\x1b]11;rgb:1e1e/2222/2626\x1b\\"), "#1e2226")
-        self.assertEqual(parse_reply(b"\x1b]11;rgb:1f/1f/1f\x07"), "#1f1f1f")
-        self.assertEqual(parse_reply(b"noise\x1b]11;#1F1F1F\x07"), "#1f1f1f")
-        self.assertIsNone(parse_reply(b""))
-        self.assertIsNone(parse_reply(b"\x1b]10;rgb:ffff/ffff/ffff\x1b\\"))
 
 
 class AllowanceTests(unittest.TestCase):
@@ -85,16 +75,15 @@ class GutterLayoutTests(unittest.TestCase):
             subprocess.run(["tmux", "-S", server.socket, "kill-server"], capture_output=True)
         self.directory.cleanup()
 
-    def display(self, background):
+    def display(self, surface):
         display = Display(
             self.viewer.socket,
             str(self.root / "absent.sock"),
             self.sidebar,
             self.shells.socket,
             str(self.root / "actions.sock"),
-            background=background,
         )
-        display.style_panel("#181818")
+        display.style_panel("#181818", surface or "default", "#31343b")
         display.setup()
         return display
 
@@ -135,14 +124,16 @@ class GutterLayoutTests(unittest.TestCase):
         self.assertEqual(len(display.panes), len(leaves(tab["tree"])))
         self.assertEqual(len(gutters), 4)
         # tmux quotes the start command it reports.
-        self.assertTrue(
-            all(info["command"].strip('"') == GUTTER_COMMAND for info in gutters.values())
-        )
+        # Blank gutters and the column separator hold a silent process; the
+        # rule between stacked panes draws itself.
+        commands = [info["command"].strip('"') for info in gutters.values()]
+        self.assertEqual(sum(command == GUTTER_COMMAND for command in commands), 3)
+        self.assertEqual(sum("--rule" in command for command in commands), 1)
+        # Every border, the sidebar's included, vanishes into the surface; the
+        # panel's own outline is what separates it.
         hidden = "fg=#1f1f1f,bg=#1f1f1f"
         for pane, info in panes.items():
-            if pane != self.sidebar:
-                self.assertEqual(info["border"], hidden, pane)
-        self.assertEqual(panes[self.sidebar]["border"], "fg=#181818,bg=#181818")
+            self.assertEqual(info["border"], hidden, pane)
         # Reading left to right along the top row: sidebar, band border, blank
         # gutter, hidden border, content, hidden border, band gutter, hidden
         # border, content, hidden border, blank gutter at the window's edge.
@@ -154,13 +145,16 @@ class GutterLayoutTests(unittest.TestCase):
                 "sidebar"
                 if i is panes[self.sidebar]
                 else "band"
-                if i["style"].startswith("bg=")
+                if i["style"] == "bg=#31343b"
                 else "blank"
                 if i["gutter"]
                 else "content"
             )
             for i in top_row
         ]
+        # The blank gutters and every content pane sit on the surface.
+        surface = [i["style"] for i in top_row[1:] if i["style"] != "bg=#31343b"]
+        self.assertEqual(surface, ["bg=#1f1f1f"] * 4, top_row)
         self.assertEqual(kinds, ["sidebar", "blank", "content", "band", "content", "blank"])
         for earlier, later in pairwise(top_row):
             self.assertEqual(later["left"], earlier["left"] + earlier["width"] + 1)
@@ -172,7 +166,11 @@ class GutterLayoutTests(unittest.TestCase):
         )
         self.assertEqual([i["gutter"] for i in column], [False, True, False])
         self.assertEqual(column[1]["height"], 1)
-        self.assertTrue(column[1]["style"].startswith("bg="))
+        # A stacked split's separator draws one thin rule on the surface
+        # instead of filling its row with the outline color.
+        self.assertEqual(column[1]["style"], "bg=#1f1f1f")
+        self.assertIn("--rule", column[1]["command"])
+        self.assertIn("--color '#31343b'", column[1]["command"])
         self.assertEqual(column[2]["top"], column[1]["top"] + 2)
 
     def test_the_same_tab_is_not_rebuilt_and_a_click_on_a_gutter_bounces(self):
@@ -193,19 +191,21 @@ class GutterLayoutTests(unittest.TestCase):
         self.assertEqual(self.viewer.run("display-message", "-p", "#{pane_id}"), content)
         self.assertEqual(display.focused_leaf(), leaf)
 
-    def test_a_new_panel_color_recolors_the_bands_and_keeps_the_padding_blank(self):
+    def test_new_grounds_recolor_the_separator_and_the_padding(self):
         display = self.display("#1f1f1f")
         model = Model.initial()
         model.split("right")
         with patch.dict(os.environ, {"SHELL": "/bin/sh"}):
             display.render(model.tab, False)
-        display.style_panel("#202030")
+        display.style_panel("#202030", "#101010", "#404050")
         styles = {p: i["style"] for p, i in self.panes().items() if i["gutter"]}
-        self.assertEqual(sorted(styles.values()), ["bg=#202030", "default", "default"])
+        self.assertEqual(sorted(styles.values()), ["bg=#101010", "bg=#101010", "bg=#404050"])
         self.assertEqual(
             self.viewer.run("show-window-options", "-gv", "pane-border-style"),
-            "fg=#202030,bg=#202030",
+            "fg=#101010,bg=#101010",
         )
+        content = {p: i["style"] for p, i in self.panes().items() if not i["gutter"]}
+        self.assertTrue(all(style == "bg=#101010" for style in content.values()), content)
 
     def test_without_a_background_there_are_no_gutters_and_borders_are_the_band(self):
         display = self.display(None)

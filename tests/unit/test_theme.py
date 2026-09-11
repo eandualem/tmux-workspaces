@@ -107,19 +107,27 @@ class ColorValueTests(unittest.TestCase):
 class ShippedAppearanceTests(unittest.TestCase):
     def test_defaults_reproduce_todays_pairs_exactly(self):
         palette = DEFAULT_THEME.resolve(256)
-        # VS Code Dark Modern. The panel is tmux's; the roles are exact colors
-        # in the pane's own palette slots, on the terminal default background
-        # so the panel shows through wherever nothing else is painted.
-        self.assertEqual(DEFAULT_THEME.panel, "#181818")
-        self.assertEqual(palette.entries["normal"][:2], (16, -1))
-        self.assertEqual(palette.entries["active"][:2], (17, 18))
-        self.assertEqual(palette.entries["accent"][:2], (19, -1))
-        self.assertEqual(palette.entries["muted"][:2], (20, -1))
+        # The owner's palette: the panel and surface are tmux's grounds; the
+        # roles are exact colors in the pane's own palette slots, on the panel.
+        self.assertEqual((DEFAULT_THEME.panel, DEFAULT_THEME.surface), ("#22252b", "#292c33"))
+        self.assertEqual(palette.entries["normal"][:2], (16, 17))
+        self.assertEqual(palette.entries["active"][:2], (16, 18))
+        self.assertEqual(palette.entries["accent"][:2], (19, 17))
+        self.assertEqual(palette.entries["muted"][:2], (20, 17))
+        self.assertEqual(palette.entries["outline"][:2], (21, 22))
         self.assertEqual(
             dict(palette.rgb),
-            {16: "#cccccc", 17: "#ffffff", 18: "#04395e", 19: "#4daafc", 20: "#9d9d9d"},
+            {
+                16: "#cccccc",
+                17: "#22252b",
+                18: "#343841",
+                19: "#608af7",
+                20: "#999999",
+                21: "#31343b",
+                22: "#292c33",
+            },
         )
-        self.assertEqual(palette.describe("active"), "#ffffff on #04395e")
+        self.assertEqual(palette.describe("active"), "#cccccc on #343841")
         self.assertEqual(palette.fallbacks, ())
 
     def test_defaults_reproduce_todays_basic_palette_exactly(self):
@@ -128,21 +136,22 @@ class ShippedAppearanceTests(unittest.TestCase):
         # and green for 108, so the ordered fallbacks are load-bearing.
         for colors in (8, 16):
             palette = DEFAULT_THEME.resolve(colors)
-            self.assertEqual(palette.entries["normal"][:2], (7, -1), colors)
+            self.assertEqual(palette.entries["normal"][:2], (7, 0), colors)
             self.assertEqual(palette.entries["active"][:2], (7, 4), colors)
-            self.assertEqual(palette.entries["accent"][:2], (6, -1), colors)
-            self.assertEqual(palette.entries["muted"][:2], (7, -1), colors)
+            self.assertEqual(palette.entries["accent"][:2], (6, 0), colors)
+            self.assertEqual(palette.entries["muted"][:2], (7, 0), colors)
+            self.assertEqual(palette.entries["outline"][:2], (7, 0), colors)
             self.assertEqual(dict(palette.rgb), {}, colors)
         # An 88-color pane cannot hold the exact colors but has the 256-color
         # fallbacks that fit.
         palette = DEFAULT_THEME.resolve(88)
-        self.assertEqual(palette.entries["accent"][:2], (75, -1))
-        self.assertEqual(palette.entries["active"][:2], (7, 24))
+        self.assertEqual(palette.entries["accent"][:2], (69, 0))
+        self.assertEqual(palette.entries["active"][:2], (7, 4))
 
     def test_pair_numbers_match_the_existing_sidebar_call_sites(self):
         palette = DEFAULT_THEME.resolve(256)
-        self.assertEqual(ROLES, ("normal", "active", "accent", "muted"))
-        self.assertEqual([palette.pair(role) for role in ROLES], [1, 2, 3, 4])
+        self.assertEqual(ROLES, ("normal", "active", "accent", "muted", "outline"))
+        self.assertEqual([palette.pair(role) for role in ROLES], [1, 2, 3, 4, 5])
         self.assertEqual(set(ROLE_LABELS), set(ROLES))
 
     def test_roles_are_immutable(self):
@@ -169,7 +178,7 @@ class ResolutionTests(unittest.TestCase):
 
     def test_bright_colors_drop_to_their_base_with_bold_on_eight_color_terminals(self):
         theme = Theme.from_dict({"accent": {"foreground": "bright-red"}})
-        self.assertEqual(theme.resolve(16).entries["accent"][:2], (9, -1))
+        self.assertEqual(theme.resolve(16).entries["accent"][:2], (9, 0))
         foreground, _background, attributes = theme.resolve(8).entries["accent"]
         self.assertEqual(foreground, 1)
         self.assertIn("bold", attributes)
@@ -189,7 +198,7 @@ class ResolutionTests(unittest.TestCase):
         theme = Theme.from_dict({"active": {"foreground": "red", "background": "red"}})
         palette = theme.resolve(256)
         self.assertEqual(palette.fallbacks, ("active",))
-        self.assertEqual(palette.entries["active"][:2], (17, 18))
+        self.assertEqual(palette.entries["active"][:2], (16, 18))
         self.assertNotIn("reverse", palette.entries["active"][2])
         self.assertIn("shipped fallback", palette.describe("active"))
 
@@ -222,8 +231,8 @@ class ParsingTests(unittest.TestCase):
         theme = Theme.from_dict({"accent": {"foreground": "red"}})
         self.assertEqual(theme.roles["active"], DEFAULT_THEME.roles["active"])
         # A table naming one key changes one key; the rest of the role stays.
-        self.assertEqual(theme.roles["accent"].background, ("default",))
-        self.assertEqual(theme.panel, DEFAULT_THEME.panel)
+        self.assertEqual(theme.roles["accent"].background, ("#22252b", "235", "black"))
+        self.assertEqual((theme.panel, theme.surface), (DEFAULT_THEME.panel, DEFAULT_THEME.surface))
         self.assertEqual(Theme.from_dict({}), DEFAULT_THEME)
 
     def test_invalid_configurations_are_rejected_with_located_messages(self):
@@ -255,7 +264,7 @@ class ParsingTests(unittest.TestCase):
         self.assertEqual(
             edited.roles["accent"].background, DEFAULT_THEME.roles["accent"].background
         )
-        self.assertEqual(DEFAULT_THEME.roles["accent"].foreground, ("#4daafc", "75", "cyan"))
+        self.assertEqual(DEFAULT_THEME.roles["accent"].foreground, ("#608af7", "69", "cyan"))
         self.assertEqual(edited.roles["muted"], DEFAULT_THEME.roles["muted"])
         with self.assertRaises(ValueError):
             DEFAULT_THEME.with_role("accent", foreground="#fff")
@@ -635,8 +644,10 @@ class InstallTests(unittest.TestCase):
         palette.install(curses)
         self.assertEqual(curses.started, 1)
         self.assertEqual(curses.defaults, 1)
-        self.assertEqual(curses.pairs, {1: (16, -1), 2: (17, 18), 3: (19, -1), 4: (20, -1)})
-        self.assertEqual([palette.style(role) for role in ROLES], [1, 2, 3, 4])
+        self.assertEqual(
+            curses.pairs, {1: (16, 17), 2: (16, 18), 3: (19, 17), 4: (20, 17), 5: (21, 22)}
+        )
+        self.assertEqual([palette.style(role) for role in ROLES], [1, 2, 3, 4, 5])
 
     def test_attributes_are_folded_into_the_precomputed_style(self):
         theme = Theme.from_dict({"muted": {"attributes": ["bold", "underline"]}})
@@ -751,7 +762,7 @@ class InstallTests(unittest.TestCase):
         palette = DEFAULT_THEME.resolve(256)
         palette.install(curses)
         self.assertEqual(len(curses.pairs), len(ROLES))
-        self.assertLessEqual(max(curses.pairs), 4)
+        self.assertLessEqual(max(curses.pairs), 5)
 
 
 class EditorContractTests(unittest.TestCase):

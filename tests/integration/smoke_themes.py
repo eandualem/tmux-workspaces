@@ -49,18 +49,19 @@ _CLEAR = {22: ("bold", "dim"), 24: ("underline",), 27: ("reverse",)}
 # muted sit on that same default. The panel itself is a pane style, which a
 # capture of the pane's cells does not carry.
 # On 256 colors the shipped roles are exact RGB values in the pane's own
-# palette slots 16-20 (VS Code Dark Modern), defined through OSC 4.
+# palette slots, defined through OSC 4: 16 text, 17 panel, 18 selection,
+# 19 accent, 20 secondary text, 21 outline, 22 surface.
 SHIPPED_256 = {
-    "title": (16, DEFAULT, ("bold",)),
-    "muted": (20, DEFAULT, ()),
-    "active": (17, 18, ()),
-    "accent": (19, DEFAULT, ()),
+    "title": (16, 17, ("bold",)),
+    "muted": (20, 17, ()),
+    "active": (16, 18, ()),
+    "accent": (19, 17, ()),
 }
 SHIPPED_BASIC = {
-    "title": (7, DEFAULT, ("bold",)),
-    "muted": (7, DEFAULT, ()),
+    "title": (7, 0, ("bold",)),
+    "muted": (7, 0, ()),
     "active": (7, 4, ()),
-    "accent": (6, DEFAULT, ()),
+    "accent": (6, 0, ()),
 }
 
 
@@ -299,11 +300,12 @@ foreground = ["bright-magenta", "magenta"]
 foreground = 244
 """
 
+# Roles the file leaves alone keep the panel as their ground, slot 17.
 CUSTOM_256 = {
-    "title": (16, DEFAULT, ("bold",)),
+    "title": (16, 17, ("bold",)),
     "active": (3, 27, ("bold",)),
-    "accent": (13, DEFAULT, ()),
-    "muted": (244, DEFAULT, ()),
+    "accent": (13, 17, ()),
+    "muted": (244, 17, ()),
 }
 
 

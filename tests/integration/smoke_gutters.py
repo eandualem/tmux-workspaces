@@ -15,7 +15,8 @@ from tmux_workspaces.tmux import Tmux
 
 from .support import FixtureResources, click_button, open_terminal, saved, wait
 
-BACKGROUND = "#1f1f1f"
+# The shipped preset's surface: the padded panes' ground and the hidden borders.
+BACKGROUND = "#292c33"
 
 
 def panes(viewer: Tmux) -> list[dict]:
@@ -36,7 +37,7 @@ def panes(viewer: Tmux) -> list[dict]:
                 "width": int(width),
                 "height": int(height),
                 "active": active == "1",
-                "band": style.startswith("bg="),
+                "band": style == "bg=#31343b",
                 "border": border,
             }
         )
@@ -46,9 +47,7 @@ def panes(viewer: Tmux) -> list[dict]:
 def exercise(directory: Path) -> None:
     with FixtureResources(parent=directory) as resources:
         library = resources.library("demo", demo=True)
-        client = resources.client(
-            ["--demo", "--data-dir", str(resources.root), "--terminal-background", BACKGROUND]
-        )
+        client = resources.client(["--demo", "--data-dir", str(resources.root)])
         shells = Tmux(socket_path(library, "terminals"))
         wait(client, lambda: client.manifest(library), "viewer did not start")
         runtime = json.loads(client.manifest(library).read_text())

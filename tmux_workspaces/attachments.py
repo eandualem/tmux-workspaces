@@ -20,6 +20,44 @@ def attachment_hosts_viewer(args, target: str) -> bool:
     return args.host_pane in panes.splitlines()
 
 
+def rule_main(args) -> int:
+    """Draw one horizontal rule across this pane, redrawn when its size changes.
+
+    The pane is a one-row separator between two stacked panes. A whole row of
+    the separator color would weigh more than the one-column separator beside
+    two side-by-side panes, so a thin line is drawn instead.
+    """
+    import fcntl
+    import struct
+    import sys
+    import termios
+
+    def paint(color: str) -> None:
+        try:
+            cols = struct.unpack("HHHH", fcntl.ioctl(1, termios.TIOCGWINSZ, b"\0" * 8))[1]
+        except OSError:
+            cols = 80
+        sequence = ""
+        if color.startswith("#") and len(color) == 7:
+            r, g, b = (int(color[i : i + 2], 16) for i in (1, 3, 5))
+            sequence = f"\033[38;2;{r};{g};{b}m"
+        elif color.startswith("colour") and color[6:].isdigit():
+            sequence = f"\033[38;5;{int(color[6:])}m"
+        sys.stdout.write("\033[?25l\033[H" + sequence + "─" * max(0, cols) + "\033[0m")
+        sys.stdout.flush()
+
+    painted = None
+    while True:
+        try:
+            size = fcntl.ioctl(1, termios.TIOCGWINSZ, b"\0" * 8)
+        except OSError:
+            size = None
+        if size != painted:
+            paint(args.color)
+            painted = size
+        time.sleep(0.5)
+
+
 def leaf_main(args) -> int:
     name = args.agent or args.terminal
     if not name:
