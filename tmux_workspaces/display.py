@@ -40,15 +40,17 @@ def gutter_allowance(tree: dict | None) -> tuple[int, int]:
     if not tree:
         return 0, 0
 
-    def splits(node: dict) -> tuple[int, int]:
+    def inner(node: dict) -> tuple[int, int]:
+        """Columns and rows a subtree's own gutters add, along each axis."""
         if "agent" in node:
             return 0, 0
-        first, second = splits(node["first"]), splits(node["second"])
-        right = int(node["direction"] == "right")
-        return first[0] + second[0] + right, first[1] + second[1] + (1 - right)
+        first, second = inner(node["first"]), inner(node["second"])
+        if node["direction"] == "right":
+            return first[0] + second[0] + 2, max(first[1], second[1])
+        return max(first[0], second[0]), first[1] + second[1] + 2
 
-    right, below = splits(tree)
-    return 4 + 2 * right, 2 * below
+    cols, rows = inner(tree)
+    return 4 + cols, rows
 
 
 @dataclass(frozen=True)

@@ -89,9 +89,9 @@ The panel is the sidebar's own background, the background of an empty pane
 waiting for a choice, and the band tmux draws where its pane borders would be.
 It is one value: `default` (the terminal's background), a color name, a number
 from 0 to 255, or `#rrggbb`. It is painted by tmux as a pane style and a border
-style, not by curses, which is why it alone may be an RGB value; the roles
-below are drawn over it with the terminal's default background, so they show
-the panel through. A role given its own `background` covers the panel where
+style, so an RGB value reaches tmux directly, whereas an RGB role color takes a
+palette slot in the viewer's pane. The roles below are drawn over it with the
+terminal's default background, so they show the panel through. A role given its own `background` covers the panel where
 that role is drawn.
 
 ## Roles

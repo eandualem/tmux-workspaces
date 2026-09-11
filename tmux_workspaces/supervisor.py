@@ -124,6 +124,8 @@ class LaunchContext:
     def _options(self) -> list[str]:
         """The user-facing options that reproduce this library and adapter."""
         options = ["--data-dir", str(self.base_library), "--theme", str(self.theme)]
+        if self.terminal_background:
+            options += ["--terminal-background", self.terminal_background]
         if self.demo:
             options.append("--demo")
         elif self.source_socket:

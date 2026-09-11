@@ -605,10 +605,17 @@ class Theme:
         fallbacks: list[str] = []
         slots: dict[str, int] = {}
         shipped = _shipped()
+        reserved = frozenset(
+            color_index(name)
+            for role in (*self.roles.values(), *shipped.values())
+            for names in (role.foreground, role.background)
+            for name in names
+            if not is_rgb(name) and color_index(name) in RGB_SLOTS
+        )
         for role in ROLES:
             configured = self.roles[role]
-            foreground, extra = _resolve_color(configured.foreground, colors, slots)
-            background, _ = _resolve_color(configured.background, colors, slots)
+            foreground, extra = _resolve_color(configured.foreground, colors, slots, reserved)
+            background, _ = _resolve_color(configured.background, colors, slots, reserved)
             attributes = tuple(
                 name for name in ATTRIBUTES if name in configured.attributes or name in extra
             )
@@ -616,8 +623,8 @@ class Theme:
                 # Reverse cannot rescue this: swapping identical colors leaves the
                 # same invisible pair. Fall back to the shipped role instead.
                 safe = shipped[role]
-                foreground, _ = _resolve_color(safe.foreground, colors, slots)
-                background, _ = _resolve_color(safe.background, colors, slots)
+                foreground, _ = _resolve_color(safe.foreground, colors, slots, reserved)
+                background, _ = _resolve_color(safe.background, colors, slots, reserved)
                 attributes = safe.attributes
                 fallbacks.append(role)
             entries[role] = (foreground, background, attributes)
@@ -632,16 +639,19 @@ RGB_SLOTS = range(16, 24)
 
 
 def _resolve_color(
-    names: tuple[str, ...], colors: int, slots: dict[str, int]
+    names: tuple[str, ...], colors: int, slots: dict[str, int], reserved: frozenset[int]
 ) -> tuple[int, frozenset[str]]:
     for name in names:
         if _supported(name, colors):
             if is_rgb(name):
                 if name not in slots:
-                    if len(slots) >= len(RGB_SLOTS):
+                    # A slot a role names by number is left alone, so redefining
+                    # the others cannot change that role's color.
+                    free = [s for s in RGB_SLOTS if s not in reserved and s not in slots.values()]
+                    if not free:
                         # More exact colors than slots: the next fallback serves.
                         continue
-                    slots[name] = RGB_SLOTS[len(slots)]
+                    slots[name] = free[0]
                 return slots[name], frozenset()
             return color_index(name), frozenset()
     last = names[-1]

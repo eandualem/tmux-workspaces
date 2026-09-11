@@ -115,6 +115,15 @@ class PresetThemeTests(unittest.TestCase):
         self.assertIn("[accent]", text)
         self.assertEqual(parse_theme(text.encode()), custom)
 
+    def test_an_rgb_slot_never_takes_a_number_a_role_already_uses(self):
+        theme = DEFAULT_THEME.with_role("muted", foreground=["16"])
+        palette = theme.resolve(256)
+        self.assertEqual(palette.entries["muted"][:2], (16, -1))
+        self.assertNotIn(16, palette.rgb)
+        self.assertEqual(palette.describe("muted"), "color 16 on terminal default")
+        # Every remaining exact color still has a slot, from 17 upward.
+        self.assertEqual(sorted(palette.rgb), [17, 18, 19, 20])
+
     def test_tmux_spelling_of_installed_colors(self):
         self.assertEqual(tmux_color(-1), "default")
         self.assertEqual(tmux_color(0), "colour0")
@@ -322,7 +331,7 @@ class ChooserThemeTests(unittest.TestCase):
         self.assertEqual(fake.pairs[2], preset_theme("paper").resolve(8).entries["active"][:2])
 
     def test_an_unreadable_theme_never_stops_the_chooser(self):
-        self.path.write_text("[active]\nforeground = '#8ab4f8'\n")
+        self.path.write_text("[active]\nforeground = '#8ab4f'\n")
         fake = Curses()
         fake.COLORS = 256
         styles = install_theme(fake, self.path, 256)
