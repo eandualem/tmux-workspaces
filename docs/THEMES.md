@@ -13,11 +13,14 @@ the viewer does not offer one, and it never edits Ghostty, terminal profiles or
 operating-system settings to get one. If a glyph such as `▶` or `─` renders as a
 box, that is the terminal's font, not the theme.
 
-The four text roles are curses color pairs, so they take names or palette
-numbers, never `#rrggbb`. The one exception is the panel — the sidebar's
-background and the gap between panes — which tmux paints rather than curses,
-so it accepts an RGB value; tmux approximates it on a terminal without
-truecolor.
+Colors may be exact `#rrggbb` values. The four text roles are curses color
+pairs, and curses cannot name an RGB color, so the viewer defines each such
+value in one of its own pane's palette slots (16 to 23) through tmux, which
+keeps a palette per pane: nothing outside the viewer is recolored. That needs
+a 256-color pane, so an RGB value is always written with a 256-color and a
+basic fallback after it. The panel — the sidebar's background and the gap
+between panes — is painted by tmux directly. On a terminal without truecolor
+tmux approximates every RGB value itself.
 
 ## The file
 
@@ -57,10 +60,10 @@ preset = "plain"
 
 | Preset | Look |
 | --- | --- |
-| `default` | A slate panel (`#272c36`) beside the terminals, with a steel-blue accent |
-| `plain` | The terminal's own background, a steel-blue accent and grey secondary text |
+| `default` | VS Code's Dark Modern: a `#181818` panel, `#cccccc` text, `#9d9d9d` secondary text, a `#4daafc` accent and a `#ffffff` on `#04395e` selection |
+| `plain` | The same Dark Modern colors on the terminal's own background |
 | `forest` | The terminal's background with a sage-green accent — the look shipped before presets |
-| `paper` | For light terminals: a warm pale panel, dark text and a deep blue accent |
+| `paper` | VS Code's Light Modern, for a light terminal: a `#f8f8f8` panel, `#3b3b3b` text and a `#0060c0` selection |
 | `mono` | The terminal's two colors only, using bold, dim and reverse |
 
 A `panel` value or a role table after the `preset` line overrides that part
@@ -114,10 +117,13 @@ attributes = ["bold"]
 foreground = "cyan"
 ```
 
-A color is `default` (the terminal's own foreground or background), one of the
-eight basic names, a `bright-` name, or a number from 0 to 255. A list is an
-ordered set of fallbacks: the first value this terminal can actually show wins.
-A bare value is shorthand for a one-item list.
+A color is `#rrggbb`, `default` (the terminal's own foreground or background),
+one of the eight basic names, a `bright-` name, or a number from 0 to 255. A
+list is an ordered set of fallbacks: the first value this terminal can actually
+show wins, and `#rrggbb` needs a 256-color pane. A bare value is shorthand for
+a one-item list. The shipped presets write every exact color as
+`["#4daafc", 75, "cyan"]`: the exact value, its nearest palette number, and
+the basic color for an eight-color terminal.
 
 `attributes` accepts `bold`, `dim`, `reverse`, `standout` and `underline`. They
 are what keeps selection, focus and errors distinguishable when color is not
@@ -145,9 +151,12 @@ Two other things are drawn in these colors, so the window reads as one layer:
 - **The new-tab chooser.** An empty pane is its own small program, so it reads
   the same theme file and resolves it against the same palette size the sidebar
   used. Its title is the accent, its hints are muted, its selected row is the
-  `active` pair, and a configured `normal` background covers the pane. A theme
-  the chooser cannot read or install leaves it drawing with bold, dim and
-  reverse, exactly as before.
+  `active` pair, and the panel shows behind it. Three cases differ: without a
+  theme path (a viewer started with `--no-keymap`-style minimal options never
+  passes one) the chooser draws with bold, dim and reverse only; a path whose
+  file is missing, unreadable or invalid gives the shipped colors, as it does
+  for the sidebar; and a palette the terminal refuses to install falls back to
+  the attribute-only look.
 
 ## Editing colors
 

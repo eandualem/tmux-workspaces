@@ -1057,7 +1057,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.colors, 256)
         self.assertEqual(
             [call.args for call in self.init_pair.call_args_list],
-            [(1, -1, -1), (2, 231, 239), (3, 110, -1), (4, 245, -1)],
+            [(1, 16, -1), (2, 17, 18), (3, 19, -1), (4, 20, -1)],
         )
         self.assertEqual(self.sidebar.message, "")
 
@@ -1068,14 +1068,14 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.colors, 8)
         self.assertEqual(
             [call.args for call in self.init_pair.call_args_list[-4:]],
-            [(1, -1, -1), (2, 7, 4), (3, 6, -1), (4, 7, -1)],
+            [(1, 7, -1), (2, 7, 4), (3, 6, -1), (4, 7, -1)],
         )
 
     def test_the_sidebar_base_takes_the_normal_role(self):
         configured = DEFAULT_THEME.with_role("normal", background=["blue"])
         self.path.write_text(configured.to_toml())
         self.sidebar.setup_theme()
-        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, -1, 4))
+        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, 16, 4))
         self.screen.bkgdset.assert_called_with(" ", self.sidebar.style("normal"))
         self.screen.getmaxyx.return_value = (10, 10)
         self.sidebar.draw()
@@ -1084,7 +1084,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(small[0][4], self.sidebar.style("normal"))
 
     def test_unreadable_config_reports_it_and_keeps_working_colors(self):
-        self.path.write_text("[active]\nforeground = '#8ab4f8'\n")
+        self.path.write_text("[active]\nforeground = '#8ab4f'\n")
         self.sidebar.setup_theme()
         self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
         self.assertTrue(self.sidebar.message.startswith("Error: active.foreground"))
@@ -1127,7 +1127,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("▶ Normal fg") for line in text))
         for label in ("Apply", "Cancel", "Restore defaults", "‹ Back"):
             self.assertTrue(any(line.startswith(label) for line in text), label)
-        self.assertTrue(any("terminal default on terminal default" in line for line in text))
+        self.assertTrue(any("#cccccc on terminal default" in line for line in text))
 
     def test_a_refused_restore_keeps_the_editor_and_its_reason_on_screen(self):
         self.sidebar.input("t")
@@ -1271,7 +1271,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.type("blue")
         self.sidebar.input("\n")
         self.assertEqual(self.sidebar.theme.roles["active"].background, ("blue",))
-        self.assertEqual(self.init_pair.call_args_list[-3].args, (2, 231, 4))
+        self.assertEqual(self.init_pair.call_args_list[-3].args, (2, 17, 4))
         self.assertFalse(self.path.exists())
         self.sidebar.input("a")
         self.assertEqual(load_theme(self.path).theme, self.sidebar.theme)
@@ -1287,7 +1287,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.theme.roles["normal"].foreground, ("blue",))
         self.sidebar.input("\x1b")
         self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
-        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, -1, -1))
+        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, 16, -1))
         self.assertFalse(self.path.exists())
         self.assertEqual(self.sidebar.message, "")
 
@@ -1305,13 +1305,13 @@ class ThemeMenuTests(unittest.TestCase):
     def test_rejected_value_keeps_the_colors_and_says_why(self):
         self.sidebar.input("t")
         self.sidebar.input("\n")
-        self.type("#8ab4f8")
+        self.type("#8ab4f")
         self.sidebar.input("\n")
         self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
-        self.assertIn("not supported", self.sidebar.theme_editor.message)
+        self.assertIn("not a color", self.sidebar.theme_editor.message)
         self.sidebar.draw()
         self.assertTrue(
-            any("not supported" in drawn for _, _, drawn in self.drawn()),
+            any("not a color" in drawn for _, _, drawn in self.drawn()),
         )
 
     def test_concurrent_edit_is_reported_and_discards_nothing(self):
@@ -1414,7 +1414,7 @@ class ThemeMenuTests(unittest.TestCase):
     def test_a_failure_is_bold_and_labelled_while_progress_is_neither(self):
         self.sidebar.input("t")
         self.sidebar.input("\n")
-        self.type("#8ab4f8")
+        self.type("#8ab4f")
         self.sidebar.input("\n")
         self.sidebar.draw()
         self.assertTrue(self.sidebar.theme_editor.message.startswith("Error: "))
@@ -1428,7 +1428,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertTrue(progress and not any(style & curses.A_BOLD for style in progress))
 
     def test_a_startup_theme_failure_is_bold_in_the_status_row(self):
-        self.path.write_text("[active]\nforeground = '#8ab4f8'\n")
+        self.path.write_text("[active]\nforeground = '#8ab4f'\n")
         self.sidebar.setup_theme()
         self.sidebar.draw()
         rows = self.styles_for("Error: ")

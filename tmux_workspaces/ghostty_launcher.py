@@ -94,7 +94,8 @@ def launch_command(
         # The window height is rarely a whole number of rows; extending each
         # edge cell's color into that remainder lets the panel and the
         # terminals reach the window edge instead of leaving a bare strip.
-        "--window-padding-color=extend",
+        # "extend" alone applies heuristics that skip some rows on macOS.
+        "--window-padding-color=extend-always",
         "--quit-after-last-window-closed=true",
         "--command=" + command,
     ]

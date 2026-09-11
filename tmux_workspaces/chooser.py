@@ -206,7 +206,9 @@ def clicked_row(sequence: str) -> int | None:
     return None
 
 
-def install_theme(curses, theme_path, terminal_colors: int | None) -> dict[str, int] | None:
+def install_theme(
+    curses, theme_path, terminal_colors: int | None, write=None
+) -> dict[str, int] | None:
     """Install the sidebar's theme in this pane, or None to draw with attributes.
 
     The chooser is its own curses process, so it resolves the same file the
@@ -222,7 +224,7 @@ def install_theme(curses, theme_path, terminal_colors: int | None) -> dict[str, 
         ceiling = getattr(curses, "COLORS", 0) or 8
         colors = min(terminal_colors or ceiling, ceiling)
         palette = load_theme(theme_path).theme.resolve(colors)
-        palette.install(curses)
+        palette.install(curses, write)
         # The empty pane shares the sidebar's background when one is configured.
         screen_background = palette.style("normal")
     except (ThemeError, ValueError, OSError, curses.error):
@@ -312,8 +314,12 @@ def chooser_main(args) -> int:
         source.start()
         chooser = Chooser(args.tab, args.leaf)
 
+        def emit(text: str) -> None:
+            sys.stdout.write(text)
+            sys.stdout.flush()
+
         def main(screen):
-            styles = install_theme(curses, args.theme, args.terminal_colors)
+            styles = install_theme(curses, args.theme, args.terminal_colors, emit)
             run(screen, chooser, source, args.action_socket, curses, styles=styles)
 
         curses.wrapper(main)

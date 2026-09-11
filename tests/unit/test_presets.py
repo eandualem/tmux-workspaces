@@ -141,7 +141,7 @@ class PresetRowTests(unittest.TestCase):
     def test_the_preset_row_names_the_preset_or_custom(self):
         rows = self.editor.rows()
         self.assertEqual(rows[-1][:3], ("Preset", PRESET, "default"))
-        self.assertEqual(rows[-2][:3], ("Panel", "panel", "#272c36"))
+        self.assertEqual(rows[-2][:3], ("Panel", "panel", "#181818"))
         self.assertEqual(len(rows), len(ROLES) * 3 + 2)
         self.editor.preview(DEFAULT_THEME.with_role("muted", foreground=["red"]))
         self.assertEqual(self.editor.rows()[-1][2], "custom")
@@ -310,8 +310,7 @@ class ChooserThemeTests(unittest.TestCase):
         palette = preset_theme("paper").resolve(256)
         self.assertEqual(fake.pairs[2], palette.entries["active"][:2])
         self.assertEqual(styles["selected"], 2)
-        # Paper's muted role adds dim, so the style is pair 4 plus that bit.
-        self.assertEqual(styles["muted"], 4 | Curses.A_DIM)
+        self.assertEqual(styles["muted"], 4)
         self.assertEqual(styles["background"], 1)
         self.assertTrue(styles["title"] & Curses.A_BOLD)
 

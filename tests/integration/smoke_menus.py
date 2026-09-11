@@ -51,7 +51,8 @@ def _exercise(resources: FixtureResources) -> None:
         """
         rows = []
         for line in styled():
-            if "48;5;239" not in line:
+            # The selection background is the exact color in palette slot 18.
+            if "48;5;18" not in line:
                 continue
             text = ESCAPE_SEQUENCE.sub("", line).strip()
             if text and not text.startswith(">"):

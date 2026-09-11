@@ -48,6 +48,12 @@ def make_source(
     return Source(socket, TmuxProvider(socket), overlays)
 
 
+def emit_escape(text: str) -> None:
+    """Send raw control text to the sidebar's own terminal, past curses."""
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
 def roster_args(args) -> tuple[str, ...]:
     """The options a chooser pane needs to build the sidebar's own roster, and
     to draw itself in the sidebar's colors."""
@@ -142,6 +148,7 @@ def sidebar_main(args) -> int:
                         actions,
                         args.shortcut_hints,
                         theme_path=args.theme,
+                        emit=emit_escape,
                         terminal_colors=args.terminal_colors,
                         relaunch=request,
                         keymap_path=args.keymap or args.keymap_source,

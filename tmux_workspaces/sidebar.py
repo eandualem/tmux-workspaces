@@ -43,8 +43,12 @@ class Sidebar:
         terminal_colors: int | None = None,
         relaunch=None,
         keymap_path=None,
+        emit: Callable[[str], None] | None = None,
     ):
         self.screen, self.model, self.store = screen, model, store
+        # Sends raw text to this pane's terminal: the palette definitions an
+        # RGB color needs. Absent in tests, so nothing recolors a test runner.
+        self.emit = emit
         self.source, self.display = source, display
         self.actions = actions
         self.shortcut_hints = shortcut_hints
@@ -120,7 +124,7 @@ class Sidebar:
     def install(self, theme) -> None:
         """Show a theme in place: four pair updates, no reopen and no redraw loop."""
         palette = theme.resolve(self.colors)
-        palette.install(curses)
+        palette.install(curses, self.emit)
         self.theme, self.palette, self.last_frame = theme, palette, None
         # The panel color is tmux's to paint: the sidebar's background, empty
         # panes and the band between panes, so the panel and the terminals are

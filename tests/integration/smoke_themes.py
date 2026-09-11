@@ -48,14 +48,16 @@ _CLEAR = {22: ("bold", "dim"), 24: ("underline",), 27: ("reverse",)}
 # panel tmux paints behind the pane shows through; 2 active, 3 accent and 4
 # muted sit on that same default. The panel itself is a pane style, which a
 # capture of the pane's cells does not carry.
+# On 256 colors the shipped roles are exact RGB values in the pane's own
+# palette slots 16-20 (VS Code Dark Modern), defined through OSC 4.
 SHIPPED_256 = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
-    "muted": (245, DEFAULT, ()),
-    "active": (231, 239, ()),
-    "accent": (110, DEFAULT, ()),
+    "title": (16, DEFAULT, ("bold",)),
+    "muted": (20, DEFAULT, ()),
+    "active": (17, 18, ()),
+    "accent": (19, DEFAULT, ()),
 }
 SHIPPED_BASIC = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
+    "title": (7, DEFAULT, ("bold",)),
     "muted": (7, DEFAULT, ()),
     "active": (7, 4, ()),
     "accent": (6, DEFAULT, ()),
@@ -280,7 +282,7 @@ def default_appearance(directory: Path) -> None:
         assert_styles(viewer, SHIPPED_256, "restored 256-color viewer")
     print(
         "PASS: an unconfigured viewer draws the shipped 256-color roles "
-        "(muted 245, accent 110, active 231 on 239) and marks its selection without color",
+        "(exact RGB roles in slots 16-20) and marks its selection without color",
         flush=True,
     )
 
@@ -298,7 +300,7 @@ foreground = 244
 """
 
 CUSTOM_256 = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
+    "title": (16, DEFAULT, ("bold",)),
     "active": (3, 27, ("bold",)),
     "accent": (13, DEFAULT, ()),
     "muted": (244, DEFAULT, ()),
@@ -329,7 +331,7 @@ def configured_colors(directory: Path) -> None:
         assert_colorless_cues(viewer, "configured viewer")
 
     with FixtureResources(parent=directory) as resources:
-        write_config(config_path(resources), "[active]\nforeground = '#ff0000'\n")
+        write_config(config_path(resources), "[active]\nforeground = '#ff000'\n")
         library = resources.library("broken")
         client, viewer = launch(resources, library)
         assert_styles(viewer, SHIPPED_256, "viewer with an invalid theme")

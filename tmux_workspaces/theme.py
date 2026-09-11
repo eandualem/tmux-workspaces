@@ -45,14 +45,14 @@ ROLE_LABELS = MappingProxyType(
 )
 ROLE_DETAILS = MappingProxyType(
     {
-        "normal": "Body text, inactive buttons and the sidebar's own background.",
+        "normal": "Body text and buttons, drawn over the panel.",
         "active": "The selected tab, the selected workspace and the inline name editor.",
         "accent": (
-            "Hints, the tab detail row, the focused pane border and error text. Error "
-            "text shares this pair, so it always adds bold: with four pairs the colour "
-            "alone cannot distinguish it."
+            "Hints, the tab detail row, the indicator light and error text. Error text "
+            "shares this pair, so it always adds bold: with four pairs the colour alone "
+            "cannot distinguish it."
         ),
-        "muted": "Section labels, tab numbers, other pane borders and the idle status.",
+        "muted": "Section labels, tab numbers and counts and the idle status.",
     }
 )
 ATTRIBUTES = ("bold", "dim", "reverse", "standout", "underline")
@@ -61,6 +61,7 @@ COLOR_NAMES = ("default", *_BASIC_NAMES, *(f"bright-{name}" for name in _BASIC_N
 COLOR_CHOICES = COLOR_NAMES
 DEFAULT_COLOR = "default"
 
+_HEX_COLOR = re.compile(r"#[0-9a-f]{6}")
 _NAME_TO_INDEX = MappingProxyType(
     {DEFAULT_COLOR: -1} | {name: index for index, name in enumerate(COLOR_NAMES[1:])}
 )
@@ -114,17 +115,34 @@ def canonical_color(value: str | int | bool) -> str:
         return text
     if text.isdigit():
         return canonical_color(int(text))
+    if _HEX_COLOR.fullmatch(text):
+        # An exact color. It needs a 256-color pane, where it takes one of the
+        # pane's own palette slots; a fallback list covers smaller palettes.
+        return text
     if text.startswith("#") or text.startswith("0x") or text.startswith("rgb"):
         raise ValueError(
-            f"RGB values such as {value!r} are not supported; use a color name, "
+            f"{value!r} is not a color; use '#rrggbb', a color name, "
             "'default', or a number from 0 to 255"
         )
     raise ValueError(f"unsupported color {value!r}; use one of {', '.join(COLOR_NAMES)} or 0-255")
 
 
+def is_rgb(name: str) -> bool:
+    return name.startswith("#")
+
+
 def color_index(name: str) -> int:
-    """Return the curses color number for a canonical name; -1 means terminal default."""
+    """Return the curses color number for a canonical name; -1 means terminal default.
+
+    An RGB value has no fixed number: ``Theme.resolve`` gives it a palette slot.
+    """
+    if is_rgb(name):
+        raise ValueError(f"{name} is an RGB color; it is given a slot when a theme resolves")
     return _NAME_TO_INDEX[name] if name in _NAME_TO_INDEX else int(name)
+
+
+def _hex_rgb(name: str) -> tuple[int, int, int]:
+    return int(name[1:3], 16), int(name[3:5], 16), int(name[5:7], 16)
 
 
 def color_label(name: str) -> str:
@@ -138,6 +156,10 @@ def color_error(value, colors: int | None = None) -> str | None:
     except ValueError as error:
         return str(error)
     if colors is None:
+        return None
+    if is_rgb(name):
+        if colors < 256:
+            return f"{name} needs a 256-color terminal; this terminal reports {colors}"
         return None
     index = color_index(name)
     if index >= colors:
@@ -201,7 +223,7 @@ class Role:
 
     def to_toml_table(self, role: str) -> str:
         def emit(names: tuple[str, ...]) -> str:
-            values = [name if name not in _NAME_TO_INDEX else json.dumps(name) for name in names]
+            values = [name if name.isdigit() else json.dumps(name) for name in names]
             return values[0] if len(values) == 1 else "[" + ", ".join(values) + "]"
 
         return (
@@ -216,7 +238,6 @@ class Role:
 # paints it, so unlike the roles it may be an RGB value; tmux approximates it
 # for a terminal without truecolor. ``default`` leaves the terminal's own.
 DEFAULT_PANEL = "default"
-_HEX_COLOR = re.compile(r"#[0-9a-f]{6}")
 
 
 def canonical_panel(value) -> str:
@@ -248,26 +269,29 @@ def canonical_panel(value) -> str:
 # green for 108, silently changing the look on an eight-color terminal. Every
 # preset keeps the terminal's font and the colors shell programs print.
 _PRESETS: tuple[tuple[str, str, str, dict[str, Role]], ...] = (
+    # VS Code's Dark Modern: its side bar (#181818), foreground (#cccccc),
+    # description text (#9d9d9d), link blue (#4daafc) and the list selection
+    # (#ffffff on #04395e). Each carries a 256-color and a basic fallback.
     (
         "default",
-        "A slate panel beside the terminals, with a steel-blue accent",
-        "#272c36",
+        "VS Code Dark Modern: a darker panel, grey text, a blue selection",
+        "#181818",
         {
-            "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
-            "active": Role(("231", "white"), ("239", "blue"), ()),
-            "accent": Role(("110", "cyan"), (DEFAULT_COLOR,), ()),
-            "muted": Role(("245", "white"), (DEFAULT_COLOR,), ()),
+            "normal": Role(("#cccccc", "252", "white"), (DEFAULT_COLOR,), ()),
+            "active": Role(("#ffffff", "231", "white"), ("#04395e", "24", "blue"), ()),
+            "accent": Role(("#4daafc", "75", "cyan"), (DEFAULT_COLOR,), ()),
+            "muted": Role(("#9d9d9d", "247", "white"), (DEFAULT_COLOR,), ()),
         },
     ),
     (
         "plain",
-        "The terminal's own background, steel-blue accent, grey secondary text",
+        "The Dark Modern colors on the terminal's own background",
         DEFAULT_PANEL,
         {
-            "normal": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
-            "active": Role(("231", "white"), ("238", "blue"), ()),
-            "accent": Role(("110", "cyan"), (DEFAULT_COLOR,), ()),
-            "muted": Role(("243", "white"), (DEFAULT_COLOR,), ()),
+            "normal": Role(("#cccccc", "252", "white"), (DEFAULT_COLOR,), ()),
+            "active": Role(("#ffffff", "231", "white"), ("#04395e", "24", "blue"), ()),
+            "accent": Role(("#4daafc", "75", "cyan"), (DEFAULT_COLOR,), ()),
+            "muted": Role(("#9d9d9d", "247", "white"), (DEFAULT_COLOR,), ()),
         },
     ),
     (
@@ -281,15 +305,16 @@ _PRESETS: tuple[tuple[str, str, str, dict[str, Role]], ...] = (
             "muted": Role(("245", "white"), (DEFAULT_COLOR,), ()),
         },
     ),
+    # VS Code's Light Modern, for a light terminal.
     (
         "paper",
-        "For light terminals: a warm pale panel, dark text and a deep blue accent",
-        "#e8e5dd",
+        "VS Code Light Modern: a pale panel, dark text, a blue selection",
+        "#f8f8f8",
         {
-            "normal": Role(("236", "black"), (DEFAULT_COLOR,), ()),
-            "active": Role(("232", "black"), ("250", "cyan"), ()),
-            "accent": Role(("25", "blue"), (DEFAULT_COLOR,), ()),
-            "muted": Role(("245", "black"), (DEFAULT_COLOR,), ("dim",)),
+            "normal": Role(("#3b3b3b", "237", "black"), (DEFAULT_COLOR,), ()),
+            "active": Role(("#ffffff", "231", "white"), ("#0060c0", "25", "blue"), ()),
+            "accent": Role(("#005fb8", "25", "blue"), (DEFAULT_COLOR,), ()),
+            "muted": Role(("#6b6b6b", "243", "black"), (DEFAULT_COLOR,), ()),
         },
     ),
     (
@@ -335,6 +360,8 @@ class Palette:
     colors: int
     entries: Mapping[str, tuple[int, int, tuple[str, ...]]]
     fallbacks: tuple[str, ...] = ()
+    # RGB colors by the palette slot each takes in the pane.
+    rgb: Mapping[int, str] = field(default_factory=dict)
     _styles: dict[str, int] = field(default_factory=dict, compare=False, repr=False)
     _installed: dict[str, tuple[int, int]] = field(default_factory=dict, compare=False, repr=False)
     _repaired: set[str] = field(default_factory=set, compare=False, repr=False)
@@ -358,9 +385,12 @@ class Palette:
             raise ThemeError(f"palette role {role!r} is not installed")
         return self._installed[role]
 
+    def describe_color(self, index: int) -> str:
+        return self.rgb.get(index) or _describe_color(index)
+
     def describe(self, role: str) -> str:
         foreground, background, attributes = self.entries[role]
-        text = f"{_describe_color(foreground)} on {_describe_color(background)}"
+        text = f"{self.describe_color(foreground)} on {self.describe_color(background)}"
         if attributes:
             text += " " + "+".join(attributes)
         if role in self.fallbacks:
@@ -371,8 +401,13 @@ class Palette:
             text += f" ({self.colors}-color fallback)"
         return text
 
-    def install(self, curses) -> None:
-        """Install pairs 1-4 once. On failure, restore the pairs already in use."""
+    def install(self, curses, write=None) -> None:
+        """Install pairs 1-4 once. On failure, restore the pairs already in use.
+
+        ``write`` sends text to the pane's terminal; it receives the palette
+        definitions for any RGB colors. Without it, such colors show as
+        whatever the slots held, so a viewer always passes one.
+        """
         previous = dict(_INSTALLED)
         curses.start_color()
         with_default = True
@@ -435,6 +470,8 @@ class Palette:
         self._repaired.update(repaired)
         _INSTALLED.clear()
         _INSTALLED.update(installed)
+        if write is not None and self.rgb:
+            write(palette_sequence({name: slot for slot, name in self.rgb.items()}))
 
 
 # The pairs currently installed in this process, so a failed apply can roll back.
@@ -448,19 +485,25 @@ def _describe_color(index: int) -> str:
 
 
 def _supported(name: str, colors: int) -> bool:
+    if is_rgb(name):
+        return colors >= 256
     index = color_index(name)
     return index < 0 or index < colors
 
 
 def _nearest(name: str, colors: int) -> int:
     """Deterministic last resort once every configured fallback is unsupported."""
-    index = color_index(name)
-    if index < 0 or index < colors:
-        return index
     if colors < 8:
         # Below the documented floor there is no color to choose; the terminal's
         # own default is the only legible answer.
         return -1
+    if is_rgb(name):
+        target = _hex_rgb(name)
+        limit = 16 if colors >= 16 else 8
+        return min(range(limit), key=lambda n: _distance(target, _SYSTEM_RGB[n]))
+    index = color_index(name)
+    if index < 0 or index < colors:
+        return index
     if 8 <= index < 16:
         # A bright color on an eight-color terminal drops to its base; the caller
         # adds bold, which is how such terminals have always shown brightness.
@@ -533,10 +576,11 @@ class Theme:
 
     def to_toml(self) -> str:
         header = (
-            "# tmux-workspaces viewer colors. Role colors are names, 'default' or\n"
-            "# 0-255, as ordered fallbacks: the first value this terminal supports\n"
-            "# wins. The panel (the sidebar's background and the gap between panes)\n"
-            "# may also be '#rrggbb'. Fonts and shell colors stay under terminal control.\n"
+            "# tmux-workspaces viewer colors. A color is '#rrggbb', a name, 'default'\n"
+            "# or 0-255; a list is ordered fallbacks and the first value this terminal\n"
+            "# supports wins ('#rrggbb' needs 256 colors). The panel is the sidebar's\n"
+            "# background and the gap between panes. Fonts and shell colors stay\n"
+            "# under terminal control.\n"
             f"# Presets: {', '.join(PRESET_NAMES)}. panel and [role] tables override a preset.\n"
         )
         preset = self.preset_name()
@@ -559,11 +603,12 @@ class Theme:
         colors = max(int(colors), 0)
         entries: dict[str, tuple[int, int, tuple[str, ...]]] = {}
         fallbacks: list[str] = []
+        slots: dict[str, int] = {}
         shipped = _shipped()
         for role in ROLES:
             configured = self.roles[role]
-            foreground, extra = _resolve_color(configured.foreground, colors)
-            background, _ = _resolve_color(configured.background, colors)
+            foreground, extra = _resolve_color(configured.foreground, colors, slots)
+            background, _ = _resolve_color(configured.background, colors, slots)
             attributes = tuple(
                 name for name in ATTRIBUTES if name in configured.attributes or name in extra
             )
@@ -571,23 +616,50 @@ class Theme:
                 # Reverse cannot rescue this: swapping identical colors leaves the
                 # same invisible pair. Fall back to the shipped role instead.
                 safe = shipped[role]
-                foreground, _ = _resolve_color(safe.foreground, colors)
-                background, _ = _resolve_color(safe.background, colors)
+                foreground, _ = _resolve_color(safe.foreground, colors, slots)
+                background, _ = _resolve_color(safe.background, colors, slots)
                 attributes = safe.attributes
                 fallbacks.append(role)
             entries[role] = (foreground, background, attributes)
-        return Palette(colors, MappingProxyType(entries), tuple(fallbacks))
+        rgb = MappingProxyType({slot: name for name, slot in slots.items()})
+        return Palette(colors, MappingProxyType(entries), tuple(fallbacks), rgb)
 
 
-def _resolve_color(names: tuple[str, ...], colors: int) -> tuple[int, frozenset[str]]:
+# Palette slots an RGB role color may take in the viewer's own pane. tmux keeps
+# a palette per pane, so redefining these changes nothing outside the viewer;
+# the range is one no preset names by number.
+RGB_SLOTS = range(16, 24)
+
+
+def _resolve_color(
+    names: tuple[str, ...], colors: int, slots: dict[str, int]
+) -> tuple[int, frozenset[str]]:
     for name in names:
         if _supported(name, colors):
+            if is_rgb(name):
+                if name not in slots:
+                    if len(slots) >= len(RGB_SLOTS):
+                        # More exact colors than slots: the next fallback serves.
+                        continue
+                    slots[name] = RGB_SLOTS[len(slots)]
+                return slots[name], frozenset()
             return color_index(name), frozenset()
-    index = color_index(names[-1])
-    nearest = _nearest(names[-1], colors)
+    last = names[-1]
+    nearest = _nearest(last, colors)
+    if is_rgb(last):
+        return nearest, frozenset()
+    index = color_index(last)
     # Dropping a bright color to its base loses the brightness; bold restores it.
     extra = frozenset({"bold"}) if 8 <= index < 16 and nearest == index - 8 else frozenset()
     return nearest, extra
+
+
+def palette_sequence(slots: Mapping[str, int]) -> str:
+    """The OSC 4 text that defines each RGB slot in the pane that receives it."""
+    return "".join(
+        f"\x1b]4;{slot};rgb:{name[1:3]}/{name[3:5]}/{name[5:7]}\x1b\\"
+        for name, slot in sorted(slots.items(), key=lambda item: item[1])
+    )
 
 
 DEFAULT_THEME = Theme(MappingProxyType(_shipped()), _PRESET_PANELS[DEFAULT_PRESET])
