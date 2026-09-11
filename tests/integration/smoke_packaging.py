@@ -24,6 +24,7 @@ from tests.integration.support import (
     wait,
 )
 from tmux_workspaces.application import socket_path
+from tmux_workspaces.attachments import GROUPED_PREFIX
 from tmux_workspaces.model import leaves
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux, clean_env
@@ -65,6 +66,25 @@ def close_client(client: Client) -> None:
         if client.master is not None:
             os.close(client.master)
             client.master = None
+
+
+def external_panes(server) -> list[str]:
+    """The user's panes with their process and directory, one line each.
+
+    An attached pane joins a session through a grouped session of the viewer's
+    own, which shares the same windows; ``list-panes -a`` lists those panes
+    once per session, so the viewer's grouped sessions are left out.
+    """
+    return [
+        line.split("|", 1)[1]
+        for line in server.run(
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_name}|#{pane_id}|#{pane_pid}|#{pane_current_path}",
+        ).splitlines()
+        if not line.split("|", 1)[0].startswith(GROUPED_PREFIX)
+    ]
 
 
 def exercise(source: Path, root: Path) -> None:
@@ -224,9 +244,7 @@ def exercise(source: Path, root: Path) -> None:
             f"HOME={home}",
             "/bin/sh -i",
         )
-        external_identity = source_server.run(
-            "list-panes", "-a", "-F", "#{pane_id}|#{pane_pid}|#{pane_current_path}"
-        )
+        external_identity = external_panes(source_server)
         client, viewer = launch(prefixes[0])
         original_leaf = saved(library).pane["id"]
         client.type("\x07rInstalled work\r")
@@ -304,9 +322,7 @@ def exercise(source: Path, root: Path) -> None:
                 shells.run("display-message", "-p", "-t", original_terminal, "#{pane_pid}")
                 == first_pid
             )
-            assert external_identity == source_server.run(
-                "list-panes", "-a", "-F", "#{pane_id}|#{pane_pid}|#{pane_current_path}"
-            )
+            assert external_identity == external_panes(source_server)
             assert (
                 next(p for p in leaves(saved(library).tab["tree"]) if p["id"] == attachment_leaf)[
                     "agent"
@@ -382,9 +398,7 @@ def exercise(source: Path, root: Path) -> None:
         assert outer.run("show-options", "-g") == host_options
         assert client.process.poll() is None
         assert identity() == expected_identity
-        assert external_identity == source_server.run(
-            "list-panes", "-a", "-F", "#{pane_id}|#{pane_pid}|#{pane_current_path}"
-        )
+        assert external_identity == external_panes(source_server)
         assert json.loads(state.read_text()) == foreground
         for runtime, membership in installed_trees.items():
             assert {

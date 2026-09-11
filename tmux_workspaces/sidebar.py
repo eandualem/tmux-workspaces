@@ -79,6 +79,8 @@ ASCII_GLYPHS = {"▶": ">", "○": "o"}
 # agent rows, and never fewer tab rows than this.
 MAX_ROSTER_ROWS = 6
 MIN_TAB_ROWS = 4
+# Sentinel: no roster has been read for the frame in progress.
+_UNREAD = object()
 
 
 class Sidebar:
@@ -139,6 +141,8 @@ class Sidebar:
         self.roster_offset = 0
         # The interior rows the roster's agent rows occupy, for the wheel.
         self.roster_span: tuple[int, int] | None = None
+        # The roster reading the frame being drawn works from; unread between frames.
+        self._frame_roster: Snapshot | object | None = _UNREAD
         self.unicode = "utf" in (locale.getpreferredencoding(False) or "").lower()
         self.message = ""
         self.running = True
@@ -1091,7 +1095,7 @@ class Sidebar:
                 ("Shortcuts", lambda: self.open_menu("shortcuts")),
                 ("Refresh viewer…", self.refresh_viewer),
             ]
-            if self.roster() is not None:
+            if self.roster(agents) is not None:
                 mark = "x" if self.show_agents else " "
                 rows += [
                     (f"[{mark}] Show agent status", self.toggle_agents),
@@ -1268,9 +1272,16 @@ class Sidebar:
 
     # -- the agent roster --------------------------------------------------
 
-    def roster(self) -> Snapshot | None:
+    def roster(self, agents: dict | None = None) -> Snapshot | None:
         """The agents and states the source reports, or None without a
-        provider that reports states (plain tmux discovery knows names only)."""
+        provider that reports states (plain tmux discovery knows names only).
+
+        A frame reads the source once: ``draw`` stores that reading, and every
+        sizing or menu step of the same frame reuses it, so a poll landing
+        mid-frame cannot clip a row. Callers outside a frame read afresh.
+        """
+        if self._frame_roster is not _UNREAD:
+            return self._frame_roster
         reader = getattr(self.source, "roster", None)
         snapshot = reader() if callable(reader) else None
         return snapshot if isinstance(snapshot, Snapshot) else None
@@ -1400,8 +1411,15 @@ class Sidebar:
         return max(1, self.size()[0] - 3 - self.footer_rows() - self.roster_rows())
 
     def draw(self) -> None:
+        self._frame_roster = _UNREAD
+        try:
+            self._draw()
+        finally:
+            self._frame_roster = _UNREAD
+
+    def _draw(self) -> None:
         agents, error = self.source.snapshot()
-        roster = self.roster()
+        roster = self._frame_roster = self.roster()
         height, width = self.size()
         # Reconcile the open menu before the frame is compared: a skipped repaint
         # must still leave the active row and its options current for the keyboard.

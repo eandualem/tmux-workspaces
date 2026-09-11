@@ -69,6 +69,8 @@ def rule_main(args) -> int:
 # Grouped sessions the viewer creates for its own attach clients carry this
 # prefix, so tools and tests can tell them from the sessions people run.
 GROUPED_PREFIX = "tw-"
+# How often a grouped attachment checks that the session it joined still exists.
+TARGET_PROBE_SECONDS = 2
 
 
 def grouped_session_name() -> str:
@@ -148,7 +150,9 @@ def run_grouped_attachment(source_socket: str, target: str) -> None:
     command = grouped_attach_command(source_socket, target, name, options)
     with subprocess.Popen(command, env=clean_env()) as client:
         while client.poll() is None:
-            time.sleep(1)
+            # One probe every couple of seconds per attached pane; a killed
+            # session shows as offline soon enough without a process a second.
+            time.sleep(TARGET_PROBE_SECONDS)
             if client.poll() is None and not session_exists(source_socket, target):
                 subprocess.run(
                     ["tmux", "-S", source_socket, "kill-session", "-t", name],

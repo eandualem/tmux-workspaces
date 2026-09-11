@@ -101,7 +101,8 @@ class GroupedAttachTests(unittest.TestCase):
         self.assertIn(f"; set-option -t {name} destroy-unattached on", text)
         self.assertNotIn("-t =manager: status", text)
         # Each client gets a name of its own.
-        self.assertNotEqual(name, grouped_attach_command("/tmp/src.sock", "=manager:")[7])
+        other = grouped_attach_command("/tmp/src.sock", "=manager:")
+        self.assertNotEqual(name, other[other.index("-s") + 1])
 
     def test_an_agent_attaches_grouped_while_a_shell_attaches_plainly(self):
         seen = []

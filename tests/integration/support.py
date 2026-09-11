@@ -523,19 +523,54 @@ CONFIGURE = {"Shortcuts", "Colors…", "Detach", "Refresh viewer…"}
 
 
 def click_button(client, viewer, text):
+    """Click the control labelled `text`, opening the menu it lives in first.
+
+    A click can miss on a loaded host: the sidebar redraws underneath it and
+    the row measured a moment ago holds a different button, or the press and
+    release straddle a repaint. A menu that should have opened is therefore
+    checked for the label it must show, and the opening click repeated a few
+    times before the scenario gives up; every later step verifies its own
+    effect already.
+    """
     text = RENAMED.get(text, text)
+    opener = None
     if text in CONFIGURE:
-        click_button(client, viewer, "Configure…")
+        opener = "Configure…"
     if text == "+ Tab":
         # The plus sits at the right end of the tabs label row.
         text = "+"
     if text in MENU_ROUTES:
-        click_button(client, viewer, "Tab actions…")
-        text = MENU_ROUTES[text]
+        opener, text = "Tab actions…", MENU_ROUTES[text]
     if text == "Tab actions…":
         # The selected tab's menu sits behind the ellipsis at its row's end.
         text = "⋯"
+    if opener == "Tab actions…":
+        opener = "⋯"
+    if opener:
+        for attempt in range(4):
+            if attempt:
+                # A missed click may have opened something else, or nothing;
+                # Escape leaves a menu and is harmless on the plain sidebar.
+                client.type("\x1b")
+                client.pump(0.3)
+            _click(client, viewer, opener)
+            if _appears(client, viewer, text, timeout=4.0):
+                break
+            assert attempt < 3, f"{opener} never opened a menu showing {text}"
+    _click(client, viewer, text)
 
+
+def _appears(client, viewer, text, timeout: float) -> bool:
+    """Whether `text` is drawn in the sidebar within `timeout`, without failing."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if text in viewer.run("capture-pane", "-p", "-t", "%0"):
+            return True
+        client.pump(0.1)
+    return False
+
+
+def _click(client, viewer, text):
     def sidebar():
         return viewer.run("capture-pane", "-p", "-t", "%0")
 
