@@ -33,19 +33,21 @@ def leaves(tree: dict | None) -> list[dict]:
     return leaves(tree["first"]) + leaves(tree["second"])
 
 
-def split(tree: dict, target: str, direction: str, cwd: str | None = None) -> str:
+def split(
+    tree: dict, target: str, direction: str, cwd: str | None = None, *, empty: bool = False
+) -> str:
     if direction not in {"right", "below"}:
         raise ValueError("Invalid split direction")
     if tree["id"] == target and "agent" in tree:
         old = copy.deepcopy(tree)
-        added = leaf(cwd)
+        added = leaf(cwd, empty=empty)
         tree.clear()
         tree.update(id=identity(), direction=direction, ratio=0.5, first=old, second=added)
         return added["id"]
     if "agent" not in tree:
         for child in (tree["first"], tree["second"]):
             if any(item["id"] == target for item in leaves(child)):
-                return split(child, target, direction, cwd)
+                return split(child, target, direction, cwd, empty=empty)
     raise ValueError("Selected pane no longer exists")
 
 
@@ -117,12 +119,12 @@ class Model:
         self.state["workspaces"].append(space)
         self.state["selected"] = space["id"]
 
-    def split(self, direction: str, cwd: str | None = None) -> None:
+    def split(self, direction: str, cwd: str | None = None, *, empty: bool = False) -> None:
         tab = self.tab
         if not tab:
-            self.add_tab()
+            self.add_tab(empty=empty)
             return
-        tab["focus"] = split(tab["tree"], tab["focus"], direction, cwd)
+        tab["focus"] = split(tab["tree"], tab["focus"], direction, cwd, empty=empty)
         self.state["focus"] = False
 
     @property

@@ -35,9 +35,10 @@ commands, a status view, an editor, or any other terminal program.
 you: attaching a session never changes them. In the name editor, type a name and
 click **Save name** or press Enter; Ctrl-u clears the existing name.
 
-Click **Split →** or **Split ↓** to add another ordinary terminal beside or
-below the selected pane. A split inherits the original shell's working
-directory. Four panes still belong to one tab. Click a pane to select and type
+Click **Split →** or **Split ↓** to add another pane beside or below the
+selected one. It opens with the same chooser as a new tab; a terminal chosen
+there starts in the original shell's working directory. Four panes still belong
+to one tab. Click a pane to select and type
 there. Drag the borders to adjust sizes. **Focus** temporarily shows one pane;
 **Next →** cycles panes and **Layout** restores the splits. Narrow terminals
 use temporary focus without discarding the arrangement.

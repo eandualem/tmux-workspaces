@@ -142,6 +142,7 @@ def _standalone(resources: FixtureResources) -> None:
             lambda count=count: len(leaves(saved(library).tab["tree"])) == count,
             "one direct split key did not create one pane",
         )
+        open_terminal(client, viewer, library)
     check(
         lambda: len(viewer.run("list-panes").splitlines()) == 5,
         "direct split actions did not produce a four-pane layout",
@@ -353,6 +354,7 @@ def _nested(resources: FixtureResources) -> None:
         lambda: len(leaves(saved(library).tab["tree"])) == 2,
         "nested direct split failed",
     )
+    open_terminal(client, viewer, library)
     wait(client, content_ready, "nested split did not finish rendering")
     wait(
         client,

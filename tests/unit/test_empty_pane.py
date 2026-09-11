@@ -12,7 +12,7 @@ from tmux_workspaces.controls import pane_choice, valid_action
 from tmux_workspaces.display import Display
 from tmux_workspaces.keymap import DEFAULT_KEYMAP, Keymap
 from tmux_workspaces.layout_validation import InvalidLayout, validate_state
-from tmux_workspaces.model import LayoutConflict, Model, is_empty, new_tab
+from tmux_workspaces.model import LayoutConflict, Model, is_empty, leaves, new_tab
 from tmux_workspaces.sidebar import Sidebar
 
 
@@ -41,12 +41,14 @@ class ModelTests(unittest.TestCase):
                 self.assertFalse(is_empty(model.pane))
                 self.assertEqual(model.pane["agent"], "work" if choice == "session" else None)
 
-    def test_a_split_from_an_empty_pane_is_an_ordinary_shell(self):
+    def test_a_split_can_open_empty_and_keeps_the_directory_for_its_terminal(self):
         model = Model.initial()
-        model.add_tab(empty=True)
-        model.split("right", "/tmp")
-        self.assertFalse(is_empty(model.pane))
+        model.split("right", "/tmp", empty=True)
+        self.assertTrue(is_empty(model.pane))
         self.assertEqual(model.pane["cwd"], "/tmp")
+        # Fixtures that build libraries directly still get shells by default.
+        model.split("below", "/var")
+        self.assertFalse(is_empty(model.pane))
 
     def test_saved_layouts_accept_only_a_true_empty_flag_without_an_attachment(self):
         model = Model.initial()
@@ -157,6 +159,14 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.new_tab()
         self.assertTrue(is_empty(self.model.pane))
         self.assertEqual(len(self.model.space["tabs"]), 3)
+
+    def test_a_split_opens_an_empty_pane_beside_the_original_directory(self):
+        self.model.open_terminal()
+        self.model.pane["cwd"] = "/tmp/work"
+        self.sidebar.split("right")
+        self.assertTrue(is_empty(self.model.pane))
+        self.assertEqual(self.model.pane["cwd"], "/tmp/work")
+        self.assertEqual(len(leaves(self.model.tab["tree"])), 2)
 
     def test_choosing_a_terminal_fills_the_pane_and_redraws(self):
         self.sidebar.action(f"choose-terminal:{self.tab_id}:{self.leaf_id}")

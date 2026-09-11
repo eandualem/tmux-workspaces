@@ -129,9 +129,11 @@ def _exercise(resources: FixtureResources) -> None:
     client.type(direct_sequence("split-right"))
     wait(
         client,
-        lambda: len(leaves(saved(library).tab["tree"])) == 2 and content_ready(viewer),
+        lambda: len(leaves(saved(library).tab["tree"])) == 2,
         "direct split failed after the Ghostty shell wrapper",
     )
+    open_terminal(client, viewer, library)
+    wait(client, lambda: content_ready(viewer), "the split's chosen shell did not attach")
     client.type(direct_sequence("rename-tab") + "Launch checked\r")
     wait(
         client,

@@ -11,7 +11,15 @@ import subprocess
 import sys
 
 from tests.integration.ssh_support import SshHost
-from tests.integration.support import FixtureResources, click_button, saved, sidebar, tab_row, wait
+from tests.integration.support import (
+    FixtureResources,
+    click_button,
+    open_terminal,
+    saved,
+    sidebar,
+    tab_row,
+    wait,
+)
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.model import leaves
@@ -109,8 +117,9 @@ def exercise() -> None:
                 wait(
                     client,
                     lambda count=count: len(leaves(saved(library).tab["tree"])) == count,
-                    "SSH split did not create the expected ordinary pane",
+                    "SSH split did not create the expected pane",
                 )
+                open_terminal(client, viewer, library)
             four_target = "=" + Shells.name(saved(library).pane) + ":"
             command(four_target, "SSH_FOUR_READY")
 
