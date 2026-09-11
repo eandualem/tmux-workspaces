@@ -317,7 +317,8 @@ class SidebarTests(unittest.TestCase):
         cells = {
             (c.args[0], c.args[1]): c.args[2].strip() for c in self.screen.addnstr.call_args_list
         }
-        self.assertEqual(cells[2, 25], "2")
+        # The count sits in the last column, with no spare column before the gap.
+        self.assertEqual(cells[2, 26], "2")
         # The detail row is indented to the name, past the marker and number.
         self.assertEqual(cells[3, 4], "2 panes")
         self.assertTrue(cells[4, 0].endswith("…"))
@@ -1056,7 +1057,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.colors, 256)
         self.assertEqual(
             [call.args for call in self.init_pair.call_args_list],
-            [(1, 252, 235), (2, 231, 239), (3, 110, 235), (4, 245, 235)],
+            [(1, -1, -1), (2, 231, 239), (3, 110, -1), (4, 245, -1)],
         )
         self.assertEqual(self.sidebar.message, "")
 
@@ -1067,14 +1068,14 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.colors, 8)
         self.assertEqual(
             [call.args for call in self.init_pair.call_args_list[-4:]],
-            [(1, 7, 0), (2, 7, 4), (3, 6, 0), (4, 7, 0)],
+            [(1, -1, -1), (2, 7, 4), (3, 6, -1), (4, 7, -1)],
         )
 
     def test_the_sidebar_base_takes_the_normal_role(self):
         configured = DEFAULT_THEME.with_role("normal", background=["blue"])
         self.path.write_text(configured.to_toml())
         self.sidebar.setup_theme()
-        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, 252, 4))
+        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, -1, 4))
         self.screen.bkgdset.assert_called_with(" ", self.sidebar.style("normal"))
         self.screen.getmaxyx.return_value = (10, 10)
         self.sidebar.draw()
@@ -1126,7 +1127,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("▶ Normal fg") for line in text))
         for label in ("Apply", "Cancel", "Restore defaults", "‹ Back"):
             self.assertTrue(any(line.startswith(label) for line in text), label)
-        self.assertTrue(any("color 252 on color 235" in line for line in text))
+        self.assertTrue(any("terminal default on terminal default" in line for line in text))
 
     def test_a_refused_restore_keeps_the_editor_and_its_reason_on_screen(self):
         self.sidebar.input("t")
@@ -1286,7 +1287,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.theme.roles["normal"].foreground, ("blue",))
         self.sidebar.input("\x1b")
         self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
-        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, 252, 235))
+        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, -1, -1))
         self.assertFalse(self.path.exists())
         self.assertEqual(self.sidebar.message, "")
 

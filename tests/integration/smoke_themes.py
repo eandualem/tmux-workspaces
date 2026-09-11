@@ -44,19 +44,21 @@ FIRST_ROW_ROLES = frozenset({"title"})
 _ATTRIBUTES = {1: "bold", 2: "dim", 4: "underline", 7: "reverse"}
 _CLEAR = {22: ("bold", "dim"), 24: ("underline",), 27: ("reverse",)}
 
-# The shipped appearance: a panel of its own color (pair 1 normal), then
-# 2 active, 3 accent and 4 muted, all on that panel.
+# The shipped appearance: pair 1 (normal) is the terminal default, so the
+# panel tmux paints behind the pane shows through; 2 active, 3 accent and 4
+# muted sit on that same default. The panel itself is a pane style, which a
+# capture of the pane's cells does not carry.
 SHIPPED_256 = {
-    "title": (252, 235, ("bold",)),
-    "muted": (245, 235, ()),
+    "title": (DEFAULT, DEFAULT, ("bold",)),
+    "muted": (245, DEFAULT, ()),
     "active": (231, 239, ()),
-    "accent": (110, 235, ()),
+    "accent": (110, DEFAULT, ()),
 }
 SHIPPED_BASIC = {
-    "title": (7, 0, ("bold",)),
-    "muted": (7, 0, ()),
+    "title": (DEFAULT, DEFAULT, ("bold",)),
+    "muted": (7, DEFAULT, ()),
     "active": (7, 4, ()),
-    "accent": (6, 0, ()),
+    "accent": (6, DEFAULT, ()),
 }
 
 
@@ -278,7 +280,7 @@ def default_appearance(directory: Path) -> None:
         assert_styles(viewer, SHIPPED_256, "restored 256-color viewer")
     print(
         "PASS: an unconfigured viewer draws the shipped 256-color roles "
-        "(muted 243, accent 110, active 231 on 238) and marks its selection without color",
+        "(muted 245, accent 110, active 231 on 239) and marks its selection without color",
         flush=True,
     )
 
@@ -295,12 +297,11 @@ foreground = ["bright-magenta", "magenta"]
 foreground = 244
 """
 
-# Roles the file leaves out keep the shipped panel background.
 CUSTOM_256 = {
-    "title": (252, 235, ("bold",)),
+    "title": (DEFAULT, DEFAULT, ("bold",)),
     "active": (3, 27, ("bold",)),
-    "accent": (13, 235, ()),
-    "muted": (244, 235, ()),
+    "accent": (13, DEFAULT, ()),
+    "muted": (244, DEFAULT, ()),
 }
 
 

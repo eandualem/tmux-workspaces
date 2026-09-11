@@ -15,12 +15,27 @@ from .name_editor import NameEditor
 from .theme import PRESET_DETAILS, PRESET_NAMES, preset_theme
 
 FIELDS = ("foreground", "background", "attributes")
-# The preset row follows the roles: one word, no field name beside it.
+# The panel and preset rows follow the roles: one word each, no field name.
+PANEL = "panel"
+PANEL_LABEL = "Panel"
 PRESET = "preset"
 PRESET_LABEL = "Preset"
 CUSTOM = "custom"
-FIELD_LABELS = {"foreground": "text", "background": "background", "attributes": "style", PRESET: ""}
-SHORT_FIELDS = {"foreground": "fg", "background": "bg", "attributes": "style", PRESET: ""}
+FIELD_LABELS = {
+    "foreground": "text",
+    "background": "background",
+    "attributes": "style",
+    PANEL: "",
+    PRESET: "",
+}
+SHORT_FIELDS = {
+    "foreground": "fg",
+    "background": "bg",
+    "attributes": "style",
+    PANEL: "",
+    PRESET: "",
+}
+PANEL_DETAIL = "The sidebar's background and the gap between panes; a name, 0-255 or #rrggbb"
 HINTS = (
     "↵ edit · a apply · d defaults",
     "↵ edit · a apply · d reset",
@@ -111,12 +126,32 @@ class ThemeEditor:
 
     @property
     def targets(self) -> tuple[tuple[str, str], ...]:
-        """Every editable (role, field) in role then field order, then the preset row."""
-        return (*((role, field) for role in self.draft.roles for field in FIELDS), (PRESET, PRESET))
+        """Every editable (role, field) in role then field order, then the panel
+        and preset rows."""
+        return (
+            *((role, field) for role in self.draft.roles for field in FIELDS),
+            (PANEL, PANEL),
+            (PRESET, PRESET),
+        )
 
     @property
     def on_preset(self) -> bool:
         return self.target == (PRESET, PRESET)
+
+    @property
+    def on_panel(self) -> bool:
+        return self.target == (PANEL, PANEL)
+
+    def panel(self) -> str:
+        return str(getattr(self.draft, "panel", "default"))
+
+    def status(self) -> str | None:
+        """What the panel or preset row means, for the status line; None on a role."""
+        if self.on_preset:
+            return self.describe_preset()
+        if self.on_panel:
+            return PANEL_DETAIL
+        return None
 
     def preset(self) -> str:
         """The preset the draft equals, or ``custom`` once any role differs."""
@@ -132,13 +167,17 @@ class ThemeEditor:
         return self.draft != self.working
 
     def value(self, role: str, field: str) -> str:
+        if field == PANEL:
+            return self.panel()
         return ", ".join(getattr(self.draft.roles[role], field))
 
     def rows(self) -> list[tuple[str, str, str, bool]]:
-        """Label, field, value and selection for the preset row and each editable field."""
+        """Label, field, value and selection for every row: the role fields, the
+        panel and the preset."""
+        labels = {PRESET: PRESET_LABEL, PANEL: PANEL_LABEL}
         return [
             (
-                PRESET_LABEL if field == PRESET else self.labels.get(role, role.title()),
+                labels.get(field) or self.labels.get(role, role.title()),
                 field,
                 self.preset() if field == PRESET else self.value(role, field) or "none",
                 index == self.index,
@@ -215,7 +254,10 @@ class ThemeEditor:
             return False
         values = [part.strip() for part in text.split(",")]
         try:
-            theme = self.draft.with_role(role, **{field: [part for part in values if part]})
+            if field == PANEL:
+                theme = self.draft.with_panel(text)
+            else:
+                theme = self.draft.with_role(role, **{field: [part for part in values if part]})
         except (ValueError, KeyError) as error:
             self.message = failure(error)
             return False

@@ -57,7 +57,8 @@ an external session. The roster is only an attachment chooser, never a source of
 
 Panes are separated by a gap in the navigation panel's own color rather than
 by ruled borders, and no border is highlighted; the cursor shows where you are
-typing. **Tab actions… → Attach session** and the attachment shortcut work on
+typing. The panel color is a single value in the colors editor, and may be an
+RGB value such as `#272c36`, so it can be matched to your terminal's theme. **Tab actions… → Attach session** and the attachment shortcut work on
 all supported tmux versions.
 Once open, the chooser keeps its selected destination even if focus moves to
 another pane. If another viewer removes or changes that destination, attach again

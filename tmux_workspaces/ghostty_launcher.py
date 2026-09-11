@@ -91,6 +91,10 @@ def launch_command(
         "--working-directory=" + str(cwd),
         "--mouse-reporting=true",
         "--shell-integration=none",
+        # The window height is rarely a whole number of rows; extending each
+        # edge cell's color into that remainder lets the panel and the
+        # terminals reach the window edge instead of leaving a bare strip.
+        "--window-padding-color=extend",
         "--quit-after-last-window-closed=true",
         "--command=" + command,
     ]

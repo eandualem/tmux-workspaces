@@ -21,15 +21,7 @@ from .shortcut_editor import CAPTURE_HINT, CONFIRM_HINT, ShortcutEditor, fit_row
 from .shortcut_editor import FIELD_HINT as KEY_FIELD_HINT
 from .shortcut_editor import hint as shortcut_hint
 from .source import Source
-from .theme import (
-    DEFAULT_THEME,
-    ROLE_LABELS,
-    ThemeError,
-    ThemeFile,
-    load_theme,
-    theme_path,
-    tmux_color,
-)
+from .theme import DEFAULT_THEME, ROLE_LABELS, ThemeError, ThemeFile, load_theme, theme_path
 from .theme_editor import FIELD_HINT, ThemeEditor, failed, failure, fit_labels, hint
 
 
@@ -130,12 +122,12 @@ class Sidebar:
         palette = theme.resolve(self.colors)
         palette.install(curses)
         self.theme, self.palette, self.last_frame = theme, palette, None
-        # Pane borders are a band of the sidebar's background, so the panel and
-        # the terminals are separated by a color gap rather than a line. A
-        # display that cannot be reached keeps its borders; the sidebar colors
-        # still apply.
+        # The panel color is tmux's to paint: the sidebar's background, empty
+        # panes and the band between panes, so the panel and the terminals are
+        # separated by a color gap rather than a line. A display that cannot
+        # be reached keeps its panel; the sidebar's own colors still apply.
         with contextlib.suppress(RuntimeError, OSError, ValueError):
-            self.display.style_borders(tmux_color(palette.installed("normal")[1]))
+            self.display.style_panel(theme.panel)
         # The role names the sidebar's own base, so its empty cells and the
         # cleared frame carry the configured background rather than the
         # terminal's, which is only visible once someone configures one.
@@ -443,9 +435,7 @@ class Sidebar:
         self.button(height - 4, "Apply", lambda: self.theme_action(editor.apply), width=half)
         self.button(height - 4, "Cancel", lambda: self.theme_action(editor.cancel), x=1 + half)
         self.button(height - 3, "Restore defaults", lambda: self.theme_action(editor.defaults))
-        message = editor.message or (
-            editor.describe_preset() if editor.on_preset else self.describe(editor.target[0])
-        )
+        message = editor.message or editor.status() or self.describe(editor.target[0])
         self.put(height - 2, 1, message, self.message_style(message, bool(editor.message)))
         return cursor
 
@@ -1304,7 +1294,7 @@ class Sidebar:
                 active = item == tab
                 prefix = f"{'▶' if active else ' '} {index + 1} "
                 count = str(len(members))
-                room = width - len(prefix) - len(count) - 3
+                room = width - len(prefix) - len(count) - 2
                 name = visible(item["name"])
                 if len(name) > room:
                     name = name[: max(0, room - 1)] + "…"
@@ -1314,7 +1304,7 @@ class Sidebar:
                     self.put(row, 2, str(index + 1), self.style("muted"))
                 self.put(
                     row,
-                    width - len(count) - 2,
+                    width - len(count) - 1,
                     count,
                     self.style("active" if active else "muted"),
                 )

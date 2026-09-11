@@ -24,6 +24,7 @@ from tmux_workspaces.theme import (
     ROLE_LABELS,
     ROLES,
     Theme,
+    canonical_panel,
     parse_theme,
     preset_theme,
     tmux_color,
@@ -140,7 +141,8 @@ class PresetRowTests(unittest.TestCase):
     def test_the_preset_row_names_the_preset_or_custom(self):
         rows = self.editor.rows()
         self.assertEqual(rows[-1][:3], ("Preset", PRESET, "default"))
-        self.assertEqual(len(rows), len(ROLES) * 3 + 1)
+        self.assertEqual(rows[-2][:3], ("Panel", "panel", "#272c36"))
+        self.assertEqual(len(rows), len(ROLES) * 3 + 2)
         self.editor.preview(DEFAULT_THEME.with_role("muted", foreground=["red"]))
         self.assertEqual(self.editor.rows()[-1][2], "custom")
         self.assertIn("Custom", self.editor.describe_preset())
@@ -209,16 +211,16 @@ class PresetRowTests(unittest.TestCase):
         self.assertLessEqual(len(hint(10, preset=True)), len(hint(40, preset=True)))
 
 
-class BorderColorTests(unittest.TestCase):
+class PanelColorTests(unittest.TestCase):
     def display(self):
         return Display(
             "/tmp/view.sock", "/tmp/source.sock", "%0", "/tmp/shells.sock", "/tmp/action.sock"
         )
 
-    def test_colors_set_before_setup_are_applied_by_setup(self):
+    def test_a_panel_set_before_setup_is_applied_by_setup(self):
         display = self.display()
         display.tmux = Mock()
-        display.style_borders("colour254")
+        display.style_panel("#272c36")
         display.tmux.batch.assert_not_called()
         display.setup()
         options = {
@@ -228,22 +230,67 @@ class BorderColorTests(unittest.TestCase):
         }
         # A band, not a line: the glyphs take the same color as their ground,
         # and the focused pane's border is not marked.
-        self.assertEqual(options["pane-border-style"], "fg=colour254,bg=colour254")
-        self.assertEqual(options["pane-active-border-style"], "fg=colour254,bg=colour254")
+        self.assertEqual(options["pane-border-style"], "fg=#272c36,bg=#272c36")
+        self.assertEqual(options["pane-active-border-style"], "fg=#272c36,bg=#272c36")
+        # The sidebar pane itself carries the panel as its background.
+        display.tmux.batch.assert_called_once_with(
+            [
+                ["set-option", "-p", "-t", "%0", "window-style", "bg=#272c36"],
+                ["set-option", "-p", "-t", "%0", "window-active-style", "bg=#272c36"],
+            ]
+        )
 
-    def test_colors_set_after_setup_reach_tmux_in_one_batch(self):
+    def test_a_panel_set_after_setup_reaches_tmux_in_one_batch(self):
         display = self.display()
         display.tmux = Mock()
         display.setup()
         display.tmux.reset_mock()
-        display.style_borders("default")
+        display._empty_panes = {"%3"}
+        display.style_panel("default")
         display.tmux.batch.assert_called_once_with(
             [
                 ["set-window-option", "-g", "pane-border-style", "fg=default,bg=default"],
                 ["set-window-option", "-g", "pane-active-border-style", "fg=default,bg=default"],
+                ["set-option", "-p", "-t", "%0", "window-style", "bg=default"],
+                ["set-option", "-p", "-t", "%0", "window-active-style", "bg=default"],
+                ["set-option", "-p", "-t", "%3", "window-style", "bg=default"],
+                ["set-option", "-p", "-t", "%3", "window-active-style", "bg=default"],
             ]
         )
-        self.assertEqual(display.border_color, "default")
+        self.assertEqual(display.panel_color, "default")
+
+    def test_empty_panes_join_the_panel_and_filled_panes_leave_it(self):
+        display = self.display()
+        display.panel_color = "#272c36"
+        model = Model.initial()
+        model.add_tab(empty=True)
+        empty = model.pane
+        model.add_tab("filled")
+        filled = model.pane
+        tab = {"id": "t", "focus": empty["id"], "tree": {**empty}}
+        commands = display._identity_commands(tab, {empty["id"]: "%5"})
+        self.assertIn(["set-option", "-p", "-t", "%5", "window-style", "bg=#272c36"], commands)
+        self.assertEqual(display._empty_panes, {"%5"})
+        tab = {"id": "t", "focus": filled["id"], "tree": {**filled}}
+        commands = display._identity_commands(tab, {filled["id"]: "%5"})
+        self.assertIn(["set-option", "-p", "-t", "%5", "window-style", "default"], commands)
+        self.assertEqual(display._empty_panes, set())
+
+    def test_panel_values_are_canonical_tmux_colors(self):
+        self.assertEqual(canonical_panel("#1F2430"), "#1f2430")
+        self.assertEqual(canonical_panel(235), "colour235")
+        self.assertEqual(canonical_panel("235"), "colour235")
+        self.assertEqual(canonical_panel("bright-blue"), "brightblue")
+        self.assertEqual(canonical_panel(" Default "), "default")
+        for bad in ("#12345", "rgb(1,2,3)", 256, True, "mauve"):
+            with self.assertRaises(ValueError):
+                canonical_panel(bad)
+        theme = parse_theme(b'panel = "#1f2430"\n')
+        self.assertEqual(theme.panel, "#1f2430")
+        self.assertIsNone(theme.preset_name())
+        self.assertEqual(parse_theme(theme.to_toml().encode()), theme)
+        with self.assertRaises(ValueError):
+            parse_theme(b'panel = "mauve"\n')
 
 
 class ChooserThemeTests(unittest.TestCase):

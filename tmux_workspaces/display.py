@@ -54,11 +54,13 @@ class Display:
         self.keymap = keymap or DEFAULT_KEYMAP
         # How a chooser pane builds the sidebar's session roster for itself.
         self.roster_args = tuple(roster_args)
-        # Pane borders are not lines but a band of the sidebar's own background,
-        # so the panel and each terminal are set apart by a color gap rather
-        # than a rule, and no border is highlighted. Until a theme installs,
-        # this is the shipped panel color.
-        self.border_color = "colour235"
+        # The panel color: the sidebar's background, an empty pane's background
+        # and the band tmux draws where its borders would be, so the panel and
+        # each terminal are set apart by a color gap rather than a rule, and no
+        # border is highlighted. tmux paints all of it, so an RGB value works.
+        # Until a theme installs, this is the terminal's own background.
+        self.panel_color = "default"
+        self._empty_panes: set[str] = set()
         self._setup_done = False
         self._tab_id = ""
         self.panes: dict[str, str] = {}
@@ -91,8 +93,8 @@ class Display:
             self.tmux.run("set-option", "-g", name, value)
         for name, value in {
             "pane-border-status": "off",
-            "pane-border-style": self._border_style(),
-            "pane-active-border-style": self._border_style(),
+            "pane-border-style": self._band_style(),
+            "pane-active-border-style": self._band_style(),
             "automatic-rename": "off",
             "allow-rename": "off",
             "window-size": "latest",
@@ -101,6 +103,7 @@ class Display:
         }.items():
             self.tmux.run("set-window-option", "-g", name, value)
         self.tmux.run("set-option", "-p", "-t", self.sidebar, "@viewer_agent", "Workspaces")
+        self.tmux.batch(self._panel_commands(self.sidebar, True))
         # Forward wheel events to nested tmux, whose copy-mode owns agent scrollback.
         for key in ("WheelUpPane", "WheelDownPane"):
             self.tmux.run("bind-key", "-n", key, "send-keys", "-M")
@@ -188,12 +191,20 @@ class Display:
                 ),
             )
 
-    def _border_style(self) -> str:
+    def _band_style(self) -> str:
         # Foreground and background alike: the line glyphs vanish into a band.
-        return f"fg={self.border_color},bg={self.border_color}"
+        return f"fg={self.panel_color},bg={self.panel_color}"
 
-    def style_borders(self, color: str) -> None:
-        """Paint the pane borders as a band of one color, the sidebar's background.
+    def _panel_commands(self, pane: str, panel: bool) -> list[list[str]]:
+        """Give a pane the panel background, or the terminal's own."""
+        style = f"bg={self.panel_color}" if panel else "default"
+        return [
+            ["set-option", "-p", "-t", pane, name, style]
+            for name in ("window-style", "window-active-style")
+        ]
+
+    def style_panel(self, color: str) -> None:
+        """Paint the panel: the sidebar, empty panes and the band between panes.
 
         Called whenever a palette installs, including a preview in the colors
         editor, so the gap changes with the sidebar rather than a step behind
@@ -201,16 +212,18 @@ class Display:
         no highlighted border at all. Before ``setup`` the value is only
         remembered; ``setup`` applies it with the rest of the window options.
         """
-        self.border_color = color
+        self.panel_color = color
         if not self._setup_done:
             return
-        style = self._border_style()
-        self.tmux.batch(
-            [
-                ["set-window-option", "-g", "pane-border-style", style],
-                ["set-window-option", "-g", "pane-active-border-style", style],
-            ]
-        )
+        style = self._band_style()
+        commands = [
+            ["set-window-option", "-g", "pane-border-style", style],
+            ["set-window-option", "-g", "pane-active-border-style", style],
+            *self._panel_commands(self.sidebar, True),
+        ]
+        for pane in sorted(self._empty_panes):
+            commands += self._panel_commands(pane, True)
+        self.tmux.batch(commands)
 
     @contextlib.contextmanager
     def snapshot_scope(self):
@@ -325,6 +338,7 @@ class Display:
         # the existing safe no-op selection while still applying pane metadata.
         select = [["select-pane", "-t", focused]] if focused else []
         commands = []
+        self._empty_panes = set()
         for leaf in leaves(tab["tree"]):
             pane = panes.get(leaf["id"])
             if not pane:
@@ -337,6 +351,11 @@ class Display:
                 ),
             }.items():
                 commands.append(["set-option", "-p", "-t", pane, name, value])
+            # An empty pane is part of the panel until something runs in it;
+            # a pane is reused across respawns, so the style is reset as well.
+            commands += self._panel_commands(pane, is_empty(leaf))
+            if is_empty(leaf):
+                self._empty_panes.add(pane)
         return commands + select
 
     def _pane_identity(self, tab: dict | None) -> None:

@@ -13,8 +13,11 @@ the viewer does not offer one, and it never edits Ghostty, terminal profiles or
 operating-system settings to get one. If a glyph such as `▶` or `─` renders as a
 box, that is the terminal's font, not the theme.
 
-Truecolor values are not supported. A configuration containing `#rrggbb` is
-rejected with a message that says so, rather than being silently approximated.
+The four text roles are curses color pairs, so they take names or palette
+numbers, never `#rrggbb`. The one exception is the panel — the sidebar's
+background and the gap between panes — which tmux paints rather than curses,
+so it accepts an RGB value; tmux approximates it on a terminal without
+truecolor.
 
 ## The file
 
@@ -54,22 +57,39 @@ preset = "plain"
 
 | Preset | Look |
 | --- | --- |
-| `default` | A dark panel of its own color beside the terminals, with a steel-blue accent |
+| `default` | A slate panel (`#272c36`) beside the terminals, with a steel-blue accent |
 | `plain` | The terminal's own background, a steel-blue accent and grey secondary text |
 | `forest` | The terminal's background with a sage-green accent — the look shipped before presets |
-| `paper` | For light terminals: a pale panel, dark text and a deep blue accent |
+| `paper` | For light terminals: a warm pale panel, dark text and a deep blue accent |
 | `mono` | The terminal's two colors only, using bold, dim and reverse |
 
-A role table after the `preset` line overrides that part of the preset, so
-`preset = "plain"` followed by `[accent]` with `foreground = "red"` is plain with
-a red accent. Without a `preset` line the roles start from `default`. The colors
-editor cycles through the presets too, and when it saves colors that equal a
-preset exactly it writes the name rather than four tables.
+A `panel` value or a role table after the `preset` line overrides that part
+of the preset, so `preset = "plain"` followed by `[accent]` with
+`foreground = "red"` is plain with a red accent, and `panel = "#1f2430"` on its
+own is the default look on a different panel. Without a `preset` line the
+roles start from `default`. The colors editor cycles through the presets too,
+and when it saves colors that equal a preset exactly it writes the name rather
+than the panel and four tables.
 
-Every preset carries an explicit basic-palette fallback for each color, so an
-eight-color terminal gets a deliberate choice rather than an approximation.
-On `plain` and `mono` the panel has no color of its own, so the gap between
-panes is simply a blank column in the terminal's background.
+Every preset carries an explicit basic-palette fallback for each role color, so
+an eight-color terminal gets a deliberate choice rather than an approximation.
+On `plain`, `forest` and `mono` the panel is `default`: the sidebar keeps the
+terminal's background and the gap between panes is a blank column.
+
+## The panel
+
+```toml
+panel = "#272c36"
+```
+
+The panel is the sidebar's own background, the background of an empty pane
+waiting for a choice, and the band tmux draws where its pane borders would be.
+It is one value: `default` (the terminal's background), a color name, a number
+from 0 to 255, or `#rrggbb`. It is painted by tmux as a pane style and a border
+style, not by curses, which is why it alone may be an RGB value; the roles
+below are drawn over it with the terminal's default background, so they show
+the panel through. A role given its own `background` covers the panel where
+that role is drawn.
 
 ## Roles
 
@@ -117,10 +137,11 @@ last, because a narrow sidebar shows only the first few words.
 Two other things are drawn in these colors, so the window reads as one layer:
 
 - **The gap between panes.** tmux's pane borders are painted as a band of the
-  `normal` background, foreground and background alike, so the panel and each
+  panel color, foreground and background alike, so the panel and each
   terminal are set apart by a color gap rather than a line, and no border is
-  highlighted for the focused pane. The band changes the moment a theme
-  installs, including while previewing in the editor.
+  highlighted for the focused pane. The band, the sidebar's pane style and
+  any empty pane's change the moment a theme installs, including while
+  previewing in the editor.
 - **The new-tab chooser.** An empty pane is its own small program, so it reads
   the same theme file and resolves it against the same palette size the sidebar
   used. Its title is the accent, its hints are muted, its selected row is the
@@ -137,6 +158,8 @@ prefix, then `s`, then `t`. Both routes lead to the same screen.
 - Move with `↑`/`↓` or the mouse wheel, or click a row.
 - `↵` opens the value under the cursor; `↵` again accepts it and previews it
   immediately.
+- The **Panel** row takes the panel color as text: `default`, a name, 0-255 or
+  `#rrggbb`. It previews as soon as it is accepted, like a role field.
 - The last row, **Preset**, names the preset the colors currently equal, or
   `custom`. On that row `↵`, `→` or a click previews the next preset and `←`
   the previous one; the status line describes the preset shown. Custom colors
@@ -250,10 +273,10 @@ and checks that cancelling a defaults preview restores the configured background
 Unit tests cover the presets themselves: each resolves without an invisible
 role on 8, 16 and 256 colors, the `preset` key composes with role overrides, a
 saved preset round-trips through its name, the editor's preset row cycles and
-previews, the pane border band follows an installed palette, and the chooser
-installs the same file the sidebar read. The border and chooser colors were
-also read back from a private tmux server on macOS with tmux 3.7c during
-development, on `default` and `plain`.
+previews, the panel reaches tmux as border, sidebar and empty-pane styles,
+and the chooser installs the same file the sidebar read. The pane styles and
+border band were also read back from a private tmux server on macOS with tmux
+3.7c during development, on `default` and `plain`.
 
 ### Not established by those tests
 
