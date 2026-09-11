@@ -61,6 +61,9 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class BackboneProvider:
+    # Items carry an agent state, so they make up the sidebar's roster.
+    provides_states = True
+
     def __init__(self, data_dir: Path, url: str | None = None):
         self.data_dir, self.url = data_dir, url
         self.last = Snapshot()

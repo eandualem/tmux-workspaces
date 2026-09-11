@@ -202,8 +202,8 @@ def _standalone(resources: FixtureResources) -> None:
         flush=True,
     )
 
-    # Inactive tab rows and the active detail row both open the correct menu.
-    # Rename must leave the ordinary process intact.
+    # Inactive tab rows open the correct menu from their left end and from the
+    # count at their right end. Rename must leave the ordinary process intact.
     for previous_name, new_name, status_line in (
         ("Alpha", "Alpha context", False),
         ("Alpha context", "Alpha status", True),
@@ -213,7 +213,7 @@ def _standalone(resources: FixtureResources) -> None:
             lambda previous_name=previous_name: previous_name in sidebar(viewer),
             "inactive tab missing",
         )
-        right_click(client, viewer, tab_row(viewer, previous_name) + int(status_line))
+        right_click(client, viewer, tab_row(viewer, previous_name), column=25 if status_line else 3)
         check(lambda: "Tab options" in sidebar(viewer), "tab right-click menu missing")
         assert saved(library).tab["id"] == first_tab, (
             "right-click context selected " + saved(library).tab["name"]

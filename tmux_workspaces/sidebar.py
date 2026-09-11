@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import contextlib
 import curses
-import os
+import locale
 import textwrap
 import time
 from collections.abc import Callable
 
 from .controls import Actions, mouse_action, pane_choice
+from .discovery import Snapshot
 from .display import Display
 from .events import InputEvents
 from .keymap import ACTION_LABELS, DEFAULT_KEYMAP, KeymapFile, tmux_key_label
@@ -48,6 +49,36 @@ WORKSPACE_ICONS: tuple[tuple[str, str], ...] = (
     ("⚙", "Gear"),
     ("♪", "Note"),
 )
+
+# Agent states as Backbone reports them, folded onto a few symbols that differ
+# in shape before they differ in color. Anything unlisted is an unknown state.
+STATE_SYMBOLS = {
+    "busy": "▶",
+    "starting": "▶",
+    "waiting_for_human": "!",
+    "blocked": "!",
+    "idle": "○",
+}
+STATE_NAMES = {
+    "busy": "working",
+    "starting": "starting",
+    "waiting_for_human": "waiting for you",
+    "blocked": "blocked",
+    "idle": "idle",
+    "unknown": "unknown",
+}
+LEGEND = (
+    ("▶", "working"),
+    ("!", "needs you: waiting or blocked"),
+    ("○", "idle"),
+    ("?", "state unknown"),
+)
+# Plain substitutes for a terminal that cannot show the symbols.
+ASCII_GLYPHS = {"▶": ">", "○": "o"}
+# The roster is bounded so the tab list keeps its room: at most this many
+# agent rows, and never fewer tab rows than this.
+MAX_ROSTER_ROWS = 6
+MIN_TAB_ROWS = 4
 
 
 class Sidebar:
@@ -105,6 +136,10 @@ class Sidebar:
         self.attach_target: tuple[str, str, str | None, str | None] | None = None
         self.selection = Selection()
         self.tab_offset = 0
+        self.roster_offset = 0
+        # The interior rows the roster's agent rows occupy, for the wheel.
+        self.roster_span: tuple[int, int] | None = None
+        self.unicode = "utf" in (locale.getpreferredencoding(False) or "").lower()
         self.message = ""
         self.running = True
         self.last_frame = None
@@ -1051,14 +1086,50 @@ class Sidebar:
         if self.menu == "configure":
             # Everything infrequent in one place; leaving last, after a rule,
             # and named for what it does: shells and attached sessions keep running.
-            return [
+            rows: list[tuple[str, Callable]] = [
                 ("Colors…", self.open_theme),
                 ("Shortcuts", lambda: self.open_menu("shortcuts")),
                 ("Refresh viewer…", self.refresh_viewer),
-                (MENU_RULE, lambda: None),
-                ("Detach", self.quit),
             ]
+            if self.roster() is not None:
+                mark = "x" if self.show_agents else " "
+                rows += [
+                    (f"[{mark}] Show agent status", self.toggle_agents),
+                    ("Agent status…", lambda: self.open_menu("status")),
+                ]
+            return [*rows, (MENU_RULE, lambda: None), ("Detach", self.quit)]
+        if self.menu == "status":
+            return self.status_options()
         return []
+
+    def status_options(self) -> list[tuple[str, Callable]]:
+        """The roster in full: every active agent with its state spelled out,
+        how many are offline, and the legend for the symbols."""
+
+        def nothing() -> None:
+            return None
+
+        roster = self.roster()
+        if roster is None:
+            rows = [("No agent source connected", nothing)]
+        elif roster.stale:
+            rows = [("Roster unavailable", nothing)]
+            if roster.error:
+                rows += [(line, nothing) for line in self.wrap(roster.error)]
+        else:
+            entries = self.roster_entries(roster)
+            rows = [
+                (f"{self.symbol(state)} {name} · {self.state_name(state)}", nothing)
+                for name, state in entries
+            ] or [("No active agents", nothing)]
+            offline = len(roster.sessions) - len(entries)
+            if offline:
+                rows.append((f"{offline} offline", nothing))
+        legend = [(f"{self.glyph(symbol)} {text}", nothing) for symbol, text in LEGEND]
+        return [*rows, (MENU_RULE, nothing), *legend]
+
+    def wrap(self, text: str) -> list[str]:
+        return textwrap.wrap(text, width=max(1, self.size()[1] - 2), break_on_hyphens=False)
 
     def set_icon(self, glyph: str | None) -> None:
         """Give the current workspace an icon, or none, and show the row again."""
@@ -1090,6 +1161,8 @@ class Sidebar:
             keys = ["workspace:" + space["id"] for space in spaces]
         elif self.menu == "agents":
             keys = ["session:" + label for label, _ in options]
+        elif self.menu in {"configure", "status"}:
+            keys = [f"row:{index}" for index in range(len(options))]
         else:
             keys = [f"row:{index}:{label}" for index, (label, _) in enumerate(options)]
         rows = zip(keys, options, strict=True)
@@ -1188,29 +1261,101 @@ class Sidebar:
         return ""
 
     def footer_rows(self) -> int:
-        """Rows the bottom of the panel keeps: two of agent context, Configure…,
-        the workspace icons, and the message row only while there is a message."""
-        return 4 + (1 if self.status_text() else 0)
+        """Rows the bottom of the panel keeps: a blank row that carries the
+        message when there is one, Configure…, a blank row, the workspace
+        icons, and a blank row before the outline."""
+        return 5
 
-    def context_rows(self, agents: dict) -> tuple[str, str]:
-        """Who the focused pane is: its agent and state, then its task if known.
+    # -- the agent roster --------------------------------------------------
 
-        States come from the roster, never from a running process; a task is
-        shown only when the integration reports one (the roster's ``work``).
-        A shell shows its directory instead; an empty pane, what it awaits.
-        """
-        pane = self.model.pane
-        if not pane:
-            return "", ""
-        if pane["agent"]:
-            session = agents.get(pane["agent"], {})
-            state = str(session.get("state", "offline")) if session.get("online") else "offline"
-            work = session.get("work")
-            return f"{pane['agent']} · {state}", work.strip() if isinstance(work, str) else ""
-        if is_empty(pane):
-            return "Empty pane", "Choose a terminal or a session"
-        cwd = pane.get("cwd") or ""
-        return "Shell", cwd.replace(os.path.expanduser("~"), "~", 1) if cwd else ""
+    def roster(self) -> Snapshot | None:
+        """The agents and states the source reports, or None without a
+        provider that reports states (plain tmux discovery knows names only)."""
+        reader = getattr(self.source, "roster", None)
+        snapshot = reader() if callable(reader) else None
+        return snapshot if isinstance(snapshot, Snapshot) else None
+
+    @property
+    def show_agents(self) -> bool:
+        """The saved preference; the roster is shown unless it was turned off."""
+        return self.model.state.get("show_agents", True) is not False
+
+    def toggle_agents(self) -> None:
+        self.model.state["show_agents"] = not self.show_agents
+        self.roster_offset = 0
+        self.save()
+
+    @staticmethod
+    def roster_entries(roster: Snapshot) -> list[tuple[str, str]]:
+        """Active agents as (name, state): everything but offline, in a name
+        order that does not move as states change."""
+        entries = []
+        for name, item in roster.sessions.items():
+            state = item.get("state") if isinstance(item, dict) else None
+            state = state if isinstance(state, str) and state else "unknown"
+            if state != "offline":
+                entries.append((name, state))
+        return sorted(entries, key=lambda entry: (entry[0].casefold(), entry[0]))
+
+    def glyph(self, char: str) -> str:
+        return char if self.unicode else ASCII_GLYPHS.get(char, char)
+
+    def symbol(self, state: str) -> str:
+        return self.glyph(STATE_SYMBOLS.get(state, "?"))
+
+    @staticmethod
+    def state_name(state: str) -> str:
+        return STATE_NAMES.get(state, state.replace("_", " "))
+
+    def roster_rows(self) -> int:
+        """Rows the roster takes, its label included; zero when it is hidden,
+        absent, or the window is too short to keep the tab list usable."""
+        roster = self.roster()
+        if roster is None or not self.show_agents:
+            return 0
+        room = self.size()[0] - 3 - self.footer_rows() - MIN_TAB_ROWS
+        if room < 2:
+            return 0
+        wanted = 1 + max(1, min(MAX_ROSTER_ROWS, len(self.roster_entries(roster))))
+        return min(wanted, room)
+
+    def draw_roster(self, top: int, rows: int, width: int, roster: Snapshot) -> None:
+        """The section: its label, then one row per active agent — a symbol
+        in a fixed slot and the name — or one quiet row saying why not."""
+        muted = self.style("muted")
+        self.put(top, 1, "Agents", muted)
+        visible_rows = rows - 1
+        self.roster_span = (top + 1, top + rows)
+        if roster.stale:
+            self.put(top + 1, 1, "Roster unavailable", muted, width - 2)
+            return
+        entries = self.roster_entries(roster)
+        if not entries:
+            self.put(top + 1, 1, "No active agents", muted, width - 2)
+            return
+        self.roster_offset = min(self.roster_offset, max(0, len(entries) - visible_rows))
+        if len(entries) > visible_rows:
+            count = str(len(entries))
+            self.put(top, width - 6 - len(count), count, muted)
+            self.button(top, "↑", lambda: self.scroll_roster(-1), x=width - 5, width=2, style=muted)
+            self.button(top, "↓", lambda: self.scroll_roster(1), x=width - 3, width=2, style=muted)
+        shown = entries[self.roster_offset : self.roster_offset + visible_rows]
+        for index, (name, state) in enumerate(shown):
+            row = top + 1 + index
+            symbol = self.symbol(state)
+            style = (
+                self.style("accent") | curses.A_BOLD
+                if symbol == "!"
+                else self.style("normal")
+                if symbol == self.glyph("▶")
+                else muted
+            )
+            self.put(row, 1, symbol, style, 1)
+            self.put(row, 3, visible(name), self.style("normal"), width - 4)
+            self.hits.append((row, 0, width, lambda: self.open_menu("status")))
+
+    def scroll_roster(self, amount: int) -> None:
+        self.roster_offset = max(0, self.roster_offset + amount)
 
     def workspace_icon(self, space: dict, index: int) -> str:
         """The workspace's glyph, or its number when none is set."""
@@ -1250,12 +1395,13 @@ class Sidebar:
             )
 
     def tab_capacity(self) -> int:
-        # One row per tab, and one detail row for the selected tab; the heading
-        # and the section label take two rows above, the footer its own below.
-        return max(1, self.size()[0] - 3 - self.footer_rows())
+        """One row per tab: the heading, a blank row and the section label sit
+        above, the roster and the footer below."""
+        return max(1, self.size()[0] - 3 - self.footer_rows() - self.roster_rows())
 
     def draw(self) -> None:
         agents, error = self.source.snapshot()
+        roster = self.roster()
         height, width = self.size()
         # Reconcile the open menu before the frame is compared: a skipped repaint
         # must still leave the active row and its options current for the keyboard.
@@ -1272,6 +1418,10 @@ class Sidebar:
         frame = (
             repr(self.model.state),
             repr(agents),
+            # The roster's observation time changes with every poll; only what
+            # it says matters to the frame.
+            (repr(roster.sessions), roster.error, roster.stale) if roster else None,
+            self.roster_offset,
             error,
             height,
             width,
@@ -1302,6 +1452,7 @@ class Sidebar:
         cursor = None
         self.hits.clear()
         self.context_hits.clear()
+        self.roster_span = None
         self.frame()
         if not self.roomy():
             self.put(0, 0, "Enlarge terminal", self.style("normal"))
@@ -1318,6 +1469,7 @@ class Sidebar:
                 "workspace": "Workspace options",
                 "icon": "Workspace icon",
                 "configure": "Configure",
+                "status": "Agent status",
                 "name": "Type a name",
                 "theme": (
                     "Viewer colors · preview"
@@ -1380,17 +1532,25 @@ class Sidebar:
             if self.menu_message:
                 self.put(height - 1, 1, self.menu_message, self.style("accent"))
         else:
-            # The heading is the workspace chooser: the name, a chevron, and
-            # one click to switch, create or rename workspaces. A double click
-            # renames in place.
-            workspace_edit = self.inline_editor and self.inline_target[1] is None
+            # The heading is the workspace chooser: the icon and name, a
+            # chevron, and one click to switch, create or rename workspaces.
+            # A double click renames in place.
+            workspace_edit = bool(self.inline_editor and self.inline_target[1] is None)
+            tab_edit = bool(self.inline_editor and self.inline_target[1] is not None)
             name_width = width - 5
             self.name_hits.append((0, 1, 1 + name_width, "workspace:" + self.model.space["id"]))
             header = self.style("normal") | curses.A_BOLD
+            icon = self.model.space.get("icon")
+            icon = icon if isinstance(icon, str) and icon.isprintable() and icon else ""
             title = visible(self.model.space["name"])
-            if len(title) > name_width:
-                title = title[: max(0, name_width - 1)] + "…"
-            self.put(0, 1, title, header, name_width)
+            room = name_width - (len(icon) + 1 if icon else 0)
+            if len(title) > room:
+                title = title[: max(0, room - 1)] + "…"
+            if icon and not workspace_edit:
+                self.put(0, 1, icon, header, len(icon))
+                self.put(0, 1 + len(icon) + 1, title, header, room)
+            else:
+                self.put(0, 1, title, header, name_width)
             if workspace_edit:
                 cursor = self.draw_inline(0, 1, name_width)
             self.context_hits.append(
@@ -1407,35 +1567,32 @@ class Sidebar:
                 context=lambda: self.context_workspace(self.model.space),
             )
             hint = "Enter save · Esc cancel" if width >= 25 else "↵ save · Esc cancel"
-            # The section label carries the add button and, when the list
-            # overflows, its scroll arrows, all on the right inset.
-            self.put(
-                1,
-                1,
-                hint if workspace_edit else "tabs",
-                self.style("accent" if workspace_edit else "muted"),
+            editing = workspace_edit or tab_edit
+            # The row under the heading is blank; while a name is edited in
+            # place it carries the editing hint. The section label keeps the
+            # add button and, when the list overflows, its scroll arrows, all
+            # on the right inset.
+            if editing:
+                self.put(1, 1, hint, self.style("accent"))
+            self.put(2, 1, "tabs", self.style("muted"))
+            self.button(
+                2,
+                "  +",
+                self.new_tab,
+                x=width - 5,
+                width=4,
+                style=self.style("accent") | curses.A_BOLD,
             )
-            if not workspace_edit:
-                # While the workspace name is edited, the row carries the hint.
-                self.button(
-                    1,
-                    "  +",
-                    self.new_tab,
-                    x=width - 5,
-                    width=4,
-                    style=self.style("accent") | curses.A_BOLD,
-                )
             tab = self.model.tab
             tabs = self.model.space["tabs"]
             status = self.status_text()
-            bottom = height - 4
             available = self.tab_capacity()
             self.tab_offset = min(self.tab_offset, max(0, len(tabs) - available))
-            if len(tabs) > available and not workspace_edit:
+            if len(tabs) > available:
                 muted = self.style("muted")
-                self.button(1, "↑", lambda: self.scroll(-1), x=width - 9, width=2, style=muted)
-                self.button(1, "↓", lambda: self.scroll(1), x=width - 7, width=2, style=muted)
-            row = 2
+                self.button(2, "↑", lambda: self.scroll(-1), x=width - 9, width=2, style=muted)
+                self.button(2, "↓", lambda: self.scroll(1), x=width - 7, width=2, style=muted)
+            row = 3
             for index, item in enumerate(
                 tabs[self.tab_offset : self.tab_offset + available], self.tab_offset
             ):
@@ -1450,77 +1607,55 @@ class Sidebar:
                 active = item == tab
                 # The row is one run so the selection reads as a bar; the text
                 # keeps one cell of air from the interior's edge on each side.
+                # The selected row also carries the tab's menu behind an
+                # ellipsis on the right, before its pane count.
                 prefix = f" {'▶' if active else ' '} {index + 1} "
                 count = str(len(members))
-                room = width - len(prefix) - len(count) - 2
+                tail = 5 if active else 2
+                room = width - len(prefix) - len(count) - tail
                 name = visible(item["name"])
                 if len(name) > room:
                     name = name[: max(0, room - 1)] + "…"
-                self.button(row, prefix + name, action, x=0, active=active, context=context)
+                style = self.style("active" if active else "normal")
+                self.put(row, 0, (prefix + name).ljust(width), style, width)
+                self.hits.append((row, 0, width - 3 if active else width, action))
+                self.context_hits.append((row, 0, width, context))
                 if not active:
                     # At rest the number is a secondary detail beside the name.
                     self.put(row, 3, str(index + 1), self.style("muted"))
                 self.put(
                     row,
-                    width - len(count) - 1,
+                    width - len(count) - (4 if active else 1),
                     count,
                     self.style("active" if active else "muted"),
                 )
                 self.name_hits.append((row, len(prefix), len(prefix) + room, item["id"]))
-                tab_edit = active and self.inline_editor and self.inline_target[1] == item["id"]
-                if tab_edit:
+                editing_this = active and tab_edit and self.inline_target[1] == item["id"]
+                if editing_this:
                     cursor = self.draw_inline(row, len(prefix), room)
-                row += 1
-                if not active:
-                    continue
-                # The detail row: what the tab holds beyond its pane count,
-                # and the tab's own menu behind an ellipsis on the right.
-                attached = [p["agent"] for p in members if p["agent"]]
-                if len(members) > 1:
-                    label = f"{len(attached)} attached" if attached else "shells"
-                elif attached:
-                    source_socket = members[0].get("source_socket") or self.source.socket
-                    if os.path.realpath(source_socket) != os.path.realpath(self.source.socket):
-                        state = "saved server"
-                    else:
-                        session = agents.get(attached[0], {})
-                        state = (
-                            session.get("state", "offline") if session.get("online") else "offline"
-                        )
-                    label = attached[0] + " · " + state
-                else:
-                    label = "Empty" if is_empty(members[0]) else "Shell"
-                if tab_edit:
-                    label = hint
-                self.put(row, 1 if tab_edit else len(prefix), label, self.style("muted"))
-                self.hits.append((row, 0, width - 4, action))
-                self.context_hits.append((row, 0, width - 1, context))
-                if not tab_edit:
-                    # While the name is edited, the row carries the hint instead.
+                if active and not editing_this:
                     self.button(
                         row,
                         "⋯",
                         lambda: self.open_menu("tab"),
                         x=width - 3,
                         width=2,
-                        style=self.style("muted"),
+                        style=style,
                     )
                 row += 1
             if not tabs:
-                self.put(2, 1, "No tabs yet", self.style("muted"))
-                self.button(3, "Open a terminal +", self.new_tab)
-            # Saving is quiet: the message row exists only while something
-            # needs saying, and the list has the row otherwise.
+                self.put(3, 1, "No tabs yet", self.style("muted"))
+                self.button(4, "Open a terminal +", self.new_tab)
+            # The bottom, from the outline up: a blank row, the workspace
+            # icons, a blank row, Configure…, then a row that is blank unless
+            # there is something to say. The roster, when shown, ends there.
+            bottom = height - self.footer_rows()
+            roster_rows = self.roster_rows()
+            if roster_rows and roster is not None:
+                self.draw_roster(bottom - roster_rows, roster_rows, width, roster)
             if status:
-                self.put(
-                    bottom - 1, 1, status, self.message_style(status, bool(error or self.message))
-                )
-            # Who the focused pane is, then the one place for everything
-            # infrequent, then the workspace icons anchored at the bottom.
-            who, what = self.context_rows(agents)
-            self.put(bottom, 1, who, self.style("normal"), width - 2)
-            self.put(bottom + 1, 1, what, self.style("muted"), width - 2)
-            self.button(bottom + 2, "Configure…", lambda: self.open_menu("configure"))
+                self.put(bottom, 1, status, self.message_style(status, bool(error or self.message)))
+            self.button(bottom + 1, "Configure…", lambda: self.open_menu("configure"))
             self.icon_row(bottom + 3, width)
         if cursor:
             with contextlib.suppress(curses.error):
@@ -1541,15 +1676,24 @@ class Sidebar:
         else:
             self.tab_offset = max(0, self.tab_offset + amount)
 
+    def wheel(self, y: int, amount: int) -> None:
+        """The wheel scrolls the list under the pointer: the roster over its
+        rows, otherwise whatever the panel is showing."""
+        span = self.roster_span
+        if not self.menu and span and span[0] <= y < span[1]:
+            self.scroll_roster(amount)
+        else:
+            self.scroll(amount)
+
     def mouse(self, x: int, y: int, buttons: int) -> None:
         left = buttons & (
             curses.BUTTON1_PRESSED | curses.BUTTON1_CLICKED | curses.BUTTON1_DOUBLE_CLICKED
         )
         right = buttons & (curses.BUTTON3_PRESSED | curses.BUTTON3_CLICKED)
         if buttons & curses.BUTTON4_PRESSED:
-            self.scroll(-1)
+            self.wheel(y, -1)
         elif buttons & getattr(curses, "BUTTON5_PRESSED", 0):
-            self.scroll(1)
+            self.wheel(y, 1)
         elif left or right:
             height, width = self.size()
             if not (0 <= x < width and 0 <= y < height):

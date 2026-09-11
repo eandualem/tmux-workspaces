@@ -44,24 +44,35 @@ working directory. Four panes still belong to one tab. Click a pane to select
 and type there. Drag the gap between panes to adjust sizes. **Focus pane** in
 the tab menu temporarily shows one pane; **Next pane** cycles panes and
 **Show layout** restores the splits. Narrow terminals use temporary focus
-without discarding the arrangement. The panel's bottom is four rows: two of
-context for the focused pane, **Configure…**, and the workspace icons.
-**Configure…** gathers everything infrequent — **Colors…**, **Shortcuts**,
-**Refresh viewer…** — and, last after a rule, **Detach**, which leaves the
-viewer with every shell and attached session still running.
+without discarding the arrangement. The panel's bottom holds, with a blank
+row between each: an optional **Agents** roster, **Configure…**, and the
+workspace icons, with one blank row before the outline. **Configure…**
+gathers everything infrequent — **Colors…**, **Shortcuts**, **Refresh
+viewer…**, the **Show agent status** toggle and **Agent status…** — and, last
+after a rule, **Detach**, which leaves the viewer with every shell and
+attached session still running.
 
-The context rows say who the focused pane is: an attached session's name and
-the state its roster reports (never inferred from a running process), with the
-task it reports on the second row when the integration supplies one; for a
-shell, its directory; for an empty pane, what it awaits. The description is
-truncated to the panel; nothing widens the sidebar for it.
+The roster is an overview of your agent-backbone agents, independent of the
+selected tab or pane: one row per active agent, a symbol in a fixed slot and
+the name. `▶` is working, `!` needs you (waiting for input, or blocked), `○`
+is idle and `?` an unknown state; **Agent status…** spells each state out and
+ends with this legend. Offline agents take no row. States come from
+agent-backbone's own reports, never from terminal text or a running process;
+when the connection fails the section says *Roster unavailable* rather than
+showing old states as current. Names keep one alphabetical order as states
+change. At most six rows are shown, with scrolling and a count when there are
+more, and on short windows the roster gives rows back to the tab list first.
+The roster appears when a state-reporting source is connected (`--backbone`,
+or the demo) and can be hidden with **Show agent status**; the choice is saved
+with the layout, applies before the first frame, and hides the whole section.
+Nothing in the panel names the session attached to the focused pane; name the
+tab for that.
 
 To attach a session to a pane that already has a shell, select the pane, open
 the tab menu's **Attach session**, then choose a tmux session for that pane.
 Type to filter the chooser. The pane's original shell stays running;
 **Return pane to shell** in the tab menu brings it back. Each split can attach a different session or
-remain an ordinary terminal. Attachment names and states appear as secondary
-information, below the active tab’s name. Offline attachments stay associated with
+remain an ordinary terminal. Offline attachments stay associated with
 their pane and reconnect when the session returns; the viewer never starts
 an external session. An attached session is joined through a grouped tmux
 session of the viewer's own, which shares the session's windows but carries

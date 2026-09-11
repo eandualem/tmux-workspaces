@@ -78,12 +78,11 @@ def _exercise(resources: FixtureResources) -> None:
     assert online, "demo fixture sessions missing"
 
     # 1. A new tab is empty: no shell is created for it, the pane offers the choice,
-    #    the sidebar says so, and the pane has keyboard focus.
+    #    and the pane has keyboard focus.
     key("t")
     wait(client, lambda: len(saved(library).space["tabs"]) == 2, "new tab was not created")
     assert saved(library).pane.get("empty") is True, "the new tab did not open empty"
     wait(client, chooser_shown, "the new pane did not show the chooser")
-    wait(client, lambda: "Empty" in sidebar(viewer), "the sidebar did not label the empty pane")
     text = content()
     for name in online:
         assert name in text, f"the chooser did not list {name}\n{text}"
@@ -100,7 +99,6 @@ def _exercise(resources: FixtureResources) -> None:
     wait(client, lambda: not saved(library).pane.get("empty"), "Enter did not fill the pane")
     assert saved(library).pane["agent"] is None
     wait(client, shell_exists, "the chosen terminal was not created")
-    wait(client, lambda: "Shell" in sidebar(viewer), "the sidebar still shows an empty pane")
     wait(client, lambda: shell_attached(shells, shell_name()), "the chosen terminal did not attach")
     client.type("printf 'CHOSEN_%s\\n' TERMINAL\r")
     wait(

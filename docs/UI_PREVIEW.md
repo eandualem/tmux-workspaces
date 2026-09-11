@@ -26,24 +26,24 @@ Do not remove a sample library or its checkout while you still need its shells.
 
 Tabs use one numbered row with a pane count on the right; the number and count
 are muted on rows at rest, and the active tab is one filled row with a ▶ marker
-and one extra detail row. Long names end with an ellipsis. Quiet lowercase
-section labels — `tabs`, `actions`, `workspaces` — group tab navigation,
-pane/tab actions and workspace switching instead of ruled lines. Selecting
-another tab can move the following rows by one line as the detail row changes
-position.
+that ends in its pane count and a ⋯ opening the tab menu. Long names end with
+an ellipsis. Every tab is one row; nothing repeats what its panes hold.
 
 The panel is a rounded, outlined rectangle inset one cell inside its pane. Its
-first row is the workspace heading with a ▾ chooser at the right; the `tabs`
-label follows with the + that adds a tab; then the tab rows. The selected tab
-has a detail row saying what it holds, with a ⋯ that opens the tab menu. The
-bottom four rows are: two rows of context for the focused pane (an attached
-session and its reported state, then its reported task; a shell and its
-directory; an empty pane and what it awaits), Configure… (Colors…, Shortcuts,
-Refresh viewer…, then Detach after a rule), and the workspace icon row, one
-three-cell slot per workspace with the current one filled and an … slot when
-the row is full. A message row appears above them only while there is
-something to say; saving is quiet. Double-click the active tab name or the
-workspace name to edit it in place.
+first row is the workspace heading — the workspace's icon when one is set,
+its name, and a ▾ chooser at the right; a blank row follows, then the `tabs`
+label with the + that adds a tab, then the tab rows. The bottom, from the
+outline up: a blank row, the workspace icon row (one three-cell slot per
+workspace with the current one filled and an … slot when the row is full), a
+blank row, Configure… (Colors…, Shortcuts, Refresh viewer…, Show agent
+status, Agent status…, then Detach after a rule), and a row that carries a
+message only while there is something to say. Above that, when a
+state-reporting source is connected and the setting is on, the `Agents`
+section lists active agents one per row — a state symbol in a fixed slot and
+the name — bounded to six rows with a count and scroll arrows beyond that, or
+one quiet row saying *No active agents* or *Roster unavailable*.
+Double-click the active tab name or the workspace name to edit it in place;
+the hint takes the blank row under the heading.
 
 Content panes keep the full available content height and sit on the surface
 color beside the panel; each is padded by one blank column on either side, and

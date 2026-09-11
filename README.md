@@ -8,16 +8,21 @@ a split layout in each one, and come back to the same arrangement tomorrow.
 ```text
 ┌────────────────────────────┬───────────────────────────────────┐
 │ ╭────────────────────────╮ │ $ pytest -q                       │
-│ │ Workspace 1          ▾ │ │ ......................            │
-│ │ tabs                 + │ │                                   │
-│ │   1 api              2 │ ├───────────────────────────────────┤
-│ │ ▶ 2 web              1 │ │ $ npm run dev                     │
-│ │     Shell            ⋯ │ │ ready on http://localhost:3000    │
+│ │ ◆ Development        ▾ │ │ ......................            │
 │ │                        │ │                                   │
-│ │ reviewer · idle        │ │                                   │
-│ │ Checking split resizi… │ │                                   │
+│ │ tabs                 + │ ├───────────────────────────────────┤
+│ │   1 api              2 │ │ $ npm run dev                     │
+│ │ ▶ 2 web            1 ⋯ │ │ ready on http://localhost:3000    │
+│ │                        │ │                                   │
+│ │ Agents                 │ │                                   │
+│ │ ▶ builder              │ │                                   │
+│ │ ! reviewer             │ │                                   │
+│ │ ○ tester               │ │                                   │
+│ │                        │ │                                   │
 │ │ Configure…             │ │                                   │
+│ │                        │ │                                   │
 │ │  ◆   2                 │ │                                   │
+│ │                        │ │                                   │
 │ ╰────────────────────────╯ │                                   │
 └────────────────────────────┴───────────────────────────────────┘
 ```

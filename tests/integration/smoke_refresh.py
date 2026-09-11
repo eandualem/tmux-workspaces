@@ -216,8 +216,10 @@ def attach(client: Client, library: Path, source: Tmux, name: str) -> None:
 def selected(client: Client, library: Path) -> str:
     viewer = Tmux(runtime(client, library)["viewer_socket"])
     line = next(line for line in sidebar(viewer).splitlines() if line.lstrip().startswith("▶"))
-    # "▶ 2 Beta            1": drop the marker, the index and the pane count.
-    return line.strip().strip("▶ ").split(" ", 1)[1].rsplit(" ", 1)[0].strip()
+    # "▶ 2 Beta          1 ⋯": drop the marker, the index, the pane count and
+    # the menu glyph the selected row ends with.
+    rest = line.strip().strip("▶ ").split(" ", 1)[1].rstrip(" ⋯").strip()
+    return rest.rsplit(" ", 1)[0].strip()
 
 
 def sidebar_of(client: Client) -> str:

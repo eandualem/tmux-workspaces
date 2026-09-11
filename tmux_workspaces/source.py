@@ -22,6 +22,16 @@ class Source:
         self.discovery, self.overlays = discovery, overlays
         self.persistent_socket = persistent_socket
         self.current = Snapshot()
+        # The roster: agents and their states, from the providers that report
+        # states (a metadata overlay such as Backbone, or the demo list).
+        # Plain tmux discovery knows session names, not what an agent is doing.
+        self.providers = (discovery, *overlays)
+        self.roster_indexes = [
+            index
+            for index, provider in enumerate(self.providers)
+            if getattr(provider, "provides_states", False)
+        ]
+        self.current_roster: Snapshot | None = Snapshot() if self.roster_indexes else None
         self._provider_snapshots = [Snapshot() for _ in range(1 + len(overlays))]
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -89,12 +99,36 @@ class Source:
             stale=any(item.stale for item in observations),
             observed_at=min(dates) if all(date is not None for date in dates) else None,
         )
+        roster = None
+        if self.roster_indexes:
+            reports = [observations[index] for index in self.roster_indexes]
+            roster = Snapshot(
+                {
+                    name: copy.deepcopy(item)
+                    for report in reports
+                    for name, item in report.sessions.items()
+                },
+                error="; ".join(report.error for report in reports if report.error),
+                stale=any(report.stale for report in reports),
+                observed_at=min(
+                    (report.observed_at for report in reports if report.observed_at is not None),
+                    default=None,
+                ),
+            )
         with self.lock:
             self.current = combined
+            self.current_roster = roster
 
     def observation(self) -> Snapshot:
         with self.lock:
             return copy.deepcopy(self.current)
+
+    def roster(self) -> Snapshot | None:
+        """Agents and the states they report, or None when no provider reports
+        states. A stale roster carries its last names, but its states are not
+        current and the UI says so rather than showing them."""
+        with self.lock:
+            return copy.deepcopy(self.current_roster)
 
     def snapshot(self) -> tuple[dict[str, dict], str]:
         observation = self.observation()

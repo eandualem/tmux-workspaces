@@ -194,6 +194,10 @@ def socket_path(data_dir: Path, suffix: str = "view") -> str:
     return str(directory / f"{digest}-{suffix}.sock")
 
 
+# One demo agent per reported state, so the roster's symbols can be seen.
+DEMO_STATES = ("busy", "idle", "waiting_for_human", "idle", "unknown")
+
+
 def start_demo(socket: str, data_dir: Path) -> None:
     tmux = Tmux(socket)
     items = []
@@ -225,7 +229,7 @@ def start_demo(socket: str, data_dir: Path) -> None:
         items.append(
             {
                 "name": name,
-                "state": "unknown",
+                "state": DEMO_STATES[index],
                 "configured": True,
                 "online": True,
                 "tags": ["swarm:demo-build" if index < 4 else "research"],

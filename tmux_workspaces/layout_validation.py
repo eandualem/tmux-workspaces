@@ -53,6 +53,11 @@ def validate_state(state: object, *, navigation: bool = True, legacy: bool = Fal
     require(
         isinstance(spaces, list) and bool(spaces), "layout.workspaces", "expected a nonempty list"
     )
+    require(
+        type(state.get("show_agents", False)) is bool,
+        "layout.show_agents",
+        "expected a boolean",
+    )
     identities = set()
 
     def identify(item, location):

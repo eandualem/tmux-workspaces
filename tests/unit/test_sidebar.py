@@ -207,12 +207,12 @@ class SidebarTests(unittest.TestCase):
 
     def test_right_click_never_triggers_regular_button_and_left_click_still_works(self):
         self.sidebar.draw()
-        self.mouse(23, 1, curses.BUTTON3_PRESSED)  # New-tab button has no context action.
+        self.mouse(23, 2, curses.BUTTON3_PRESSED)  # New-tab button has no context action.
         self.assertEqual(len(self.model.space["tabs"]), 1)
         self.assertIsNone(self.sidebar.menu)
         self.mouse(3, 2, curses.BUTTON3_RELEASED)
         self.assertIsNone(self.sidebar.menu)
-        self.mouse(23, 1, curses.BUTTON1_PRESSED)
+        self.mouse(23, 2, curses.BUTTON1_PRESSED)
         self.assertEqual(len(self.model.space["tabs"]), 2)
 
     def test_workspace_button_context_targets_clicked_workspace_and_header_opens_options(self):
@@ -277,7 +277,7 @@ class SidebarTests(unittest.TestCase):
         for x in range(21, 25):
             self.sidebar.draw()
             previous_count = len(self.model.space["tabs"])
-            self.mouse(x, 1, curses.BUTTON1_PRESSED)
+            self.mouse(x, 2, curses.BUTTON1_PRESSED)
             self.assertEqual(len(self.model.space["tabs"]), previous_count + 1)
 
     def test_the_heading_chevron_is_the_one_place_workspaces_are_switched_and_made(self):
@@ -334,9 +334,9 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.draw()
         labels = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
         self.assertTrue(any("9 Tab 9" in label for label in labels))
-        # 28 rows inside the outline, less the heading, the label, the
-        # selected tab's detail row and the four-row footer.
-        self.assertEqual(self.sidebar.tab_capacity(), 21)
+        # 28 rows inside the outline, less the heading, its blank row, the
+        # label and the five-row footer; this source reports no roster.
+        self.assertEqual(self.sidebar.tab_capacity(), 20)
         self.assertEqual(self.sidebar.tab_offset, 0)
 
     def test_compact_rows_keep_counts_and_click_targets_separate(self):
@@ -351,18 +351,20 @@ class SidebarTests(unittest.TestCase):
         cells = {
             (c.args[0], c.args[1]): c.args[2].strip() for c in self.screen.addnstr.call_args_list
         }
-        # The count sits on the right inset, one cell in from the interior's edge.
-        self.assertEqual(cells[2, 24], "2")
-        # The detail row is indented to the name, past the marker and number, and
-        # says what the panes hold rather than repeating their count.
-        self.assertEqual(cells[3, 5], "shells")
+        # Every tab is one row. The selected row carries its count and then
+        # the ⋯ menu on the right inset; a resting row's count sits one cell in
+        # from the interior's edge. No row repeats what the panes hold.
+        self.assertEqual(cells[3, 21], "2")
+        self.assertEqual(cells[3, 23], "⋯")
         self.assertTrue(cells[4, 0].endswith("…"))
+        self.assertEqual(cells[4, 24], "1")
         self.assertIn("3 Third", cells[5, 0])
+        self.assertFalse(any(text in {"shells", "Shell", "Empty"} for text in cells.values()))
         # Counts and the right edge belong to the tab, not an adjacent row.
         self.mouse(25, 4, curses.BUTTON1_PRESSED)
         self.assertEqual(self.model.tab["id"], second["id"])
         self.sidebar.draw()
-        self.mouse(3, 4, curses.BUTTON3_PRESSED)  # Detail row moved with selection.
+        self.mouse(23, 4, curses.BUTTON1_PRESSED)  # The ⋯ moved with the selection.
         self.assertEqual(self.sidebar.menu, "tab")
         self.assertEqual(self.model.tab["id"], second["id"])
 
@@ -381,8 +383,8 @@ class SidebarTests(unittest.TestCase):
                 occupied.add((row, column))
         labels = [c.args[2] for c in self.screen.addnstr.call_args_list]
         self.assertTrue(any("31 Tab 31" in text for text in labels))
-        # Configure… sits above the icon row, right under the bounded footer's context.
-        self.mouse(3, 16, curses.BUTTON1_PRESSED)
+        # Configure… sits two rows above the icon row, inside the bounded footer.
+        self.mouse(3, 14, curses.BUTTON1_PRESSED)
         self.assertEqual(self.sidebar.menu, "configure")
 
     def test_workspace_actions_create_rename_and_wrap_without_changing_saved_tabs(self):

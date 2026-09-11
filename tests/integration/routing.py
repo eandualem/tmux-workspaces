@@ -233,9 +233,10 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
                     if method == "shortcut":
                         navigation = direct_sequence(f"select-{kind}-{index + 1}")
                     else:
-                        # Tab rows start under the outline, heading and label;
-                        # the selected tab's detail row pushes the second down.
-                        row, column = (5 if index else 3), 4
+                        # Tab rows start under the outline, the heading, its
+                        # blank row and the label, one row per tab; the
+                        # sequence is 1-based, so the first tab is row 5.
+                        row, column = (5 if index else 4), 4
                         navigation = f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m"
                     command, marker = packet()
                     expected.append((marker, terminal(tab)))

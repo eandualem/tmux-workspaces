@@ -533,7 +533,7 @@ def click_button(client, viewer, text):
         click_button(client, viewer, "Tab actions…")
         text = MENU_ROUTES[text]
     if text == "Tab actions…":
-        # The selected tab's menu sits behind the ellipsis on its detail row.
+        # The selected tab's menu sits behind the ellipsis at its row's end.
         text = "⋯"
 
     def sidebar():
