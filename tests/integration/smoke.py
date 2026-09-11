@@ -71,8 +71,14 @@ def _exercise(resources: FixtureResources):
     panel = sidebar()
     tabs_part = panel.split("Agents", 1)[0]
     assert "manager" not in tabs_part and "builder" not in tabs_part, panel
-    for line in ("▶ manager", "○ builder", "! reviewer", "○ tester", "? researcher"):
-        assert line in panel, panel
+    # Rows are alphabetical; a short terminal shows the first few and counts
+    # the rest on the label row.
+    expected = ["○ builder", "▶ manager", "? researcher", "! reviewer", "○ tester"]
+    shown = [line for line in expected if line in panel]
+    assert shown == expected[: len(shown)] and len(shown) >= 2, panel
+    if len(shown) < len(expected):
+        label = next(line for line in panel.splitlines() if "Agents" in line)
+        assert str(len(expected)) in label and "↓" in label, panel
     assert "notes" not in panel, "an offline agent took a roster row\n" + panel
     # The roster hides on request, the choice is saved, and it comes back.
     button("Configure…")

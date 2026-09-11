@@ -546,18 +546,29 @@ def click_button(client, viewer, text):
         text = "⋯"
     if opener == "Tab actions…":
         opener = "⋯"
-    if opener:
-        for attempt in range(4):
-            if attempt:
-                # A missed click may have opened something else, or nothing;
-                # Escape leaves a menu and is harmless on the plain sidebar.
-                client.type("\x1b")
-                client.pump(0.3)
-            _click(client, viewer, opener)
-            if _appears(client, viewer, text, timeout=4.0):
-                break
+    if not opener:
+        _click(client, viewer, text)
+        return
+    for attempt in range(4):
+        if attempt:
+            # A missed click may have opened something else, or nothing;
+            # Escape leaves a menu and is harmless on the plain sidebar.
+            client.type("\x1b")
+            client.pump(0.3)
+        _click(client, viewer, opener)
+        if not _appears(client, viewer, text, timeout=4.0):
             assert attempt < 3, f"{opener} never opened a menu showing {text}"
-    _click(client, viewer, text)
+            continue
+        try:
+            _click(client, viewer, text, timeout=4.0)
+            return
+        except AssertionError as error:
+            # The menu showed the row and then went away before it could be
+            # clicked. Say where the keyboard focus sits, then open it again.
+            panes = viewer.run(
+                "list-panes", "-F", "#{pane_id} active=#{pane_active} gutter=#{@viewer_gutter}"
+            )
+            assert attempt < 3, f"{text} vanished after {opener} opened; panes:\n{panes}\n{error}"
 
 
 def _appears(client, viewer, text, timeout: float) -> bool:
@@ -570,7 +581,7 @@ def _appears(client, viewer, text, timeout: float) -> bool:
     return False
 
 
-def _click(client, viewer, text):
+def _click(client, viewer, text, timeout: float = 10):
     def sidebar():
         return viewer.run("capture-pane", "-p", "-t", "%0")
 
@@ -590,7 +601,7 @@ def _click(client, viewer, text):
         previous, seen["row"], seen["lines"] = seen.get("row"), row, lines
         return row is not None and row == previous
 
-    wait(client, settled, "missing button: " + text)
+    wait(client, settled, "missing button: " + text, timeout=timeout)
     lines, row = seen["lines"], seen["row"]
     top = int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
     # A one-glyph control sits at the right end of its hit area, so it is
