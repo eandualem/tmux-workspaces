@@ -26,6 +26,8 @@ class InlineRenameTests(unittest.TestCase):
             self.model.tab["focus"] if self.model.tab else None
         )
         screen = Mock()
+        # The panel draws its interior into a subwindow; the tests read one mock.
+        screen.derwin.return_value = screen
         screen.getmaxyx.return_value = (38, 28)
         source = Mock(socket="/unused", persistent_socket=True)
         source.snapshot.return_value = ({}, "")
@@ -65,7 +67,7 @@ class InlineRenameTests(unittest.TestCase):
         self.display.render.assert_not_called()
         rendered = self.sidebar.screen.addnstr.call_args_list
         self.assertTrue(
-            any(c.args[:2] == (2, 4) and c.args[2].startswith("Original") for c in rendered)
+            any(c.args[:2] == (2, 5) and c.args[2].startswith("Original") for c in rendered)
         )
         for char in "Edited":
             self.sidebar.input(char)
@@ -107,7 +109,7 @@ class InlineRenameTests(unittest.TestCase):
         self.sidebar.draw()
         self.begin()
         self.sidebar.input("Y")
-        self.sidebar.mouse(24, 0, curses.BUTTON1_PRESSED)
+        self.sidebar.mouse(23, 1, curses.BUTTON1_PRESSED)
         self.assertIsNone(self.sidebar.inline_editor)
         self.assertEqual(self.model.space["tabs"][0]["name"], "Original")
         self.assertEqual(len(self.model.space["tabs"]), 2)
@@ -172,7 +174,7 @@ class InlineRenameTests(unittest.TestCase):
         self.assertEqual(self.model.space["tabs"], tabs)
         self.assertEqual(self.store.load().space["name"], "Development")
         self.sidebar.draw()
-        self.sidebar.mouse(24, 0, curses.BUTTON1_PRESSED)
+        self.sidebar.mouse(23, 1, curses.BUTTON1_PRESSED)
         self.assertEqual(len(self.model.space["tabs"]), 2)
         self.assertIsNone(self.sidebar.inline_editor)
         self.display.shells.close.assert_not_called()

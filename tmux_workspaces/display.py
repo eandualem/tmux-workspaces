@@ -141,9 +141,7 @@ class Display:
         }.items():
             self.tmux.run("set-window-option", "-g", name, value)
         self.tmux.run("set-option", "-p", "-t", self.sidebar, "@viewer_agent", "Workspaces")
-        self.tmux.batch(
-            self._ground_commands(self.sidebar, "surface" if self.padded else "panel")
-        )
+        self.tmux.batch(self._ground_commands(self.sidebar, "surface" if self.padded else "panel"))
         # A click lands focus on a gutter as on any pane; send it straight
         # back to the pane that had it, so typing never goes nowhere.
         self.tmux.run(
@@ -664,14 +662,38 @@ class Display:
             self.panes[tree["id"]] = pane
             return
         second_leaf = leaves(tree["second"])[0]
+        right = tree["direction"] == "right"
+        ratio = tree.get("ratio", 0.5)
+        if self.padded:
+            # The separator and its two hidden borders take three cells from
+            # the pair, so the split is sized in cells: the first pane gets its
+            # share of what remains, and the second is everything after the
+            # border, from which the separator is then cut. A ratio measured
+            # back from that geometry reproduces these exact sizes, so tab
+            # switches between like layouts reuse their containers instead of
+            # rebuilding, and no pane drifts by a column per render.
+            size = int(
+                self.tmux.run(
+                    "display-message",
+                    "-p",
+                    "-t",
+                    pane,
+                    "#{pane_width}" if right else "#{pane_height}",
+                )
+            )
+            content = max(2, size - 3)
+            first = min(max(round(ratio * content), 1), content - 1)
+            length = str(max(1, size - 1 - first))
+        else:
+            length = str(round(100 * (1 - ratio))) + "%"
         sibling = self.tmux.run(
             "split-window",
             "-d",
-            "-h" if tree["direction"] == "right" else "-v",
+            "-h" if right else "-v",
             "-t",
             pane,
             "-l",
-            str(round(100 * (1 - tree.get("ratio", 0.5)))) + "%",
+            length,
             "-P",
             "-F",
             "#{pane_id}",
@@ -710,5 +732,8 @@ class Display:
             measure(tree)
             if self._rendered_key is not None:
                 # A border drag already changed these clients' geometry. Saving
-                # its ratios must not turn the next name edit into a rebuild.
+                # its ratios must not turn the next name edit into a rebuild,
+                # nor the next switch to a like tab: the shape on display is
+                # the measured one.
                 self._rendered_key = (self._rendered_key[0], self._layout_key(tree))
+                self._rendered_shape = self._shape_key(tree)

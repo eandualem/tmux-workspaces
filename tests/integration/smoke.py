@@ -11,7 +11,16 @@ from tmux_workspaces.model import leaves
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
 
-from .support import FixtureResources, click_attach, click_button, open_terminal, saved, wait
+from .support import (
+    OUTLINE,
+    FixtureResources,
+    click_attach,
+    click_button,
+    content_panes,
+    open_terminal,
+    saved,
+    wait,
+)
 
 
 def exercise(directory: Path):
@@ -29,10 +38,17 @@ def _exercise(resources: FixtureResources):
     viewer, source = Tmux(runtime["viewer_socket"]), Tmux(runtime["source_socket"])
 
     def sidebar():
-        return viewer.run("capture-pane", "-p", "-t", "%0")
+        return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
 
     def panes():
-        return viewer.run("list-panes", "-F", "#{pane_id} #{@viewer_agent}").splitlines()
+        # The sidebar and the content panes; the gutters padding them are not counted.
+        return [
+            line
+            for line in viewer.run(
+                "list-panes", "-F", "#{pane_id} #{?@viewer_gutter,1,0} #{@viewer_agent}"
+            ).splitlines()
+            if line.split()[1] == "0"
+        ]
 
     def button(text):
         click_button(client, viewer, text)
@@ -45,7 +61,7 @@ def _exercise(resources: FixtureResources):
             int(shells.run("display-message", "-p", "-t", target, "#{session_attached}") or "0") > 0
         )
 
-    wait(client, lambda: "Layouts saved" in sidebar(), "sidebar failed to initialize")
+    wait(client, lambda: "Detach" in sidebar(), "sidebar failed to initialize")
     initial = saved(library)
     assert len(initial.space["tabs"]) == 1
     assert initial.pane["agent"] is None
@@ -151,7 +167,7 @@ def _exercise(resources: FixtureResources):
         "mouse/shortcuts, resize and scrollback",
         flush=True,
     )
-    button("Workspaces…")
+    button("▾")
     button("New workspace")
     client.type("Research")
     button("Save name")
@@ -202,7 +218,10 @@ def _exercise(resources: FixtureResources):
     button("notes")
     wait(
         client,
-        lambda: "session offline" in viewer.run("capture-pane", "-p", "-t", "viewer:.1"),
+        # The first content pane after the sidebar; gutters are skipped.
+        lambda: (
+            "session offline" in viewer.run("capture-pane", "-p", "-t", content_panes(viewer)[1])
+        ),
         "offline view missing",
     )
     assert saved(library).tab["name"] == "Notebook"

@@ -14,6 +14,7 @@ from tests.integration.ssh_support import SshHost
 from tests.integration.support import (
     FixtureResources,
     click_button,
+    content_panes,
     open_terminal,
     saved,
     sidebar,
@@ -62,9 +63,7 @@ def exercise() -> None:
                     raise AssertionError(str(error) + "\n" + host.diagnostics()) from error
                 path = manifest()
                 viewer = Tmux(json.loads(path.read_text())["viewer_socket"])
-                wait(
-                    client, lambda: "Layouts saved" in sidebar(viewer), "SSH UI did not initialize"
-                )
+                wait(client, lambda: "Detach" in sidebar(viewer), "SSH UI did not initialize")
                 connection = host.connection()
                 assert connection["connection"].split()[::2] == ["127.0.0.1", "127.0.0.1"]
                 assert connection["tty"].startswith("/dev/"), "SSH did not allocate a remote PTY"
@@ -160,9 +159,7 @@ def exercise() -> None:
                 )
                 wait(
                     client,
-                    lambda pane_count=pane_count: (
-                        len(viewer.run("list-panes").splitlines()) == pane_count
-                    ),
+                    lambda pane_count=pane_count: len(content_panes(viewer)) == pane_count,
                     "SSH resize lost focus fallback or the saved four-pane arrangement",
                 )
 

@@ -136,7 +136,7 @@ class ControlTests(unittest.TestCase):
                 viewer = Tmux(runtime["viewer_socket"])
                 wait(
                     client,
-                    lambda: "Layouts saved" in viewer.run("capture-pane", "-p", "-t", "%0"),
+                    lambda: "Detach" in viewer.run("capture-pane", "-p", "-t", "%0"),
                     "viewer sidebar did not initialize",
                 )
                 terminal = "=" + Shells.name(saved(library).pane) + ":"

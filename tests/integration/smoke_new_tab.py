@@ -33,7 +33,7 @@ def _exercise(resources: FixtureResources) -> None:
     wait(client, lambda: client.manifest(library), "viewer did not start")
     runtime = json.loads(client.manifest(library).read_text())
     viewer, source = Tmux(runtime["viewer_socket"]), Tmux(runtime["source_socket"])
-    wait(client, lambda: "Layouts saved" in sidebar(viewer), "sidebar did not initialize")
+    wait(client, lambda: "Detach" in sidebar(viewer), "sidebar did not initialize")
 
     def key(name: str) -> None:
         client.type("\x07" + name)
@@ -176,7 +176,7 @@ def _exercise(resources: FixtureResources) -> None:
     wait(client, lambda: client.manifest(library), "viewer did not reopen")
     runtime = json.loads(client.manifest(library).read_text())
     viewer = Tmux(runtime["viewer_socket"])
-    wait(client, lambda: "Layouts saved" in sidebar(viewer), "reopened sidebar did not initialize")
+    wait(client, lambda: "Detach" in sidebar(viewer), "reopened sidebar did not initialize")
     assert saved(library).pane.get("empty") is True, "the empty pane was filled by a reopen"
     wait(client, chooser_shown, "the empty pane did not reopen as a chooser")
     assert kept_shell in shells.run("list-sessions", "-F", "#{session_name}"), (

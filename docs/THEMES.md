@@ -50,9 +50,9 @@ screen before you opened the editor, and nothing is written unless you apply.
 
 ## Presets
 
-The quickest way to change the look is a preset: a complete set of the four
-roles below, chosen for a particular kind of terminal. A one-line file selects
-one:
+The quickest way to change the look is a preset: a complete set of the five
+roles below plus the two grounds, chosen for a particular kind of terminal. A
+one-line file selects one:
 
 ```toml
 preset = "plain"
@@ -60,39 +60,48 @@ preset = "plain"
 
 | Preset | Look |
 | --- | --- |
-| `default` | VS Code's Dark Modern: a `#181818` panel, `#cccccc` text, `#9d9d9d` secondary text, a `#4daafc` accent and a `#ffffff` on `#04395e` selection |
-| `plain` | The same Dark Modern colors on the terminal's own background |
+| `default` | A `#22252b` panel inset in a `#292c33` surface, outlined in `#31343b`; `#cccccc` text, `#999999` secondary text, a `#608af7` accent and a `#343841` selection |
+| `plain` | The same colors on the terminal's own background: no panel, no padding |
 | `forest` | The terminal's background with a sage-green accent — the look shipped before presets |
-| `paper` | VS Code's Light Modern, for a light terminal: a `#f8f8f8` panel, `#3b3b3b` text and a `#0060c0` selection |
+| `paper` | The light counterpart: a `#f8f8f8` panel on white, `#3b3b3b` text, a `#005fb8` accent and an `#e8e8e8` selection |
 | `mono` | The terminal's two colors only, using bold, dim and reverse |
 
-A `panel` value or a role table after the `preset` line overrides that part
-of the preset, so `preset = "plain"` followed by `[accent]` with
-`foreground = "red"` is plain with a red accent, and `panel = "#1f2430"` on its
-own is the default look on a different panel. Without a `preset` line the
-roles start from `default`. The colors editor cycles through the presets too,
-and when it saves colors that equal a preset exactly it writes the name rather
-than the panel and four tables.
+A `panel` or `surface` value, or a role table, after the `preset` line
+overrides that part of the preset, so `preset = "plain"` followed by
+`[accent]` with `foreground = "red"` is plain with a red accent, and
+`panel = "#1f2430"` on its own is the default look on a different panel.
+Without a `preset` line everything starts from `default`. The colors editor
+cycles through the presets too, and when it saves colors that equal a preset
+exactly it writes the name rather than the grounds and five tables.
 
 Every preset carries an explicit basic-palette fallback for each role color, so
 an eight-color terminal gets a deliberate choice rather than an approximation.
-On `plain`, `forest` and `mono` the panel is `default`: the sidebar keeps the
-terminal's background and the gap between panes is a blank column.
+On `plain`, `forest` and `mono` both grounds are `default`: the sidebar keeps
+the terminal's background, there is no padding, and the borders between panes
+form a band of the panel color.
 
-## The panel
+## The grounds
 
 ```toml
-panel = "#272c36"
+panel = "#22252b"
+surface = "#292c33"
 ```
 
-The panel is the sidebar's own background, the background of an empty pane
-waiting for a choice, and the band tmux draws where its pane borders would be.
-It is one value: `default` (the terminal's background), a color name, a number
-from 0 to 255, or `#rrggbb`. It is painted by tmux as a pane style and a border
-style, so an RGB value reaches tmux directly, whereas an RGB role color takes a
-palette slot in the viewer's pane. The roles below are drawn over it with the
-terminal's default background, so they show the panel through. A role given its own `background` covers the panel where
-that role is drawn.
+Two colors tmux paints behind everything else. The **panel** is the ground of
+the sidebar. The **surface** is the ground of the terminals: every content
+pane, the padding beside it and the corners the sidebar's rounded outline
+leaves open. Each is one value: `default` (the terminal's background), a color
+name, a number from 0 to 255, or `#rrggbb`; being tmux's, an RGB value reaches
+it directly, whereas an RGB role color takes a palette slot in the viewer's
+pane. The roles are drawn over the panel; a role given a `background` of its
+own covers the panel where that role is drawn, which is how the selected tab
+gets its bar.
+
+Giving the terminals a surface of the theme's own is what makes padding
+possible: tmux's border glyphs are painted in the surface so they vanish, and
+one blank column then sits on each side of every pane. With `surface =
+"default"` there is no padding, because a border cannot be hidden on a ground
+the viewer does not know.
 
 ## Roles
 
@@ -104,8 +113,9 @@ every key is optional — anything you leave out keeps its preset's value.
 | --- | --- |
 | `normal` | Body text, buttons and the sidebar's own background |
 | `active` | The selected tab, the selected workspace, the inline name editor and the chooser's selected row |
-| `accent` | Hints, the tab detail row, the indicator light and error text |
-| `muted` | Section labels, tab numbers and counts and the idle status |
+| `accent` | Hints, the add button and error text |
+| `muted` | Section labels, tab numbers and counts, the tab detail row and the chevron |
+| `outline` | The panel's rounded perimeter, drawn on the surface, and the separators between split panes |
 
 ```toml
 [active]
@@ -142,22 +152,17 @@ last, because a narrow sidebar shows only the first few words.
 
 Two other things are drawn in these colors, so the window reads as one layer:
 
-- **The gap between panes.** tmux's pane borders are painted as a band of the
-  panel color, foreground and background alike, so the panel and each
-  terminal are set apart by a color gap rather than a line, and no border is
-  highlighted for the focused pane. The band, the sidebar's pane style and
-  any empty pane's change the moment a theme installs, including while
-  previewing in the editor.
-- **The padding inside panes.** When the terminal's background is known, each
-  content pane has a one-column gutter pane on either side, and the border
-  glyph between a gutter and its pane is painted in that background so it
-  vanishes; between two split panes the band is itself a one-cell gutter in
-  the panel color, with a blank column on each side of it. The background is
-  read from the terminal's answer to the standard color query (OSC 11) once,
-  before the viewer enters tmux, or from `--terminal-background`. It is not a
-  theme value: it is whatever your terminal says it is, and it is never
-  written to the theme file. Without it there are no gutters and the borders
-  stay the band.
+- **The separators between split panes.** Side by side, two panes are set
+  apart by one column of the `outline` foreground; stacked, by one thin rule
+  in that color drawn on the surface, since a whole row of color would weigh
+  more than a column does. On each side of a separator sits one blank column
+  (or row) of surface, the padding of the pane beside it. No border marks the
+  focused pane. Everything here changes the moment a theme installs,
+  including while previewing in the editor.
+- **The padding inside panes.** Each content pane is a tmux pane with a
+  one-cell gutter pane on either side, drawn in the surface, and tmux's
+  border glyphs are painted in the surface too so they vanish. Padding
+  therefore exists only on a surface of the theme's own; `plain` has none.
 - **The new-tab chooser.** An empty pane is its own small program, so it reads
   the same theme file and resolves it against the same palette size the sidebar
   used. Its title is the accent, its hints are muted, its selected row is the
@@ -177,8 +182,10 @@ prefix, then `s`, then `t`. Both routes lead to the same screen.
 - Move with `↑`/`↓` or the mouse wheel, or click a row.
 - `↵` opens the value under the cursor; `↵` again accepts it and previews it
   immediately.
-- The **Panel** row takes the panel color as text: `default`, a name, 0-255 or
-  `#rrggbb`. It previews as soon as it is accepted, like a role field.
+- The **Panel** and **Surface** rows take those grounds as text: `default`, a
+  name, 0-255 or `#rrggbb`. Each previews as soon as it is accepted, like a
+  role field; a surface change that turns padding on or off shows at the next
+  layout change.
 - The last row, **Preset**, names the preset the colors currently equal, or
   `custom`. On that row `↵`, `→` or a click previews the next preset and `←`
   the previous one; the status line describes the preset shown. Custom colors
@@ -262,7 +269,7 @@ deliberate, not approximations. If a role's foreground and background resolve to
 the same color, that role falls back to its shipped colors, because swapping two
 identical colors cannot make text visible.
 
-The viewer requires at least eight colors and five color pairs to start at all,
+The viewer requires at least eight colors and six color pairs to start at all,
 which is checked before it opens anything. There is therefore no monochrome
 mode: a terminal that cannot do color is refused at startup with an explanation,
 and the theme feature does not claim otherwise.

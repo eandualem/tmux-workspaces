@@ -34,6 +34,8 @@ class AttachTargetTests(unittest.TestCase):
 
         self.display.render.side_effect = render
         screen = Mock()
+        # The panel draws its interior into a subwindow; the tests read one mock.
+        screen.derwin.return_value = screen
         screen.getmaxyx.return_value = (38, 28)
         self.sidebar = Sidebar(
             screen,

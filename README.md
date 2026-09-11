@@ -7,21 +7,18 @@ a split layout in each one, and come back to the same arrangement tomorrow.
 
 ```text
 ┌────────────────────────────┬───────────────────────────────────┐
-│ Workspace 1            +   │ $ pytest -q                       │
-│  tabs                      │ ......................            │
-│   1 api              2     │                                   │
-│ ▶ 2 web              1     ├───────────────────────────────────┤
-│     Shell                  │ $ npm run dev                     │
-│                            │ ready on http://localhost:3000    │
-│  actions                   │                                   │
-│  Tab actions…              │                                   │
-│  Shortcuts                 │                                   │
-│  Colors…                   │                                   │
-│  Exit                      │                                   │
-│  workspaces                │                                   │
-│  Workspaces…               │                                   │
-│    1                   +   │                                   │
-│ ● Layouts saved            │                                   │
+│ ╭────────────────────────╮ │ $ pytest -q                       │
+│ │ Workspace 1          ▾ │ │ ......................            │
+│ │ tabs                 + │ │                                   │
+│ │   1 api              2 │ ├───────────────────────────────────┤
+│ │ ▶ 2 web              1 │ │ $ npm run dev                     │
+│ │     Shell            ⋯ │ │ ready on http://localhost:3000    │
+│ │                        │ │                                   │
+│ │                        │ │                                   │
+│ │ Shortcuts              │ │                                   │
+│ │ Colors…                │ │                                   │
+│ │ Detach                 │ │                                   │
+│ ╰────────────────────────╯ │                                   │
 └────────────────────────────┴───────────────────────────────────┘
 ```
 

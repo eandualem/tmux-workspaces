@@ -72,7 +72,7 @@ def ready(client: Client, library: Path) -> bool:
     manifest = client.manifest(library)
     if manifest is None:
         return False
-    return "Layouts saved" in sidebar(Tmux(json.loads(manifest.read_text())["viewer_socket"]))
+    return "Detach" in sidebar(Tmux(json.loads(manifest.read_text())["viewer_socket"]))
 
 
 def title_pair(client: Client):
@@ -213,9 +213,9 @@ def attach(client: Client, library: Path, source: Tmux, name: str) -> None:
 
 def selected(client: Client, library: Path) -> str:
     viewer = Tmux(runtime(client, library)["viewer_socket"])
-    line = next(line for line in sidebar(viewer).splitlines() if line.startswith("▶"))
+    line = next(line for line in sidebar(viewer).splitlines() if line.lstrip().startswith("▶"))
     # "▶ 2 Beta            1": drop the marker, the index and the pane count.
-    return line.strip("▶ ").split(" ", 1)[1].rsplit(" ", 1)[0].strip()
+    return line.strip().strip("▶ ").split(" ", 1)[1].rsplit(" ", 1)[0].strip()
 
 
 def sidebar_of(client: Client) -> str:

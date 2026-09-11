@@ -12,13 +12,13 @@ from tests.integration.support import (
     FixtureResources,
     OuterClient,
     click_button,
+    content_panes,
     open_terminal,
     right_click,
     saved,
     sidebar,
     tab_row,
     wait,
-    workspace_row,
 )
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
@@ -41,7 +41,7 @@ def _standalone(resources: FixtureResources) -> None:
     wait(client, lambda: client.manifest(library), "direct-key viewer did not launch")
     manifest = client.manifest(library)
     viewer = Tmux(json.loads(manifest.read_text())["viewer_socket"])
-    wait(client, lambda: "Layouts saved" in sidebar(viewer), "sidebar did not initialize")
+    wait(client, lambda: "Detach" in sidebar(viewer), "sidebar did not initialize")
     initial = saved(library)
     first_space = initial.space["id"]
     first_tab = initial.tab["id"]
@@ -97,7 +97,7 @@ def _standalone(resources: FixtureResources) -> None:
         check(
             lambda: (
                 saved(library).space["name"] == expected
-                and expected in sidebar(viewer).splitlines()[0]
+                and expected in sidebar(viewer).splitlines()[1]
                 and content_ready()
             ),
             "direct workspace selection failed",
@@ -148,7 +148,7 @@ def _standalone(resources: FixtureResources) -> None:
         assert saved(library).pane.get("cwd") == neighbour, "split lost the neighbour's directory"
         open_terminal(client, viewer, library)
     check(
-        lambda: len(viewer.run("list-panes").splitlines()) == 5,
+        lambda: len(content_panes(viewer)) == 5,
         "direct split actions did not produce a four-pane layout",
     )
     tab = saved(library).tab
@@ -159,9 +159,9 @@ def _standalone(resources: FixtureResources) -> None:
     key("previous-pane")
     check(lambda: saved(library).pane["id"] == tab["focus"], "direct previous-pane failed")
     key("focus")
-    check(lambda: len(viewer.run("list-panes").splitlines()) == 2, "direct focus failed")
+    check(lambda: len(content_panes(viewer)) == 2, "direct focus failed")
     key("focus")
-    check(lambda: len(viewer.run("list-panes").splitlines()) == 5, "direct layout failed")
+    check(lambda: len(content_panes(viewer)) == 5, "direct layout failed")
     key("sidebar")
     check(
         lambda: "1 Workspaces" in viewer.run("list-panes", "-F", "#{pane_active} #{@viewer_agent}"),
@@ -227,15 +227,16 @@ def _standalone(resources: FixtureResources) -> None:
         assert any(tab["name"] == "Beta" for tab in saved(library).space["tabs"])
         assert shell_pid == shells.run("display-message", "-p", "-t", first_terminal, "#{pane_pid}")
 
-    right_click(client, viewer, 0)
+    right_click(client, viewer, 1)
     check(lambda: "Workspace options" in sidebar(viewer), "workspace header menu missing")
     button("Rename workspace")
     client.type("Main\r")
     check(lambda: saved(library).space["name"] == "Main", "workspace context rename failed")
     choose_space(3, "Archive")
-    switch_row, buttons = workspace_row(sidebar(viewer))
-    right_click(client, viewer, switch_row, buttons.index("1") + 1)
-    check(lambda: "Workspace options" in sidebar(viewer), "inactive workspace button menu missing")
+    # Another workspace's options: switch to it first, then the heading again.
+    choose_space(1, "Main")
+    right_click(client, viewer, 1)
+    check(lambda: "Workspace options" in sidebar(viewer), "workspace heading menu missing")
     button("Rename workspace")
     client.type("Primary\r")
     check(
@@ -334,7 +335,7 @@ def _nested(resources: FixtureResources) -> None:
             > 0
         )
 
-    wait(client, lambda: "Layouts saved" in sidebar(viewer), "nested sidebar did not initialize")
+    wait(client, lambda: "Detach" in sidebar(viewer), "nested sidebar did not initialize")
     original = saved(library)
     terminal = "=" + Shells.name(original.pane) + ":"
     wait(client, lambda: shells.run("has-session", "-t", terminal) == "", "nested shell missing")

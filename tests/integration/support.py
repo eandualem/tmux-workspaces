@@ -349,8 +349,22 @@ def right_click(client: Client, viewer: Tmux, row: int, column: int = 3) -> None
     client.pump(0.3)
 
 
+OUTLINE = str.maketrans(dict.fromkeys("╭╮╰╯│─", " "))
+
+
+def content_panes(viewer: Tmux) -> list[str]:
+    """The sidebar and content pane ids: every pane that is not a gutter."""
+    return [
+        line.split()[0]
+        for line in viewer.run("list-panes", "-F", "#{pane_id} #{?@viewer_gutter,1,0}").splitlines()
+        if line.endswith(" 0")
+    ]
+
+
 def sidebar(viewer: Tmux) -> str:
-    return viewer.run("capture-pane", "-p", "-t", "%0")
+    """The sidebar's text with its outline blanked, so columns stay in place
+    while lines strip and compare as they did before the panel had a frame."""
+    return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
 
 
 def tab_row(viewer: Tmux, name: str) -> int:
@@ -456,19 +470,8 @@ def click_attach(client, viewer, leaf_id):
     )
 
 
-def workspace_row(text: str) -> tuple[int, str]:
-    """The sidebar row holding the numbered workspace buttons, and its text.
-
-    The buttons are bare numbers now, so they are found by position: the row
-    under the Workspaces…/Colors… controls.
-    """
-    lines = text.splitlines()
-    index = next(i for i, line in enumerate(lines) if "Workspaces…" in line) + 1
-    return index, lines[index] if index < len(lines) else ""
-
-
-# Pane actions moved from panel buttons into the Tab actions… menu; scenarios
-# keep naming the old buttons and are routed through the menu.
+# Pane actions moved from panel buttons into the tab menu; scenarios keep
+# naming the old buttons and are routed through the menu.
 MENU_ROUTES = {
     "Split →": "Split right",
     "Split ↓": "Split below",
@@ -477,15 +480,21 @@ MENU_ROUTES = {
     "Next →": "Next pane",
     "Attach session…": "Attach session",
 }
+# Leaving is labelled for what it does: shells and sessions keep running.
+RENAMED = {"Exit": "Detach"}
 
 
 def click_button(client, viewer, text):
+    text = RENAMED.get(text, text)
     if text == "+ Tab":
-        # The header's plus sits alone in the top row's right corner.
+        # The plus sits at the right end of the tabs label row.
         text = "+"
     if text in MENU_ROUTES:
         click_button(client, viewer, "Tab actions…")
         text = MENU_ROUTES[text]
+    if text == "Tab actions…":
+        # The selected tab's menu sits behind the ellipsis on its detail row.
+        text = "⋯"
 
     def sidebar():
         return viewer.run("capture-pane", "-p", "-t", "%0")
@@ -509,4 +518,7 @@ def click_button(client, viewer, text):
     wait(client, settled, "missing button: " + text)
     lines, row = seen["lines"], seen["row"]
     top = int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
-    client.click(lines[row].index(text) + 2, row + top + 1)
+    # A one-glyph control sits at the right end of its hit area, so it is
+    # clicked on the glyph itself; a word is clicked one cell in.
+    offset = 1 if len(text) == 1 else 2
+    client.click(lines[row].index(text) + offset, row + top + 1)

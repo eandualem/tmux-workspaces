@@ -37,7 +37,7 @@ def _exercise(resources: FixtureResources) -> None:
     shells = Tmux(socket_path(library, "terminals"))
     wait(client, lambda: client.manifest(library), "inline viewer did not start")
     viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
-    wait(client, lambda: "Layouts saved" in sidebar(viewer), "sidebar did not draw")
+    wait(client, lambda: "Detach" in sidebar(viewer), "sidebar did not draw")
     original = saved(library)
     first_id, first_name = original.tab["id"], original.tab["name"]
     terminal = "=" + Shells.name(original.pane) + ":"
@@ -83,8 +83,9 @@ def _exercise(resources: FixtureResources) -> None:
     def begin_workspace():
         client.pump(0.5)
         top = pane_top()
-        tap(0, 6, top)
-        tap(0, 6, top)
+        # The heading is the first row inside the panel's outline.
+        tap(1, 6, top)
+        tap(1, 6, top)
         wait(client, editing, "workspace header double-click did not open inline editor")
         assert "Type a name" not in sidebar(viewer)
         assert viewer.run("display-message", "-p", "-t", "viewer:", "#{pane_id}") == "%0"
@@ -100,7 +101,7 @@ def _exercise(resources: FixtureResources) -> None:
     )
     wait(
         client,
-        lambda: "Development" in sidebar(viewer).splitlines()[0],
+        lambda: "Development" in sidebar(viewer).splitlines()[1],
         "workspace header did not redraw",
     )
     assert saved(library).tab["name"] == first_name
@@ -212,7 +213,7 @@ def _exercise(resources: FixtureResources) -> None:
     for workspace in (True, False):
         client.pump(0.5)
         name = "Immediate workspace" if workspace else "Immediate tab"
-        row = 0 if workspace else tab_row(viewer, "after-resize-ok")
+        row = 1 if workspace else tab_row(viewer, "after-resize-ok")
         column = 7 if workspace else sidebar(viewer).splitlines()[row].index("after-resize-ok") + 2
         top = pane_top()
         click = f"\x1b[<0;{column};{row + top + 1}M\x1b[<0;{column};{row + top + 1}m"

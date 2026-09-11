@@ -32,7 +32,8 @@ ANCHORS = {
     "title": "Workspace",
     "muted": "tabs",
     "active": "▶",
-    "accent": "Shell",
+    # The add button on the tabs label row; the detail row is secondary text now.
+    "accent": "+",
 }
 # The workspace header occupies the top row, and the "Workspaces…" button
 # repeats its word further down the sidebar. Searching the whole screen for the
@@ -55,13 +56,13 @@ SHIPPED_256 = {
     "title": (16, 17, ("bold",)),
     "muted": (20, 17, ()),
     "active": (16, 18, ()),
-    "accent": (19, 17, ()),
+    "accent": (19, 17, ("bold",)),
 }
 SHIPPED_BASIC = {
     "title": (7, 0, ("bold",)),
     "muted": (7, 0, ()),
     "active": (7, 4, ()),
-    "accent": (6, 0, ()),
+    "accent": (6, 0, ("bold",)),
 }
 
 
@@ -132,10 +133,10 @@ class Screen:
     def at(self, anchor: str, *, first_row: bool = False):
         """The style in force where `anchor` starts, or None when it is not drawn.
 
-        `first_row` searches only the top row, for an anchor whose word also
-        appears elsewhere in the sidebar.
+        `first_row` searches only the heading row, the first inside the panel's
+        outline, for an anchor whose word also appears elsewhere in the sidebar.
         """
-        for text, states in self.lines[:1] if first_row else self.lines:
+        for text, states in self.lines[1:2] if first_row else self.lines:
             position = text.find(anchor)
             if position >= 0:
                 return states[position]
@@ -304,7 +305,7 @@ foreground = 244
 CUSTOM_256 = {
     "title": (16, 17, ("bold",)),
     "active": (3, 27, ("bold",)),
-    "accent": (13, 17, ()),
+    "accent": (13, 17, ("bold",)),
     "muted": (244, 17, ()),
 }
 
@@ -320,7 +321,8 @@ def write_config(path: Path, text: str) -> Path:
 
 
 def status(viewer: Tmux) -> str:
-    return screen(viewer).plain().splitlines()[-1].strip()
+    """The message row: above the three-row application menu, inside the outline."""
+    return screen(viewer).plain().splitlines()[-5].strip().strip("│").strip()
 
 
 def configured_colors(directory: Path) -> None:
@@ -362,7 +364,12 @@ def normal_background(directory: Path) -> None:
 
         def base_is_configured():
             drawn = Screen(viewer.run("capture-pane", "-e", "-N", "-p", "-t", "%0"))
-            blanks = [states for text, states in drawn.lines if states and not text.strip()]
+            # A blank interior row: nothing between the outline's two cells.
+            blanks = [
+                states[1:-1]
+                for text, states in drawn.lines
+                if len(states) > 2 and not text.strip().strip("│").strip()
+            ]
             return (
                 drawn.at("Workspace") == (7, 4, ("bold",))
                 and bool(blanks)
@@ -370,11 +377,18 @@ def normal_background(directory: Path) -> None:
             )
 
         wait(client, base_is_configured, "configured normal background missing from blank cells")
-        # Exercise the shared keyboard menu entry after integrating menu navigation.
+        # The workspace menu no longer carries Colors; the keyboard route is the
+        # sidebar's own t key once the panel has focus.
         client.type("\x07M")
         wait(client, lambda: "Workspace options" in screen(viewer).plain(), "workspace menu absent")
-        client.type("\x1b[F")
-        client.type("\r")
+        client.type("\x1b")
+        wait(
+            client,
+            lambda: "Workspace options" not in screen(viewer).plain(),
+            "menu did not close",
+        )
+        client.type("\x07s")
+        client.type("t")
         wait(
             client,
             lambda: "Viewer colors" in screen(viewer).plain(),

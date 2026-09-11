@@ -7,7 +7,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-from tests.integration.support import FixtureResources, click_button, open_terminal, saved, wait
+from tests.integration.support import (
+    OUTLINE,
+    FixtureResources,
+    click_button,
+    open_terminal,
+    saved,
+    wait,
+)
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.shells import Shells
@@ -68,7 +75,7 @@ def exercise(resources: FixtureResources) -> None:
         viewer = Tmux(runtime["viewer_socket"])
         wait(
             client,
-            lambda: "Layouts saved" in viewer.run("capture-pane", "-p", "-t", "%0"),
+            lambda: "Detach" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
             "environment viewer did not initialize",
         )
         return client, viewer
@@ -157,10 +164,10 @@ def exercise(resources: FixtureResources) -> None:
     click_button(other, other_viewer, "Attach session…")
     wait(
         other,
-        lambda: "external" in other_viewer.run("capture-pane", "-p", "-t", "%0"),
+        lambda: "external" in other_viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
         "external session missing",
     )
-    lines = other_viewer.run("capture-pane", "-p", "-t", "%0").splitlines()
+    lines = other_viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE).splitlines()
     row = next(i for i, line in enumerate(lines) if line.strip() == "external")
     other.click(3, row + 1)
     wait(

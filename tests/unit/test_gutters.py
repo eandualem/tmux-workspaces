@@ -173,6 +173,39 @@ class GutterLayoutTests(unittest.TestCase):
         self.assertIn("--color '#31343b'", column[1]["command"])
         self.assertEqual(column[2]["top"], column[1]["top"] + 2)
 
+    def test_measured_ratios_round_trip_so_like_layouts_reuse_their_panes(self):
+        """The separator takes cells after tmux has split, so a split is sized in
+        cells from the saved ratio and the ratio measured back reproduces it.
+        Two tabs with the same shape must then switch by reusing containers,
+        not by killing and recreating every pane; that rebuild was slow and
+        lost text typed right after a switch."""
+        display = self.display("#1f1f1f")
+        model = Model.initial()
+        model.split("right")
+        model.split("below")
+        first = model.tab
+        model.add_tab("second")
+        for direction in ("right", "below"):
+            model.split(direction)
+        second = model.tab
+        with patch.dict(os.environ, {"SHELL": "/bin/sh"}):
+            display.render(first, False)
+            display.remember_ratios(first["tree"])
+            ratios = [first["tree"]["ratio"], first["tree"]["second"]["ratio"]]
+            # A tab never shown before carries the default ratio, so its first
+            # showing may rebuild; once measured, the two tabs agree.
+            display.render(second, False)
+            display.remember_ratios(second["tree"])
+            containers = sorted(display.panes.values())
+            for tab in (first, second, first, second):
+                display.render(tab, False)
+                self.assertEqual(sorted(display.panes.values()), containers, tab["name"])
+                display.remember_ratios(tab["tree"])
+        self.assertEqual([first["tree"]["ratio"], first["tree"]["second"]["ratio"]], ratios)
+        self.assertEqual(second["tree"]["ratio"], first["tree"]["ratio"])
+        gutters = {p for p, i in self.panes().items() if i["gutter"]}
+        self.assertEqual(len(gutters), 4)
+
     def test_the_same_tab_is_not_rebuilt_and_a_click_on_a_gutter_bounces(self):
         display = self.display("#1f1f1f")
         model = Model.initial()

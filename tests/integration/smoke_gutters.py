@@ -13,7 +13,7 @@ from tmux_workspaces.model import leaves
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
 
-from .support import FixtureResources, click_button, open_terminal, saved, wait
+from .support import OUTLINE, FixtureResources, click_button, open_terminal, saved, wait
 
 # The shipped preset's surface: the padded panes' ground and the hidden borders.
 BACKGROUND = "#292c33"
@@ -54,9 +54,9 @@ def exercise(directory: Path) -> None:
         viewer = Tmux(runtime["viewer_socket"])
 
         def sidebar():
-            return viewer.run("capture-pane", "-p", "-t", "%0")
+            return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
 
-        wait(client, lambda: "Layouts saved" in sidebar(), "sidebar failed to initialize")
+        wait(client, lambda: "Detach" in sidebar(), "sidebar failed to initialize")
         wait(
             client,
             lambda: sum(p["gutter"] for p in panes(viewer)) == 2,

@@ -25,7 +25,7 @@ an exact reopen command. Refresh uses a fresh viewer interpreter and picks up
 already-installed Python dependency changes; it does not install them. Changes to
 the interpreter or launcher installation still need reopening with the intended
 launcher. See [refresh scope and recovery](REFRESH.md).
-Do not close its tabs to upgrade: **Exit viewer** preserves shells and programs;
+Do not close its tabs to upgrade: **Detach** preserves shells and programs;
 closing a pane or tab ends that pane/tab's ordinary shells. Existing views can also
 remain open alongside the new window; they share arrangements and shells.
 
@@ -56,7 +56,7 @@ The shipped map follows Ghostty's usual keys, with the actions applied to saved 
 
 Out-of-range numbered shortcuts do nothing. New workspaces start empty; use
 Command-T for their first tab. Attachment never renames the tab or stops its
-parked ordinary shell. **Tab actions… → Return pane to shell** brings that shell back.
+parked ordinary shell. **Return pane to shell** in the tab menu brings that shell back.
 Command-C/V, font-size, app preferences and normal shell Control shortcuts retain
 their usual behavior. Click **Shortcuts…** for the active profile's controls.
 
@@ -70,7 +70,7 @@ in place. Enter saves and Escape cancels; the existing rename shortcuts still
 open their usual form. The + beside the workspace name still creates a tab.
 See the [inline rename guide](INLINE_RENAME.md).
 
-Right-click the workspace header or a numbered workspace button for that workspace's options.
+Right-click the workspace heading, or click its ▾, for that workspace's options.
 The rename field starts selected: typing replaces it, Enter keeps it, and Ctrl-U
 clears it. Use a secondary/two-finger click; holding Shift may make Ghostty handle
 the click itself instead of forwarding it to the viewer.
@@ -78,10 +78,10 @@ the click itself instead of forwarding it to the viewer.
 The **+** beside the workspace name creates a tab. The wider numbered buttons at
 the bottom switch workspaces; arrows reveal additional workspaces when needed.
 The workspace name is a label, with its options available by right-click or the
-**Workspaces…** button. To attach a session, select its destination pane and open
-**Tab actions… → Attach session**; splits, focus and pane cycling live in the same
-menu. Panes are set apart by a gap in the panel's color, not by ruled borders.
-**Tab actions… → Attach session** and the attachment shortcut work on all supported versions.
+**▾** beside its name. To attach a session, select its destination pane and open
+the tab menu's **Attach session** (the ⋯ on the selected tab, or a right-click);
+splits, focus and pane cycling live in the same menu. Panes are set apart by a gap in the panel's color, not by ruled borders.
+The tab menu's **Attach session** and the attachment shortcut work on all supported versions.
 
 ## Other terminals and the existing launcher
 
@@ -144,7 +144,7 @@ passes the quoted Python executable and arguments without that extra word.
 shows the wrapper. Configuration validation alone does not execute the command;
 the regression checks now include that execution step.
 
-The same test also caught an unsuccessful exit status on **Exit viewer**. Normal
+The same test also caught an unsuccessful exit status on **Detach**. Normal
 exit now detaches the private tmux client before shutting its viewer server down,
 so Ghostty receives success. Unexpected server failures still return an error.
 

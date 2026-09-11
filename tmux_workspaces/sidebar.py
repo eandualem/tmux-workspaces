@@ -87,6 +87,7 @@ class Sidebar:
         self.message = ""
         self.running = True
         self.last_frame = None
+        self.body = screen
 
     @property
     def offset(self) -> int:
@@ -653,7 +654,7 @@ class Sidebar:
             x, y = mouse
             height, width = self.screen.getmaxyx()
             if x < width and y < height:
-                self.mouse(x, y, curses.BUTTON1_PRESSED)
+                self.mouse(x - self.INSET, y - self.INSET, curses.BUTTON1_PRESSED)
             return
         if name == "refresh-viewer":
             # Replacing this viewer is deliberate, so an unfinished in-place
@@ -868,13 +869,55 @@ class Sidebar:
         self.save()
         self.running = False
 
+    # The panel is drawn one cell inside the pane on every side: that cell is
+    # the outline, a rounded rectangle whose corners reveal the surface behind
+    # the pane. Everything else is drawn into ``body``, a window covering the
+    # interior, in the interior's own coordinates, so menus and editors keep
+    # their positions relative to the panel and only mouse input translates.
+    INSET = 1
+
+    def size(self) -> tuple[int, int]:
+        """Rows and columns inside the outline: the space the panel lays out in."""
+        height, width = self.screen.getmaxyx()
+        return max(0, height - 2 * self.INSET), max(0, width - 2 * self.INSET)
+
+    def interior(self):
+        """The window the panel draws into, made anew for the current size."""
+        height, width = self.size()
+        if height < 1 or width < 1:
+            return self.screen
+        try:
+            body = self.screen.derwin(height, width, self.INSET, self.INSET)
+        except curses.error:
+            return self.screen
+        with contextlib.suppress(curses.error):
+            body.bkgdset(" ", self.style("normal"))
+        return body
+
+    def frame(self) -> None:
+        """Draw the outline: thin lines with rounded corners, on the surface.
+
+        The bottom-right cell is inserted rather than added, since curses
+        refuses to add a character in the last cell of the last row.
+        """
+        height, width = self.screen.getmaxyx()
+        if height < 2 or width < 2:
+            return
+        style = self.style("outline")
+        with contextlib.suppress(curses.error):
+            self.screen.addnstr(0, 0, "╭" + "─" * (width - 2), width - 1, style)
+            self.screen.insstr(0, width - 1, "╮", style)
+            for row in range(1, height - 1):
+                self.screen.addnstr(row, 0, "│", 1, style)
+                self.screen.insstr(row, width - 1, "│", style)
+            self.screen.addnstr(height - 1, 0, "╰" + "─" * (width - 2), width - 1, style)
+            self.screen.insstr(height - 1, width - 1, "╯", style)
+
     def put(self, y: int, x: int, text: str, style: int = 0, width: int | None = None) -> None:
-        height, columns = self.screen.getmaxyx()
+        height, columns = self.size()
         if 0 <= y < height and 0 <= x < columns:
             with contextlib.suppress(curses.error):
-                self.screen.addnstr(
-                    y, x, visible(text), min(width or columns, columns - x - 1), style
-                )
+                self.body.addnstr(y, x, visible(text), min(width or columns, columns - x), style)
 
     def button(
         self,
@@ -888,8 +931,8 @@ class Sidebar:
         context: Callable | None = None,
         style: int | None = None,
     ) -> None:
-        columns = self.screen.getmaxyx()[1]
-        width = width or columns - x - 1
+        columns = self.size()[1]
+        width = width or columns - x
         if style is None:
             style = self.style("active" if active else "normal")
         self.put(y, x, text.ljust(width), style, width)
@@ -906,7 +949,7 @@ class Sidebar:
             text = f"{self.keymap.label(action, command=command)} {ACTION_LABELS[action]}"
             # Custom combinations and aliases may exceed navigation width. Wrap
             # them into scrollable rows instead of hiding the action or a key.
-            for line in textwrap.wrap(text, width=max(1, self.screen.getmaxyx()[1] - 2)):
+            for line in textwrap.wrap(text, width=max(1, self.size()[1] - 2)):
                 options.append((line, lambda action=action: self.action(action)))
         return options
 
@@ -974,7 +1017,6 @@ class Sidebar:
                 ("New workspace", lambda: self.rename("new-workspace")),
                 ("Rename workspace", lambda: self.rename("rename-workspace")),
                 ("Delete empty workspace", self.delete_workspace),
-                ("Colors…", self.open_theme),
             ]
         return []
 
@@ -1016,19 +1058,19 @@ class Sidebar:
         """
         if agents is None:
             agents = self.source.snapshot()[0]
-        start = (
-            5
-            if self.menu == "agents"
-            else 4 + max(0, len(self.notes(self.screen.getmaxyx()[1])) - 1)
-        )
-        available = max(1, self.screen.getmaxyx()[0] - start - 3)
+        start = 5 if self.menu == "agents" else 4 + max(0, len(self.notes(self.size()[1])) - 1)
+        available = max(1, self.size()[0] - start - 3)
         rows = self.selection.show(self.menu_entries(agents), available, drawn=drawn)
         return rows, start
 
     def roomy(self) -> bool:
-        """Whether the panel is large enough to draw a menu instead of its warning."""
-        height, width = self.screen.getmaxyx()
-        return height >= 16 and width >= 18
+        """Whether the panel is large enough to draw a menu instead of its warning.
+
+        Measured inside the outline: a pane of sixteen rows, the floor the
+        panel has always had, leaves fourteen rows of interior.
+        """
+        height, width = self.size()
+        return height >= 14 and width >= 16
 
     def move_selection(self, step: int) -> None:
         self.selection.move(step)
@@ -1056,13 +1098,13 @@ class Sidebar:
             return []
         return textwrap.wrap(
             self.refresh_command or "",
-            width=max(1, self.screen.getmaxyx()[1] - 2),
+            width=max(1, self.size()[1] - 2),
             break_on_hyphens=False,
         )
 
     def command_rows(self, start: int) -> list[str]:
         lines = self.command_lines()
-        available = max(1, self.screen.getmaxyx()[0] - start - 3)
+        available = max(1, self.size()[0] - start - 3)
         self.command_offset = min(max(0, self.command_offset), max(0, len(lines) - available))
         return lines[self.command_offset : self.command_offset + available]
 
@@ -1086,51 +1128,30 @@ class Sidebar:
         for line in lines:
             wrapped += textwrap.wrap(line, width=max(1, width - 2), break_on_hyphens=False)
         # Keep room for the option row and the scroll controls on short screens.
-        return tuple(wrapped[: max(1, self.screen.getmaxyx()[0] - 9)])
+        return tuple(wrapped[: max(1, self.size()[0] - 9)])
+
+    def status_text(self) -> str:
+        """What the message row shows, or nothing: saving is quiet."""
+        error = self.source.snapshot()[1] if self.source else ""
+        if error or self.message:
+            return error or self.message
+        if self.display.small and self.model.tab:
+            return "Narrow: focus view"
+        return ""
+
+    def footer_rows(self) -> int:
+        """Rows the bottom of the panel keeps: the application menu, and the
+        message row only while there is a message."""
+        return 3 + (1 if self.status_text() else 0)
 
     def tab_capacity(self) -> int:
-        # One row per tab, plus one detail row for the active tab; the footer
-        # below the list is eight rows and the header above it two.
-        return max(1, self.screen.getmaxyx()[0] - 12)
-
-    def workspace_buttons(self, row: int, width: int) -> None:
-        spaces = self.model.state["workspaces"]
-        selected = spaces.index(self.model.space)
-        button_width = max(5, len(str(len(spaces))) + 4)
-        overflow = len(spaces) * (button_width + 1) > width - 6
-        muted, accent = self.style("muted"), self.style("accent") | curses.A_BOLD
-        if overflow:
-            button_width = min(button_width, width - 12)
-            count = max(1, (width - 12) // (button_width + 1))
-            left = 4
-            self.button(row, " ‹ ", lambda: self.next_workspace(-1), width=3, style=muted)
-            self.button(
-                row, " › ", lambda: self.next_workspace(1), x=width - 8, width=3, style=muted
-            )
-        else:
-            count, left = len(spaces), 1
-        start = max(0, min(selected - count // 2, len(spaces) - count))
-        for index, space in enumerate(spaces[start : start + count], start):
-            # The selected workspace is a filled block; the others are quiet
-            # numbers. Every button keeps its full width as the click target.
-            active = space["id"] == self.model.space["id"]
-            self.button(
-                row,
-                f"{index + 1:^{button_width}}",
-                lambda space=space: self.choose_workspace(space),
-                x=left + (index - start) * (button_width + 1),
-                width=button_width,
-                active=active,
-                context=lambda space=space: self.context_workspace(space),
-                style=None if active else muted,
-            )
-        self.button(
-            row, " + ", lambda: self.rename("new-workspace"), x=width - 4, width=3, style=accent
-        )
+        # One row per tab, and one detail row for the selected tab; the heading
+        # and the section label take two rows above, the footer its own below.
+        return max(1, self.size()[0] - 3 - self.footer_rows())
 
     def draw(self) -> None:
         agents, error = self.source.snapshot()
-        height, width = self.screen.getmaxyx()
+        height, width = self.size()
         # Reconcile the open menu before the frame is compared: a skipped repaint
         # must still leave the active row and its options current for the keyboard.
         # A frame too small for the menu paints a warning instead, so it displays
@@ -1169,15 +1190,17 @@ class Sidebar:
             return
         self.last_frame = frame
         self.screen.erase()
+        self.body = self.interior()
         with contextlib.suppress(curses.error):
             curses.curs_set(0)
         self.name_hits.clear()
         cursor = None
         self.hits.clear()
         self.context_hits.clear()
+        self.frame()
         if not self.roomy():
             self.put(0, 0, "Enlarge terminal", self.style("normal"))
-            self.button(2, "Exit viewer", self.quit)
+            self.button(2, "Detach", self.quit)
             self.screen.refresh()
             return
         if self.menu and self.menu != "inline-name":
@@ -1247,42 +1270,61 @@ class Sidebar:
             if self.menu_message:
                 self.put(height - 1, 1, self.menu_message, self.style("accent"))
         else:
+            # The heading is the workspace chooser: the name, a chevron, and
+            # one click to switch, create or rename workspaces. A double click
+            # renames in place.
             workspace_edit = self.inline_editor and self.inline_target[1] is None
-            self.name_hits.append((0, 1, width - 7, "workspace:" + self.model.space["id"]))
+            name_width = width - 5
+            self.name_hits.append((0, 1, 1 + name_width, "workspace:" + self.model.space["id"]))
             header = self.style("normal") | curses.A_BOLD
-            self.put(0, 1, self.model.space["name"], header, width - 8)
+            title = visible(self.model.space["name"])
+            if len(title) > name_width:
+                title = title[: max(0, name_width - 1)] + "…"
+            self.put(0, 1, title, header, name_width)
             if workspace_edit:
-                cursor = self.draw_inline(0, 1, width - 8)
+                cursor = self.draw_inline(0, 1, name_width)
             self.context_hits.append(
-                (0, 1, width - 7, lambda: self.context_workspace(self.model.space))
+                (0, 1, 1 + name_width, lambda: self.context_workspace(self.model.space))
             )
-            # A bare plus in the accent color; its five-cell hit area is unchanged.
+            # The chevron opens the chooser: switch, create, rename or delete.
             self.button(
                 0,
-                "  +",
-                self.new_tab,
-                x=width - 6,
-                width=5,
-                style=self.style("accent") | curses.A_BOLD,
+                " ▾",
+                lambda: self.open_menu("workspace"),
+                x=width - 3,
+                width=2,
+                style=self.style("muted"),
+                context=lambda: self.context_workspace(self.model.space),
             )
             hint = "Enter save · Esc cancel" if width >= 25 else "↵ save · Esc cancel"
-            # Sections are named in quiet lowercase labels rather than ruled off.
+            # The section label carries the add button and, when the list
+            # overflows, its scroll arrows, all on the right inset.
             self.put(
                 1,
                 1,
                 hint if workspace_edit else "tabs",
                 self.style("accent" if workspace_edit else "muted"),
             )
+            if not workspace_edit:
+                # While the workspace name is edited, the row carries the hint.
+                self.button(
+                    1,
+                    "  +",
+                    self.new_tab,
+                    x=width - 5,
+                    width=4,
+                    style=self.style("accent") | curses.A_BOLD,
+                )
             tab = self.model.tab
             tabs = self.model.space["tabs"]
-            bottom = height - 8
+            status = self.status_text()
+            bottom = height - 3
             available = self.tab_capacity()
             self.tab_offset = min(self.tab_offset, max(0, len(tabs) - available))
             if len(tabs) > available and not workspace_edit:
-                # More tabs than rows: scroll arrows at the end of the label row.
                 muted = self.style("muted")
-                self.button(1, "↑", lambda: self.scroll(-1), x=width - 6, width=2, style=muted)
-                self.button(1, "↓", lambda: self.scroll(1), x=width - 3, width=2, style=muted)
+                self.button(1, "↑", lambda: self.scroll(-1), x=width - 9, width=2, style=muted)
+                self.button(1, "↓", lambda: self.scroll(1), x=width - 7, width=2, style=muted)
             row = 2
             for index, item in enumerate(
                 tabs[self.tab_offset : self.tab_offset + available], self.tab_offset
@@ -1296,7 +1338,9 @@ class Sidebar:
 
                 members = leaves(item["tree"])
                 active = item == tab
-                prefix = f"{'▶' if active else ' '} {index + 1} "
+                # The row is one run so the selection reads as a bar; the text
+                # keeps one cell of air from the interior's edge on each side.
+                prefix = f" {'▶' if active else ' '} {index + 1} "
                 count = str(len(members))
                 room = width - len(prefix) - len(count) - 2
                 name = visible(item["name"])
@@ -1305,7 +1349,7 @@ class Sidebar:
                 self.button(row, prefix + name, action, x=0, active=active, context=context)
                 if not active:
                     # At rest the number is a secondary detail beside the name.
-                    self.put(row, 2, str(index + 1), self.style("muted"))
+                    self.put(row, 3, str(index + 1), self.style("muted"))
                 self.put(
                     row,
                     width - len(count) - 1,
@@ -1319,11 +1363,11 @@ class Sidebar:
                 row += 1
                 if not active:
                     continue
+                # The detail row: what the tab holds beyond its pane count,
+                # and the tab's own menu behind an ellipsis on the right.
                 attached = [p["agent"] for p in members if p["agent"]]
                 if len(members) > 1:
-                    label = f"{len(members)} panes"
-                    if attached:
-                        label += f" · {len(attached)} attached"
+                    label = f"{len(attached)} attached" if attached else "shells"
                 elif attached:
                     source_socket = members[0].get("source_socket") or self.source.socket
                     if os.path.realpath(source_socket) != os.path.realpath(self.source.socket):
@@ -1338,40 +1382,38 @@ class Sidebar:
                     label = "Empty" if is_empty(members[0]) else "Shell"
                 if tab_edit:
                     label = hint
-                self.put(row, 1 if tab_edit else len(prefix), label, self.style("accent"))
-                self.hits.append((row, 0, width - 1, action))
+                self.put(row, 1 if tab_edit else len(prefix), label, self.style("muted"))
+                self.hits.append((row, 0, width - 4, action))
                 self.context_hits.append((row, 0, width - 1, context))
+                if not tab_edit:
+                    # While the name is edited, the row carries the hint instead.
+                    self.button(
+                        row,
+                        "⋯",
+                        lambda: self.open_menu("tab"),
+                        x=width - 3,
+                        width=2,
+                        style=self.style("muted"),
+                    )
                 row += 1
             if not tabs:
                 self.put(2, 1, "No tabs yet", self.style("muted"))
                 self.button(3, "Open a terminal +", self.new_tab)
-            # One plain list, one control per row. Pane actions (splits, focus,
-            # next pane, attaching) live in Tab actions…, and a split opens as
-            # a chooser, so the panel needs no buttons for them.
-            self.put(bottom - 1, 1, "actions", self.style("muted"))
-            self.button(bottom, "Tab actions…", lambda: self.open_menu("tab"))
-            self.button(bottom + 1, "Shortcuts", lambda: self.open_menu("shortcuts"))
-            self.button(bottom + 2, "Colors…", self.open_theme)
-            self.button(bottom + 3, "Exit", self.quit)
-            self.put(bottom + 4, 1, "workspaces", self.style("muted"))
-            self.button(bottom + 5, "Workspaces…", lambda: self.open_menu("workspace"))
-            self.workspace_buttons(bottom + 6, width)
-            notice = bool(error or self.message)
-            status = (
-                error
-                or self.message
-                or ("Narrow: focus view" if self.display.small and tab else "Layouts saved")
-            )
-            if notice:
-                self.put(bottom + 7, 1, status, self.message_style(status, True))
-            else:
-                # An idle viewer shows a quiet indicator light before its state.
-                self.put(bottom + 7, 1, "●", self.style("accent"))
-                self.put(bottom + 7, 3, status, self.style("muted"))
+            # Saving is quiet: the message row exists only while something
+            # needs saying, and the list has the row otherwise.
+            if status:
+                self.put(
+                    bottom - 1, 1, status, self.message_style(status, bool(error or self.message))
+                )
+            # The application menu, anchored at the bottom, with leaving last.
+            # Leaving detaches: shells and attached sessions keep running.
+            self.button(bottom, "Shortcuts", lambda: self.open_menu("shortcuts"))
+            self.button(bottom + 1, "Colors…", self.open_theme)
+            self.button(bottom + 2, "Detach", self.quit)
         if cursor:
             with contextlib.suppress(curses.error):
                 curses.curs_set(1)
-                self.screen.move(*cursor)
+                self.body.move(*cursor)
         self.screen.refresh()
 
     def scroll(self, amount: int) -> None:
@@ -1397,6 +1439,10 @@ class Sidebar:
         elif buttons & getattr(curses, "BUTTON5_PRESSED", 0):
             self.scroll(1)
         elif left or right:
+            height, width = self.size()
+            if not (0 <= x < width and 0 <= y < height):
+                # The outline itself is not a control.
+                return
             field = next((h for h in self.name_hits if h[0] == y and h[1] <= x < h[2]), None)
             edit_key = (
                 self.inline_target[1] or "workspace:" + self.inline_target[0]
@@ -1421,7 +1467,7 @@ class Sidebar:
         if key == curses.KEY_MOUSE:
             with contextlib.suppress(curses.error):
                 _, x, y, _, buttons = curses.getmouse()
-                self.mouse(x, y, buttons)
+                self.mouse(x - self.INSET, y - self.INSET, buttons)
         elif self.inline_editor:
             if key in ("\n", "\r"):
                 self.accept_inline()
@@ -1459,8 +1505,8 @@ class Sidebar:
             curses.KEY_DOWN: 1,
             "\x10": -1,
             "\x0e": 1,
-            curses.KEY_PPAGE: -max(1, self.screen.getmaxyx()[0] - 9),
-            curses.KEY_NPAGE: max(1, self.screen.getmaxyx()[0] - 9),
+            curses.KEY_PPAGE: -max(1, self.size()[0] - 9),
+            curses.KEY_NPAGE: max(1, self.size()[0] - 9),
             curses.KEY_HOME: -len(self.options) or None,
             curses.KEY_END: len(self.options) or None,
         }
@@ -1476,8 +1522,8 @@ class Sidebar:
                 curses.KEY_DOWN: 1,
                 "\x10": -1,
                 "\x0e": 1,
-                curses.KEY_PPAGE: -max(1, self.screen.getmaxyx()[0] - 9),
-                curses.KEY_NPAGE: max(1, self.screen.getmaxyx()[0] - 9),
+                curses.KEY_PPAGE: -max(1, self.size()[0] - 9),
+                curses.KEY_NPAGE: max(1, self.size()[0] - 9),
                 curses.KEY_HOME: -len(self.command_lines()),
                 curses.KEY_END: len(self.command_lines()),
             }

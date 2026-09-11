@@ -31,51 +31,50 @@ with the arrow keys and press Enter, or click a row. Nothing is created until yo
 choose, so attaching never lands on top of a shell you did not ask for; an empty
 pane stays empty across exit and reopen until it is filled. Use a shell for
 commands, a status view, an editor, or any other terminal program.
-**Tab actions… → Rename tab** changes its name. Names belong to
+**Rename tab** in the tab menu changes its name. Names belong to
 you: attaching a session never changes them. In the name editor, type a name and
 click **Save name** or press Enter; Ctrl-u clears the existing name.
 
-**Tab actions… → Split right** or **Split below** adds another pane beside or
-below the selected one, as do the split shortcuts. It opens with the same
+The selected tab's menu sits behind the **⋯** at the right end of its detail
+row, behind a right-click on any tab, and behind the tab-options shortcut.
+**Split right** or **Split below** there adds another pane beside or below the
+selected one, as do the split shortcuts. It opens with the same
 chooser as a new tab; a terminal chosen there starts in the original shell's
 working directory. Four panes still belong to one tab. Click a pane to select
-and type there. Drag the gap between panes to adjust sizes. **Tab actions… →
-Focus pane** temporarily shows one pane; **Next pane** cycles panes and
+and type there. Drag the gap between panes to adjust sizes. **Focus pane** in
+the tab menu temporarily shows one pane; **Next pane** cycles panes and
 **Show layout** restores the splits. Narrow terminals use temporary focus
-without discarding the arrangement. The navigation panel itself is one plain
-list: **Tab actions…**, **Shortcuts**, **Colors…**, **Exit**, then the
-workspace controls.
+without discarding the arrangement. The panel's bottom holds the application
+menu, three rows: **Shortcuts**, **Colors…** and **Detach**, which leaves the
+viewer with every shell and attached session still running.
 
 To attach a session to a pane that already has a shell, select the pane, open
-**Tab actions… → Attach session**, then choose a tmux session for that pane.
+the tab menu's **Attach session**, then choose a tmux session for that pane.
 Type to filter the chooser. The pane's original shell stays running;
-**Tab actions… → Return pane to shell** brings it back. Each split can attach a different session or
+**Return pane to shell** in the tab menu brings it back. Each split can attach a different session or
 remain an ordinary terminal. Attachment names and states appear as secondary
 information, below the active tab’s name. Offline attachments stay associated with
 their pane and reconnect when the session returns; the viewer never starts
 an external session. The roster is only an attachment chooser, never a source of tabs.
 
-Panes are separated by a gap in the navigation panel's own color rather than
-by ruled borders, and no border is highlighted; the cursor shows where you are
-typing. The panel color is a single value in the colors editor, and may be an
-RGB value such as `#181818`, so it can be matched to your terminal's theme.
-
-Each pane's contents are inset by one blank column on the left and on the
-right, in your terminal's own background, so text never touches the gap. That
-padding is made of thin panes tmux cannot tell apart from the rest, so a click
-on one simply hands focus back to the pane you were in. It needs the terminal's
-background color, which the viewer asks the terminal for once at launch
-(most terminals answer, Ghostty included). A terminal that does not answer gets
-no padding and the plain gap; you can supply the color yourself with
-`--terminal-background '#1f1f1f'`. **Tab actions… → Attach session** and the attachment shortcut work on
-all supported tmux versions.
+The navigation panel is a rounded, outlined panel inset in the window, and
+the terminals sit on a slightly lighter surface beside it. Split panes are
+separated by one thin line in the outline color, with a blank column of
+surface on each side of it, so text never touches a boundary; no border marks
+the focused pane, the cursor does. The panel, surface and outline colors are
+single values in the colors editor and may be RGB values such as `#22252b`,
+so they can be matched to your terminal's theme. The padding is made of thin
+panes tmux cannot tell apart from the rest, so a click on one simply hands
+focus back to the pane you were in. The tab menu's **Attach session** and the
+attachment shortcut work on all supported tmux versions.
 Once open, the chooser keeps its selected destination even if focus moves to
 another pane. If another viewer removes or changes that destination, attach again
 from the updated pane instead of replacing the peer's change.
 
-Click a numbered workspace button to switch, **+** beside the buttons to create a
-workspace, or **Workspaces… → Switch workspace** to see the full list. **Workspaces…**
-renames a workspace or deletes an empty one. **Tab actions…** also reorders tabs or moves one to another
+The workspace name at the top of the panel is the workspace chooser: click its
+**▾** (or right-click the name) to switch to another workspace, create one,
+rename it or delete an empty one; the workspace shortcuts cycle and select by
+number as before. The tab menu also reorders tabs or moves one to another
 workspace. Scroll the navigation panel with the wheel or its arrow controls.
 
 **Colors…** opens the color editor. Its last row, **Preset**, steps through the
@@ -86,7 +85,7 @@ The status line at the bottom of the panel shows a small light while the viewer
 is idle and its saved state is current; a message replaces it when something
 needs attention.
 
-**Exit viewer** or closing its terminal window leaves your saved tabs, normal
+**Detach** or closing the terminal window leaves your saved tabs, normal
 shells, running programs and agents available for reopening. Explicitly
 **closing a pane or tab ends its ordinary shells and their running programs**;
 attached external sessions keep running. This distinction also applies when
@@ -250,5 +249,5 @@ unverified; PTY checks with installed Ghostty terminfo are a separate result.
 
 Double-click the active tab name or the current workspace name beside the top +
 to edit that name in place. Enter saves; Escape or a click elsewhere cancels.
-The + creates a tab, and the numbered workspace buttons switch workspaces.
+The + on the tabs row creates a tab, and the ▾ beside the workspace name switches workspaces.
 Existing right-click menus and rename shortcuts remain available.

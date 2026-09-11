@@ -15,6 +15,7 @@ from tests.integration.support import (
     Client,
     FixtureResources,
     click_button,
+    content_panes,
     open_terminal,
     saved,
     sidebar,
@@ -308,7 +309,7 @@ def _standalone(resources: FixtureResources) -> None:
     client.pump(0.3)
     assert len(saved(library).space["tabs"]) == 2
     assert len(viewer.run("list-windows").splitlines()) == 1
-    assert len(viewer.run("list-panes").splitlines()) == 2
+    assert len(content_panes(viewer)) == 2
     raw_prefix(directory, library, client, viewer, shells)
 
     click_button(client, viewer, "Shortcuts")

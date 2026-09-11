@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from tests.integration.support import (
+    OUTLINE,
     Client,
     FixtureResources,
     click_button,
@@ -76,7 +77,7 @@ def _exercise(resources: FixtureResources) -> None:
         viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
         wait(
             client,
-            lambda: "Layouts saved" in viewer.run("capture-pane", "-p", "-t", "%0"),
+            lambda: "Detach" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
             "launched sidebar did not initialize",
         )
         return viewer

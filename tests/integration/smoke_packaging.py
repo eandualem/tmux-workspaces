@@ -14,7 +14,15 @@ from contextlib import ExitStack, chdir
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.integration.support import Client, click_attach, click_button, saved, wait
+from tests.integration.support import (
+    OUTLINE,
+    Client,
+    click_attach,
+    click_button,
+    content_panes,
+    saved,
+    wait,
+)
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.model import leaves
 from tmux_workspaces.shells import Shells
@@ -141,13 +149,13 @@ def exercise(source: Path, root: Path) -> None:
             return client
 
         def sidebar(viewer):
-            return viewer.run("capture-pane", "-p", "-t", "%0")
+            return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
 
         def initialize(client, prefix, manifest=None):
             manifest = manifest or (lambda: client.manifest(library))
             wait(client, manifest, "installed viewer did not create its runtime manifest")
             viewer = Tmux(json.loads(manifest().read_text())["viewer_socket"])
-            wait(client, lambda: "Layouts saved" in sidebar(viewer), "installed sidebar missing")
+            wait(client, lambda: "Detach" in sidebar(viewer), "installed sidebar missing")
 
             def installed_command():
                 for line in viewer.run("list-panes", "-F", "#{pane_start_command}").splitlines():
@@ -232,7 +240,7 @@ def exercise(source: Path, root: Path) -> None:
             click_button(client, viewer, label)
             wait(
                 client,
-                lambda count=count: len(viewer.run("list-panes").splitlines()) == count + 2,
+                lambda count=count: len(content_panes(viewer)) == count + 2,
                 "installed split button failed",
             )
         attachment_leaf = saved(library).pane["id"]
@@ -246,7 +254,7 @@ def exercise(source: Path, root: Path) -> None:
         click_button(client, viewer, "Installed work")
         wait(
             client,
-            lambda: len(viewer.run("list-panes").splitlines()) == 5,
+            lambda: len(content_panes(viewer)) == 5,
             "saved four-pane tab missing",
         )
         select_leaf(client, viewer, original_leaf)
@@ -270,13 +278,11 @@ def exercise(source: Path, root: Path) -> None:
         # Navigation records the live cwd and rendered ratios before snapshotting
         # persistence. Starting a foreground command must survive this switch too.
         click_button(client, viewer, other_tab)
-        wait(
-            client, lambda: len(viewer.run("list-panes").splitlines()) == 2, "new tab not selected"
-        )
+        wait(client, lambda: len(content_panes(viewer)) == 2, "new tab not selected")
         click_button(client, viewer, "Installed work")
         wait(
             client,
-            lambda: len(viewer.run("list-panes").splitlines()) == 5,
+            lambda: len(content_panes(viewer)) == 5,
             "return tab lost splits",
         )
         expected_identity = identity()
@@ -288,7 +294,7 @@ def exercise(source: Path, root: Path) -> None:
         def check_retained(client, viewer, label):
             wait(
                 client,
-                lambda: len(viewer.run("list-panes").splitlines()) == 5,
+                lambda: len(content_panes(viewer)) == 5,
                 "reopen lost splits",
             )
             assert saved(library).tab["name"] == "Installed work"

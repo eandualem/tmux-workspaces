@@ -32,23 +32,20 @@ pane/tab actions and workspace switching instead of ruled lines. Selecting
 another tab can move the following rows by one line as the detail row changes
 position.
 
-The footer is one plain list, one control per row: Tab actions…, Shortcuts,
-Colors…, Exit, then Workspaces… and the numbered workspace buttons, the
-selected one drawn as a filled block, with the accent + beside them creating a
-workspace. Splits, focus, pane cycling and attaching live in Tab actions…; a
-split opens as the same chooser as a new tab. The top + creates a tab.
-Double-click the active tab name or top workspace name to edit it in place. The
-bottom row is the status line: an accent light and `Layouts saved` while idle,
-a message otherwise.
+The panel is a rounded, outlined rectangle inset one cell inside its pane. Its
+first row is the workspace heading with a ▾ chooser at the right; the `tabs`
+label follows with the + that adds a tab; then the tab rows. The selected tab
+has a detail row saying what it holds, with a ⋯ that opens the tab menu. The
+bottom three rows are the application menu: Shortcuts, Colors…, Detach. A
+message row appears above them only while there is something to say; saving
+is quiet. Double-click the active tab name or the workspace name to edit it in
+place.
 
-Content panes keep the full available content height and are set apart from
-the panel and from each other by a band of the panel's own color rather than
-ruled borders; no border marks the focused pane. When the terminal has
-answered the background-color query, each pane's contents are inset by one
-blank column on each side; the sample launcher can force it with
-`--terminal-background` on `./run`. Tab actions… and the
-attachment shortcut both target the selected pane. Colors… in the panel
-switches presets and edits each role; see [THEMES.md](THEMES.md).
+Content panes keep the full available content height and sit on the surface
+color beside the panel; each is padded by one blank column on either side, and
+split panes are separated by one thin line in the outline color. No border
+marks the focused pane. Colors… in the panel switches presets and edits each
+role and ground; see [THEMES.md](THEMES.md).
 
 ## Try these interactions
 

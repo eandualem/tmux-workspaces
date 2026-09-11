@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.integration.support import FixtureResources, click_button, saved, wait, workspace_row
+from tests.integration.support import OUTLINE, FixtureResources, click_button, saved, wait
 from tmux_workspaces.application import start_demo
 from tmux_workspaces.tmux import Tmux
 
@@ -71,13 +71,13 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
         viewer = Tmux(runtime["viewer_socket"])
         wait(
             client,
-            lambda: "Layouts saved" in viewer.run("capture-pane", "-p", "-t", "%0"),
+            lambda: "Detach" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
             "sidebar failed to start",
         )
         return client, viewer, manifest
 
     def sidebar(viewer):
-        return viewer.run("capture-pane", "-p", "-t", "%0")
+        return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
 
     click = click_button
 
@@ -115,17 +115,17 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     assert "FIRST_WINDOW_MANAGER" in source.run("capture-pane", "-p", "-t", "=manager:")
     assert "SECOND_WINDOW_RESEARCHER" not in source.run("capture-pane", "-p", "-t", "=manager:")
     assert "SECOND_WINDOW_RESEARCHER" in source.run("capture-pane", "-p", "-t", "=researcher:")
-    click(first, first_view, "Workspaces…")
+    click(first, first_view, "▾")
     click(first, first_view, "New workspace")
     first.type("Shared research")
     click(first, first_view, "Save name")
     wait(
         second,
-        lambda: " 2 " in workspace_row(sidebar(second_view))[1],
+        lambda: len(saved(library).state["workspaces"]) == 2,
         "new workspace did not synchronize",
     )
     assert "1 researcher" in selected(second_view)
-    click(second, second_view, "Workspaces…")
+    click(second, second_view, "▾")
     click(second, second_view, "Switch workspace")
     click(second, second_view, "Shared research")
     wait(second, lambda: "No tabs yet" in sidebar(second_view), "shared workspace missing")
