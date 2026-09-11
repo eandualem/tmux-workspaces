@@ -596,4 +596,23 @@ def _click(client, viewer, text):
     # A one-glyph control sits at the right end of its hit area, so it is
     # clicked on the glyph itself; a word is clicked one cell in.
     offset = 1 if len(text) == 1 else 2
-    client.click(lines[row].index(text) + offset, row + top + 1)
+    before = "\n".join(lines)
+    for _attempt in range(3):
+        client.click(lines[row].index(text) + offset, row + top + 1)
+        # A row of an open menu always changes the panel when clicked: it
+        # opens another menu, closes this one or shows a message. A click that
+        # left the menu exactly as it was is one the loaded host dropped, so
+        # it is sent again; buttons on the plain panel are never repeated,
+        # since a second click on a name would begin renaming it.
+        if "‹ Back" not in before:
+            return
+        deadline = time.monotonic() + 1.5
+        while time.monotonic() < deadline:
+            try:
+                changed = sidebar() != before
+            except RuntimeError:
+                # The row ended the viewer (Detach, a refresh): that is the change.
+                return
+            if changed:
+                return
+            client.pump(0.1)
