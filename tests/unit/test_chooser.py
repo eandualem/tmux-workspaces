@@ -93,7 +93,8 @@ class ChooserDrawTests(unittest.TestCase):
         self.assertIn((1, module.TITLE), texts)
         self.assertIn((4, "  " + module.TERMINAL), texts)
         self.assertIn((5, module.ROSTER_HEADING), texts)
-        self.assertIn((6, "▸ work"), texts)
+        # The selected row is padded to the width so it reads as one bar.
+        self.assertIn((6, "▸ work"), [(row, text.rstrip()) for row, text in texts])
         self.assertEqual(hits, {4: 0, 6: 1})
         self.assertIn(module.HINT, [call.args[2] for call in screen.addnstr.call_args_list])
 

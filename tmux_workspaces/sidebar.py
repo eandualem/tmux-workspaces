@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import contextlib
 import curses
-import os
+import locale
 import textwrap
 import time
 from collections.abc import Callable
 
 from .controls import Actions, mouse_action, pane_choice
+from .discovery import Snapshot
 from .display import Display
 from .events import InputEvents
 from .keymap import ACTION_LABELS, DEFAULT_KEYMAP, KeymapFile, tmux_key_label
-from .menu import Entry, Selection
+from .menu import RULE, Entry, Selection
 from .model import LayoutConflict, Model, is_empty, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
@@ -27,6 +28,59 @@ from .theme_editor import FIELD_HINT, ThemeEditor, failed, failure, fit_labels, 
 
 def visible(text: str) -> str:
     return "".join(char for char in str(text) if char.isprintable())
+
+
+MENU_RULE = RULE
+
+# Glyphs a workspace may carry: one cell wide in the monospace fonts terminals
+# use, and common to their box-drawing and symbol ranges. A workspace without
+# one shows its number.
+WORKSPACE_ICONS: tuple[tuple[str, str], ...] = (
+    ("◆", "Diamond"),
+    ("●", "Circle"),
+    ("▲", "Triangle"),
+    ("■", "Square"),
+    ("★", "Star"),
+    ("✦", "Spark"),
+    ("◈", "Gem"),
+    ("⚑", "Flag"),
+    ("⌂", "House"),
+    ("✎", "Pencil"),
+    ("⚙", "Gear"),
+    ("♪", "Note"),
+)
+
+# Agent states as Backbone reports them, folded onto a few symbols that differ
+# in shape before they differ in color. Anything unlisted is an unknown state.
+STATE_SYMBOLS = {
+    "busy": "▶",
+    "starting": "▶",
+    "waiting_for_human": "!",
+    "blocked": "!",
+    "idle": "○",
+}
+STATE_NAMES = {
+    "busy": "working",
+    "starting": "starting",
+    "waiting_for_human": "waiting for you",
+    "blocked": "blocked",
+    "idle": "idle",
+    "unknown": "unknown",
+}
+LEGEND = (
+    ("▶", "working"),
+    ("!", "needs you: waiting or blocked"),
+    ("○", "idle"),
+    ("?", "state unknown"),
+)
+# Plain substitutes for a terminal that cannot show the symbols.
+ASCII_GLYPHS = {"▶": ">", "○": "o"}
+# The roster is bounded so the tab list keeps its room: at most this many
+# agent rows, and never fewer tab rows than this.
+MAX_ROSTER_ROWS = 6
+MIN_TAB_ROWS = 4
+# Sentinel: no roster has been read for the frame in progress.
+_UNREAD = object()
 
 
 class Sidebar:
@@ -43,8 +97,12 @@ class Sidebar:
         terminal_colors: int | None = None,
         relaunch=None,
         keymap_path=None,
+        emit: Callable[[str], None] | None = None,
     ):
         self.screen, self.model, self.store = screen, model, store
+        # Sends raw text to this pane's terminal: the palette definitions an
+        # RGB color needs. Absent in tests, so nothing recolors a test runner.
+        self.emit = emit
         self.source, self.display = source, display
         self.actions = actions
         self.shortcut_hints = shortcut_hints
@@ -80,9 +138,19 @@ class Sidebar:
         self.attach_target: tuple[str, str, str | None, str | None] | None = None
         self.selection = Selection()
         self.tab_offset = 0
+        self.roster_offset = 0
+        # Consecutive polls that found the keyboard focus away from the panel
+        # while a menu or editor was open.
+        self.away_polls = 0
+        # The interior rows the roster's agent rows occupy, for the wheel.
+        self.roster_span: tuple[int, int] | None = None
+        # The roster reading the frame being drawn works from; unread between frames.
+        self._frame_roster: Snapshot | object | None = _UNREAD
+        self.unicode = "utf" in (locale.getpreferredencoding(False) or "").lower()
         self.message = ""
         self.running = True
         self.last_frame = None
+        self.body = screen
 
     @property
     def offset(self) -> int:
@@ -120,8 +188,14 @@ class Sidebar:
     def install(self, theme) -> None:
         """Show a theme in place: four pair updates, no reopen and no redraw loop."""
         palette = theme.resolve(self.colors)
-        palette.install(curses)
+        palette.install(curses, self.emit)
         self.theme, self.palette, self.last_frame = theme, palette, None
+        # The panel color is tmux's to paint: the sidebar's background, empty
+        # panes and the band between panes, so the panel and the terminals are
+        # separated by a color gap rather than a line. A display that cannot
+        # be reached keeps its panel; the sidebar's own colors still apply.
+        with contextlib.suppress(RuntimeError, OSError, ValueError):
+            self.display.style_panel(theme.panel, theme.surface, theme.separator())
         # The role names the sidebar's own base, so its empty cells and the
         # cleared frame carry the configured background rather than the
         # terminal's, which is only visible once someone configures one.
@@ -396,7 +470,8 @@ class Sidebar:
     def draw_theme(self, height: int, width: int) -> tuple[int, int] | None:
         editor = self.theme_editor
         rows = editor.rows()
-        self.put(3, 1, FIELD_HINT if editor.field else hint(width - 2), self.style("accent"))
+        guide = FIELD_HINT if editor.field else hint(width - 2, editor.on_preset)
+        self.put(3, 1, guide, self.style("accent"))
         start, cursor = 4, None
         available = max(1, height - start - 6)
         offset = max(0, min(editor.index, len(rows) - available))
@@ -428,7 +503,7 @@ class Sidebar:
         self.button(height - 4, "Apply", lambda: self.theme_action(editor.apply), width=half)
         self.button(height - 4, "Cancel", lambda: self.theme_action(editor.cancel), x=1 + half)
         self.button(height - 3, "Restore defaults", lambda: self.theme_action(editor.defaults))
-        message = editor.message or self.describe(editor.target[0])
+        message = editor.message or editor.status() or self.describe(editor.target[0])
         self.put(height - 2, 1, message, self.message_style(message, bool(editor.message)))
         return cursor
 
@@ -642,7 +717,7 @@ class Sidebar:
             x, y = mouse
             height, width = self.screen.getmaxyx()
             if x < width and y < height:
-                self.mouse(x, y, curses.BUTTON1_PRESSED)
+                self.mouse(x - self.INSET, y - self.INSET, curses.BUTTON1_PRESSED)
             return
         if name == "refresh-viewer":
             # Replacing this viewer is deliberate, so an unfinished in-place
@@ -783,6 +858,12 @@ class Sidebar:
             self.display.select(self.model.tab["focus"])
             self.save()
 
+    def menu_next_pane(self) -> None:
+        """Next pane from the tab menu: the menu closes and typing follows the pane."""
+        self.next_pane()
+        if self.menu:
+            self.show()
+
     def rename(self, kind: str) -> None:
         self.open_menu("name", kind)
         if kind == "rename-tab" and self.model.tab:
@@ -851,13 +932,55 @@ class Sidebar:
         self.save()
         self.running = False
 
+    # The panel is drawn one cell inside the pane on every side: that cell is
+    # the outline, a rounded rectangle whose corners reveal the surface behind
+    # the pane. Everything else is drawn into ``body``, a window covering the
+    # interior, in the interior's own coordinates, so menus and editors keep
+    # their positions relative to the panel and only mouse input translates.
+    INSET = 1
+
+    def size(self) -> tuple[int, int]:
+        """Rows and columns inside the outline: the space the panel lays out in."""
+        height, width = self.screen.getmaxyx()
+        return max(0, height - 2 * self.INSET), max(0, width - 2 * self.INSET)
+
+    def interior(self):
+        """The window the panel draws into, made anew for the current size."""
+        height, width = self.size()
+        if height < 1 or width < 1:
+            return self.screen
+        try:
+            body = self.screen.derwin(height, width, self.INSET, self.INSET)
+        except curses.error:
+            return self.screen
+        with contextlib.suppress(curses.error):
+            body.bkgdset(" ", self.style("normal"))
+        return body
+
+    def frame(self) -> None:
+        """Draw the outline: thin lines with rounded corners, on the surface.
+
+        The bottom-right cell is inserted rather than added, since curses
+        refuses to add a character in the last cell of the last row.
+        """
+        height, width = self.screen.getmaxyx()
+        if height < 2 or width < 2:
+            return
+        style = self.style("outline")
+        with contextlib.suppress(curses.error):
+            self.screen.addnstr(0, 0, "╭" + "─" * (width - 2), width - 1, style)
+            self.screen.insstr(0, width - 1, "╮", style)
+            for row in range(1, height - 1):
+                self.screen.addnstr(row, 0, "│", 1, style)
+                self.screen.insstr(row, width - 1, "│", style)
+            self.screen.addnstr(height - 1, 0, "╰" + "─" * (width - 2), width - 1, style)
+            self.screen.insstr(height - 1, width - 1, "╯", style)
+
     def put(self, y: int, x: int, text: str, style: int = 0, width: int | None = None) -> None:
-        height, columns = self.screen.getmaxyx()
+        height, columns = self.size()
         if 0 <= y < height and 0 <= x < columns:
             with contextlib.suppress(curses.error):
-                self.screen.addnstr(
-                    y, x, visible(text), min(width or columns, columns - x - 1), style
-                )
+                self.body.addnstr(y, x, visible(text), min(width or columns, columns - x), style)
 
     def button(
         self,
@@ -869,10 +992,13 @@ class Sidebar:
         width: int | None = None,
         active: bool = False,
         context: Callable | None = None,
+        style: int | None = None,
     ) -> None:
-        columns = self.screen.getmaxyx()[1]
-        width = width or columns - x - 1
-        self.put(y, x, text.ljust(width), self.style("active" if active else "normal"), width)
+        columns = self.size()[1]
+        width = width or columns - x
+        if style is None:
+            style = self.style("active" if active else "normal")
+        self.put(y, x, text.ljust(width), style, width)
         self.hits.append((y, x, x + width, action))
         if context:
             self.context_hits.append((y, x, x + width, context))
@@ -886,7 +1012,7 @@ class Sidebar:
             text = f"{self.keymap.label(action, command=command)} {ACTION_LABELS[action]}"
             # Custom combinations and aliases may exceed navigation width. Wrap
             # them into scrollable rows instead of hiding the action or a key.
-            for line in textwrap.wrap(text, width=max(1, self.screen.getmaxyx()[1] - 2)):
+            for line in textwrap.wrap(text, width=max(1, self.size()[1] - 2)):
                 options.append((line, lambda action=action: self.action(action)))
         return options
 
@@ -932,8 +1058,14 @@ class Sidebar:
                 for space in self.workspace_options()
             ]
         if self.menu == "tab":
+            # Pane actions live here rather than as sidebar buttons: the panel
+            # keeps one plain list, and a split opens as a chooser anyway.
             return [
                 ("Rename tab", lambda: self.rename("rename-tab")),
+                ("Split right", lambda: self.split("right")),
+                ("Split below", lambda: self.split("below")),
+                ("Show layout" if self.model.state["focus"] else "Focus pane", self.toggle_focus),
+                ("Next pane", self.menu_next_pane),
                 ("Move tab up", lambda: self.move_tab(-1)),
                 ("Move tab down", lambda: self.move_tab(1)),
                 ("Move to workspace", lambda: self.open_menu("move")),
@@ -947,10 +1079,72 @@ class Sidebar:
                 ("Switch workspace", lambda: self.open_menu("spaces")),
                 ("New workspace", lambda: self.rename("new-workspace")),
                 ("Rename workspace", lambda: self.rename("rename-workspace")),
+                ("Set icon…", lambda: self.open_menu("icon")),
                 ("Delete empty workspace", self.delete_workspace),
-                ("Colors…", self.open_theme),
             ]
+        if self.menu == "icon":
+            return [
+                *(
+                    (f"{glyph}  {label}", lambda glyph=glyph: self.set_icon(glyph))
+                    for glyph, label in WORKSPACE_ICONS
+                ),
+                ("Number", lambda: self.set_icon(None)),
+            ]
+        if self.menu == "configure":
+            # Everything infrequent in one place; leaving last, after a rule,
+            # and named for what it does: shells and attached sessions keep running.
+            rows: list[tuple[str, Callable]] = [
+                ("Colors…", self.open_theme),
+                ("Shortcuts", lambda: self.open_menu("shortcuts")),
+                ("Refresh viewer…", self.refresh_viewer),
+            ]
+            if self.roster(agents) is not None:
+                mark = "x" if self.show_agents else " "
+                rows += [
+                    (f"[{mark}] Show agent status", self.toggle_agents),
+                    ("Agent status…", lambda: self.open_menu("status")),
+                ]
+            return [*rows, (MENU_RULE, lambda: None), ("Detach", self.quit)]
+        if self.menu == "status":
+            return self.status_options()
         return []
+
+    def status_options(self) -> list[tuple[str, Callable]]:
+        """The roster in full: every active agent with its state spelled out,
+        how many are offline, and the legend for the symbols."""
+
+        def nothing() -> None:
+            return None
+
+        roster = self.roster()
+        if roster is None:
+            rows = [("No agent source connected", nothing)]
+        elif roster.stale:
+            rows = [("Roster unavailable", nothing)]
+            if roster.error:
+                rows += [(line, nothing) for line in self.wrap(roster.error)]
+        else:
+            entries = self.roster_entries(roster)
+            rows = [
+                (f"{self.symbol(state)} {name} · {self.state_name(state)}", nothing)
+                for name, state in entries
+            ] or [("No active agents", nothing)]
+            offline = len(roster.sessions) - len(entries)
+            if offline:
+                rows.append((f"{offline} offline", nothing))
+        legend = [(f"{self.glyph(symbol)} {text}", nothing) for symbol, text in LEGEND]
+        return [*rows, (MENU_RULE, nothing), *legend]
+
+    def wrap(self, text: str) -> list[str]:
+        return textwrap.wrap(text, width=max(1, self.size()[1] - 2), break_on_hyphens=False)
+
+    def set_icon(self, glyph: str | None) -> None:
+        """Give the current workspace an icon, or none, and show the row again."""
+        if glyph is None:
+            self.model.space.pop("icon", None)
+        else:
+            self.model.space["icon"] = glyph
+        self.show()
 
     def workspace_options(self) -> list[dict]:
         """Workspaces the open list offers, in the order _options() draws them."""
@@ -974,6 +1168,8 @@ class Sidebar:
             keys = ["workspace:" + space["id"] for space in spaces]
         elif self.menu == "agents":
             keys = ["session:" + label for label, _ in options]
+        elif self.menu in {"configure", "status"}:
+            keys = [f"row:{index}" for index in range(len(options))]
         else:
             keys = [f"row:{index}:{label}" for index, (label, _) in enumerate(options)]
         rows = zip(keys, options, strict=True)
@@ -990,19 +1186,19 @@ class Sidebar:
         """
         if agents is None:
             agents = self.source.snapshot()[0]
-        start = (
-            5
-            if self.menu == "agents"
-            else 4 + max(0, len(self.notes(self.screen.getmaxyx()[1])) - 1)
-        )
-        available = max(1, self.screen.getmaxyx()[0] - start - 3)
+        start = 5 if self.menu == "agents" else 4 + max(0, len(self.notes(self.size()[1])) - 1)
+        available = max(1, self.size()[0] - start - 3)
         rows = self.selection.show(self.menu_entries(agents), available, drawn=drawn)
         return rows, start
 
     def roomy(self) -> bool:
-        """Whether the panel is large enough to draw a menu instead of its warning."""
-        height, width = self.screen.getmaxyx()
-        return height >= 16 and width >= 18
+        """Whether the panel is large enough to draw a menu instead of its warning.
+
+        Measured inside the outline: a pane of sixteen rows, the floor the
+        panel has always had, leaves fourteen rows of interior.
+        """
+        height, width = self.size()
+        return height >= 14 and width >= 16
 
     def move_selection(self, step: int) -> None:
         self.selection.move(step)
@@ -1030,13 +1226,13 @@ class Sidebar:
             return []
         return textwrap.wrap(
             self.refresh_command or "",
-            width=max(1, self.screen.getmaxyx()[1] - 2),
+            width=max(1, self.size()[1] - 2),
             break_on_hyphens=False,
         )
 
     def command_rows(self, start: int) -> list[str]:
         lines = self.command_lines()
-        available = max(1, self.screen.getmaxyx()[0] - start - 3)
+        available = max(1, self.size()[0] - start - 3)
         self.command_offset = min(max(0, self.command_offset), max(0, len(lines) - available))
         return lines[self.command_offset : self.command_offset + available]
 
@@ -1060,41 +1256,174 @@ class Sidebar:
         for line in lines:
             wrapped += textwrap.wrap(line, width=max(1, width - 2), break_on_hyphens=False)
         # Keep room for the option row and the scroll controls on short screens.
-        return tuple(wrapped[: max(1, self.screen.getmaxyx()[0] - 9)])
+        return tuple(wrapped[: max(1, self.size()[0] - 9)])
 
-    def tab_capacity(self) -> int:
-        # One row per tab, plus one detail row for the active tab.
-        return max(1, self.screen.getmaxyx()[0] - 13)
+    def status_text(self) -> str:
+        """What the message row shows, or nothing: saving is quiet."""
+        error = self.source.snapshot()[1] if self.source else ""
+        if error or self.message:
+            return error or self.message
+        if self.display.small and self.model.tab:
+            return "Narrow: focus view"
+        return ""
 
-    def workspace_buttons(self, row: int, width: int) -> None:
+    def footer_rows(self) -> int:
+        """Rows the bottom of the panel keeps: a blank row that carries the
+        message when there is one, Configure…, a blank row, the workspace
+        icons, and a blank row before the outline."""
+        return 5
+
+    # -- the agent roster --------------------------------------------------
+
+    def roster(self, agents: dict | None = None) -> Snapshot | None:
+        """The agents and states the source reports, or None without a
+        provider that reports states (plain tmux discovery knows names only).
+
+        A frame reads the source once: ``draw`` stores that reading, and every
+        sizing or menu step of the same frame reuses it, so a poll landing
+        mid-frame cannot clip a row. Callers outside a frame read afresh.
+        """
+        if self._frame_roster is not _UNREAD:
+            return self._frame_roster
+        reader = getattr(self.source, "roster", None)
+        snapshot = reader() if callable(reader) else None
+        return snapshot if isinstance(snapshot, Snapshot) else None
+
+    @property
+    def show_agents(self) -> bool:
+        """The saved preference; the roster is shown unless it was turned off."""
+        return self.model.state.get("show_agents", True) is not False
+
+    def toggle_agents(self) -> None:
+        self.model.state["show_agents"] = not self.show_agents
+        self.roster_offset = 0
+        self.save()
+
+    @staticmethod
+    def roster_entries(roster: Snapshot) -> list[tuple[str, str]]:
+        """Active agents as (name, state): everything but offline, in a name
+        order that does not move as states change."""
+        entries = []
+        for name, item in roster.sessions.items():
+            state = item.get("state") if isinstance(item, dict) else None
+            state = state if isinstance(state, str) and state else "unknown"
+            if state != "offline":
+                entries.append((name, state))
+        return sorted(entries, key=lambda entry: (entry[0].casefold(), entry[0]))
+
+    def glyph(self, char: str) -> str:
+        return char if self.unicode else ASCII_GLYPHS.get(char, char)
+
+    def symbol(self, state: str) -> str:
+        return self.glyph(STATE_SYMBOLS.get(state, "?"))
+
+    @staticmethod
+    def state_name(state: str) -> str:
+        return STATE_NAMES.get(state, state.replace("_", " "))
+
+    def roster_rows(self) -> int:
+        """Rows the roster takes, its label included; zero when it is hidden,
+        absent, or the window is too short to keep the tab list usable."""
+        roster = self.roster()
+        if roster is None or not self.show_agents:
+            return 0
+        room = self.size()[0] - 3 - self.footer_rows() - MIN_TAB_ROWS
+        if room < 2:
+            return 0
+        wanted = 1 + max(1, min(MAX_ROSTER_ROWS, len(self.roster_entries(roster))))
+        return min(wanted, room)
+
+    def draw_roster(self, top: int, rows: int, width: int, roster: Snapshot) -> None:
+        """The section: its label, then one row per active agent — a symbol
+        in a fixed slot and the name — or one quiet row saying why not."""
+        muted = self.style("muted")
+        self.put(top, 1, "Agents", muted)
+        visible_rows = rows - 1
+        self.roster_span = (top + 1, top + rows)
+        if roster.stale:
+            self.put(top + 1, 1, "Roster unavailable", muted, width - 2)
+            return
+        entries = self.roster_entries(roster)
+        if not entries:
+            self.put(top + 1, 1, "No active agents", muted, width - 2)
+            return
+        self.roster_offset = min(self.roster_offset, max(0, len(entries) - visible_rows))
+        if len(entries) > visible_rows:
+            count = str(len(entries))
+            self.put(top, width - 6 - len(count), count, muted)
+            self.button(top, "↑", lambda: self.scroll_roster(-1), x=width - 5, width=2, style=muted)
+            self.button(top, "↓", lambda: self.scroll_roster(1), x=width - 3, width=2, style=muted)
+        shown = entries[self.roster_offset : self.roster_offset + visible_rows]
+        for index, (name, state) in enumerate(shown):
+            row = top + 1 + index
+            symbol = self.symbol(state)
+            style = (
+                self.style("accent") | curses.A_BOLD
+                if symbol == "!"
+                else self.style("normal")
+                if symbol == self.glyph("▶")
+                else muted
+            )
+            self.put(row, 1, symbol, style, 1)
+            self.put(row, 3, visible(name), self.style("normal"), width - 4)
+            self.hits.append((row, 0, width, lambda: self.open_menu("status")))
+
+    def scroll_roster(self, amount: int) -> None:
+        self.roster_offset = max(0, self.roster_offset + amount)
+
+    def workspace_icon(self, space: dict, index: int) -> str:
+        """The workspace's glyph, or its number when none is set."""
+        icon = space.get("icon")
+        return icon if isinstance(icon, str) and icon.isprintable() and icon else str(index + 1)
+
+    def icon_row(self, row: int, width: int) -> None:
+        """One-click workspace switching: fixed three-cell slots, the current
+        one filled; when the row is full, the last slot opens the full list."""
         spaces = self.model.state["workspaces"]
-        selected = spaces.index(self.model.space)
-        button_width = max(5, len(str(len(spaces))) + 4)
-        overflow = len(spaces) * (button_width + 1) > width - 6
-        if overflow:
-            button_width = min(button_width, width - 12)
-            count = max(1, (width - 12) // (button_width + 1))
-            left = 4
-            self.button(row, "[<]", lambda: self.next_workspace(-1), width=3)
-            self.button(row, "[>]", lambda: self.next_workspace(1), x=width - 8, width=3)
-        else:
-            count, left = len(spaces), 1
-        start = max(0, min(selected - count // 2, len(spaces) - count))
-        for index, space in enumerate(spaces[start : start + count], start):
+        slots = max(1, (width - 2) // 4)
+        overflow = len(spaces) > slots
+        shown = spaces[: slots - 1] if overflow else spaces
+        for index, space in enumerate(shown):
+            active = space["id"] == self.model.space["id"]
+            label = self.workspace_icon(space, index)
+            if len(label) > 2:
+                label = label[:2]
             self.button(
                 row,
-                f"[{index + 1:^{button_width - 2}}]",
+                f"{label:^3}",
                 lambda space=space: self.choose_workspace(space),
-                x=left + (index - start) * (button_width + 1),
-                width=button_width,
-                active=space["id"] == self.model.space["id"],
+                x=1 + index * 4,
+                width=3,
+                active=active,
                 context=lambda space=space: self.context_workspace(space),
+                style=None if active else self.style("muted"),
             )
-        self.button(row, "[+]", lambda: self.rename("new-workspace"), x=width - 4, width=3)
+        if overflow:
+            self.button(
+                row,
+                " … ",
+                lambda: self.open_menu("spaces"),
+                x=1 + len(shown) * 4,
+                width=3,
+                style=self.style("muted"),
+            )
+
+    def tab_capacity(self) -> int:
+        """One row per tab: the heading, a blank row and the section label sit
+        above, the roster and the footer below."""
+        return max(1, self.size()[0] - 3 - self.footer_rows() - self.roster_rows())
 
     def draw(self) -> None:
+        self._frame_roster = _UNREAD
+        try:
+            self._draw()
+        finally:
+            self._frame_roster = _UNREAD
+
+    def _draw(self) -> None:
         agents, error = self.source.snapshot()
-        height, width = self.screen.getmaxyx()
+        roster = self._frame_roster = self.roster()
+        height, width = self.size()
         # Reconcile the open menu before the frame is compared: a skipped repaint
         # must still leave the active row and its options current for the keyboard.
         # A frame too small for the menu paints a warning instead, so it displays
@@ -1110,6 +1439,10 @@ class Sidebar:
         frame = (
             repr(self.model.state),
             repr(agents),
+            # The roster's observation time changes with every poll; only what
+            # it says matters to the frame.
+            (repr(roster.sessions), roster.error, roster.stale) if roster else None,
+            self.roster_offset,
             error,
             height,
             width,
@@ -1133,25 +1466,31 @@ class Sidebar:
             return
         self.last_frame = frame
         self.screen.erase()
+        self.body = self.interior()
         with contextlib.suppress(curses.error):
             curses.curs_set(0)
         self.name_hits.clear()
         cursor = None
         self.hits.clear()
         self.context_hits.clear()
+        self.roster_span = None
+        self.frame()
         if not self.roomy():
             self.put(0, 0, "Enlarge terminal", self.style("normal"))
-            self.button(2, "Exit viewer", self.quit)
+            self.button(2, "Detach", self.quit)
             self.screen.refresh()
             return
         if self.menu and self.menu != "inline-name":
-            self.button(0, "< Back", self.show)
+            self.button(0, "‹ Back", self.show, style=self.style("accent"))
             titles = {
                 "agents": "Attach to selected pane",
                 "spaces": "Workspaces",
                 "move": "Move tab to",
                 "tab": "Tab options",
                 "workspace": "Workspace options",
+                "icon": "Workspace icon",
+                "configure": "Configure",
+                "status": "Agent status",
                 "name": "Type a name",
                 "theme": (
                     "Viewer colors · preview"
@@ -1190,6 +1529,9 @@ class Sidebar:
                 for row, line in enumerate(command_rows, start):
                     self.put(row, 1, line, self.style("normal"))
                 for row, entry in enumerate(rows, start):
+                    if entry.label == MENU_RULE:
+                        self.put(row, 1, "─" * (width - 2), self.style("muted"))
+                        continue
                     self.button(
                         row,
                         entry.label,
@@ -1211,29 +1553,67 @@ class Sidebar:
             if self.menu_message:
                 self.put(height - 1, 1, self.menu_message, self.style("accent"))
         else:
-            workspace_edit = self.inline_editor and self.inline_target[1] is None
-            self.name_hits.append((0, 1, width - 7, "workspace:" + self.model.space["id"]))
+            # The heading is the workspace chooser: the icon and name, a
+            # chevron, and one click to switch, create or rename workspaces.
+            # A double click renames in place.
+            workspace_edit = bool(self.inline_editor and self.inline_target[1] is None)
+            tab_edit = bool(self.inline_editor and self.inline_target[1] is not None)
+            name_width = width - 5
+            self.name_hits.append((0, 1, 1 + name_width, "workspace:" + self.model.space["id"]))
             header = self.style("normal") | curses.A_BOLD
-            self.put(0, 1, self.model.space["name"], header, width - 8)
+            icon = self.model.space.get("icon")
+            icon = icon if isinstance(icon, str) and icon.isprintable() and icon else ""
+            title = visible(self.model.space["name"])
+            room = name_width - (len(icon) + 1 if icon else 0)
+            if len(title) > room:
+                title = title[: max(0, room - 1)] + "…"
+            if icon and not workspace_edit:
+                self.put(0, 1, icon, header, len(icon))
+                self.put(0, 1 + len(icon) + 1, title, header, room)
+            else:
+                self.put(0, 1, title, header, name_width)
             if workspace_edit:
-                cursor = self.draw_inline(0, 1, width - 8)
+                cursor = self.draw_inline(0, 1, name_width)
             self.context_hits.append(
-                (0, 1, width - 7, lambda: self.context_workspace(self.model.space))
+                (0, 1, 1 + name_width, lambda: self.context_workspace(self.model.space))
             )
-            self.button(0, "[ + ]", self.new_tab, x=width - 6, width=5)
+            # The chevron opens the chooser: switch, create, rename or delete.
+            self.button(
+                0,
+                " ▾",
+                lambda: self.open_menu("workspace"),
+                x=width - 3,
+                width=2,
+                style=self.style("muted"),
+                context=lambda: self.context_workspace(self.model.space),
+            )
             hint = "Enter save · Esc cancel" if width >= 25 else "↵ save · Esc cancel"
-            self.put(
-                1,
-                1,
-                hint if workspace_edit else "─" * (width - 2),
-                self.style("accent" if workspace_edit else "muted"),
+            editing = workspace_edit or tab_edit
+            # The row under the heading is blank; while a name is edited in
+            # place it carries the editing hint. The section label keeps the
+            # add button and, when the list overflows, its scroll arrows, all
+            # on the right inset.
+            if editing:
+                self.put(1, 1, hint, self.style("accent"))
+            self.put(2, 1, "tabs", self.style("muted"))
+            self.button(
+                2,
+                "  +",
+                self.new_tab,
+                x=width - 5,
+                width=4,
+                style=self.style("accent") | curses.A_BOLD,
             )
             tab = self.model.tab
             tabs = self.model.space["tabs"]
-            bottom = height - 9
+            status = self.status_text()
             available = self.tab_capacity()
             self.tab_offset = min(self.tab_offset, max(0, len(tabs) - available))
-            row = 2
+            if len(tabs) > available:
+                muted = self.style("muted")
+                self.button(2, "↑", lambda: self.scroll(-1), x=width - 9, width=2, style=muted)
+                self.button(2, "↓", lambda: self.scroll(1), x=width - 7, width=2, style=muted)
+            row = 3
             for index, item in enumerate(
                 tabs[self.tab_offset : self.tab_offset + available], self.tab_offset
             ):
@@ -1246,83 +1626,62 @@ class Sidebar:
 
                 members = leaves(item["tree"])
                 active = item == tab
-                prefix = f"{'▶' if active else ' '} {index + 1} "
+                # The row is one run so the selection reads as a bar; the text
+                # keeps one cell of air from the interior's edge on each side.
+                # The selected row also carries the tab's menu behind an
+                # ellipsis on the right, before its pane count.
+                prefix = f" {'▶' if active else ' '} {index + 1} "
                 count = str(len(members))
-                room = width - len(prefix) - len(count) - 3
+                tail = 5 if active else 2
+                room = width - len(prefix) - len(count) - tail
                 name = visible(item["name"])
                 if len(name) > room:
                     name = name[: max(0, room - 1)] + "…"
-                self.button(row, prefix + name, action, x=0, active=active, context=context)
+                style = self.style("active" if active else "normal")
+                self.put(row, 0, (prefix + name).ljust(width), style, width)
+                self.hits.append((row, 0, width - 3 if active else width, action))
+                self.context_hits.append((row, 0, width, context))
+                if not active:
+                    # At rest the number is a secondary detail beside the name.
+                    self.put(row, 3, str(index + 1), self.style("muted"))
                 self.put(
                     row,
-                    width - len(count) - 2,
+                    width - len(count) - (4 if active else 1),
                     count,
                     self.style("active" if active else "muted"),
                 )
                 self.name_hits.append((row, len(prefix), len(prefix) + room, item["id"]))
-                tab_edit = active and self.inline_editor and self.inline_target[1] == item["id"]
-                if tab_edit:
+                editing_this = active and tab_edit and self.inline_target[1] == item["id"]
+                if editing_this:
                     cursor = self.draw_inline(row, len(prefix), room)
-                row += 1
-                if not active:
-                    continue
-                attached = [p["agent"] for p in members if p["agent"]]
-                if len(members) > 1:
-                    label = f"{len(members)} panes"
-                    if attached:
-                        label += f" · {len(attached)} attached"
-                elif attached:
-                    source_socket = members[0].get("source_socket") or self.source.socket
-                    if os.path.realpath(source_socket) != os.path.realpath(self.source.socket):
-                        state = "saved server"
-                    else:
-                        session = agents.get(attached[0], {})
-                        state = (
-                            session.get("state", "offline") if session.get("online") else "offline"
-                        )
-                    label = attached[0] + " · " + state
-                else:
-                    label = "Empty" if is_empty(members[0]) else "Shell"
-                if tab_edit:
-                    label = hint
-                self.put(row, 1 if tab_edit else 3, label, self.style("accent"))
-                self.hits.append((row, 0, width - 1, action))
-                self.context_hits.append((row, 0, width - 1, context))
+                if active and not editing_this:
+                    self.button(
+                        row,
+                        "⋯",
+                        lambda: self.open_menu("tab"),
+                        x=width - 3,
+                        width=2,
+                        style=style,
+                    )
                 row += 1
             if not tabs:
-                self.put(2, 1, "No tabs yet", self.style("muted"))
-                self.button(3, "Open a terminal +", self.new_tab)
-            half = (width - 2) // 2
-            self.put(bottom - 1, 1, "─" * (width - 2), self.style("muted"))
-            if len(tabs) > available:
-                self.button(bottom - 1, "↑ Tabs", lambda: self.scroll(-1), width=half)
-                self.button(bottom - 1, "↓ Tabs", lambda: self.scroll(1), x=1 + half)
-            self.button(bottom, "Split →", lambda: self.split("right"), width=half)
-            self.button(bottom, "Split ↓", lambda: self.split("below"), x=1 + half)
-            label = "Layout" if self.model.state["focus"] else "Focus"
-            self.button(bottom + 1, label, self.toggle_focus, width=half)
-            self.button(bottom + 1, "Next →", self.next_pane, x=1 + half)
-            self.button(bottom + 2, "Attach session…", lambda: self.open_menu("agents"))
-            self.put(bottom + 2, 1, "Attach session…", self.style("accent"))
-            self.button(bottom + 3, "Tab actions…", lambda: self.open_menu("tab"))
-            self.button(
-                bottom + 4, "Shortcuts", lambda: self.open_menu("shortcuts"), width=width - 8
-            )
-            self.button(bottom + 4, "Exit", self.quit, x=width - 6, width=5)
-            self.put(bottom + 5, 1, "─" * (width - 2), self.style("muted"))
-            self.button(bottom + 6, "Workspaces…", lambda: self.open_menu("workspace"), width=half)
-            self.button(bottom + 6, "Colors…", self.open_theme, x=1 + half)
-            self.workspace_buttons(bottom + 7, width)
-            status = (
-                error
-                or self.message
-                or ("Narrow: focus view" if self.display.small and tab else "Layouts saved")
-            )
-            self.put(bottom + 8, 1, status, self.message_style(status, bool(error or self.message)))
+                self.put(3, 1, "No tabs yet", self.style("muted"))
+                self.button(4, "Open a terminal +", self.new_tab)
+            # The bottom, from the outline up: a blank row, the workspace
+            # icons, a blank row, Configure…, then a row that is blank unless
+            # there is something to say. The roster, when shown, ends there.
+            bottom = height - self.footer_rows()
+            roster_rows = self.roster_rows()
+            if roster_rows and roster is not None:
+                self.draw_roster(bottom - roster_rows, roster_rows, width, roster)
+            if status:
+                self.put(bottom, 1, status, self.message_style(status, bool(error or self.message)))
+            self.button(bottom + 1, "Configure…", lambda: self.open_menu("configure"))
+            self.icon_row(bottom + 3, width)
         if cursor:
             with contextlib.suppress(curses.error):
                 curses.curs_set(1)
-                self.screen.move(*cursor)
+                self.body.move(*cursor)
         self.screen.refresh()
 
     def scroll(self, amount: int) -> None:
@@ -1338,16 +1697,29 @@ class Sidebar:
         else:
             self.tab_offset = max(0, self.tab_offset + amount)
 
+    def wheel(self, y: int, amount: int) -> None:
+        """The wheel scrolls the list under the pointer: the roster over its
+        rows, otherwise whatever the panel is showing."""
+        span = self.roster_span
+        if not self.menu and span and span[0] <= y < span[1]:
+            self.scroll_roster(amount)
+        else:
+            self.scroll(amount)
+
     def mouse(self, x: int, y: int, buttons: int) -> None:
         left = buttons & (
             curses.BUTTON1_PRESSED | curses.BUTTON1_CLICKED | curses.BUTTON1_DOUBLE_CLICKED
         )
         right = buttons & (curses.BUTTON3_PRESSED | curses.BUTTON3_CLICKED)
         if buttons & curses.BUTTON4_PRESSED:
-            self.scroll(-1)
+            self.wheel(y, -1)
         elif buttons & getattr(curses, "BUTTON5_PRESSED", 0):
-            self.scroll(1)
+            self.wheel(y, 1)
         elif left or right:
+            height, width = self.size()
+            if not (0 <= x < width and 0 <= y < height):
+                # The outline itself is not a control.
+                return
             field = next((h for h in self.name_hits if h[0] == y and h[1] <= x < h[2]), None)
             edit_key = (
                 self.inline_target[1] or "workspace:" + self.inline_target[0]
@@ -1372,7 +1744,7 @@ class Sidebar:
         if key == curses.KEY_MOUSE:
             with contextlib.suppress(curses.error):
                 _, x, y, _, buttons = curses.getmouse()
-                self.mouse(x, y, buttons)
+                self.mouse(x - self.INSET, y - self.INSET, buttons)
         elif self.inline_editor:
             if key in ("\n", "\r"):
                 self.accept_inline()
@@ -1410,8 +1782,8 @@ class Sidebar:
             curses.KEY_DOWN: 1,
             "\x10": -1,
             "\x0e": 1,
-            curses.KEY_PPAGE: -max(1, self.screen.getmaxyx()[0] - 9),
-            curses.KEY_NPAGE: max(1, self.screen.getmaxyx()[0] - 9),
+            curses.KEY_PPAGE: -max(1, self.size()[0] - 9),
+            curses.KEY_NPAGE: max(1, self.size()[0] - 9),
             curses.KEY_HOME: -len(self.options) or None,
             curses.KEY_END: len(self.options) or None,
         }
@@ -1427,8 +1799,8 @@ class Sidebar:
                 curses.KEY_DOWN: 1,
                 "\x10": -1,
                 "\x0e": 1,
-                curses.KEY_PPAGE: -max(1, self.screen.getmaxyx()[0] - 9),
-                curses.KEY_NPAGE: max(1, self.screen.getmaxyx()[0] - 9),
+                curses.KEY_PPAGE: -max(1, self.size()[0] - 9),
+                curses.KEY_NPAGE: max(1, self.size()[0] - 9),
                 curses.KEY_HOME: -len(self.command_lines()),
                 curses.KEY_END: len(self.command_lines()),
             }
@@ -1508,8 +1880,16 @@ class Sidebar:
                             # The user is typing in a pane they chose. End the
                             # overlay there rather than pulling focus back to a
                             # menu they can no longer see themselves using.
-                            self.clear_inline()
-                            self.close_menu()
+                            # Focus can also sit elsewhere for one poll while
+                            # tmux finishes selecting the panel after the click
+                            # that opened the menu, so it takes two polls in a
+                            # row to count as the user's choice.
+                            self.away_polls += 1
+                            if self.away_polls >= 2:
+                                self.clear_inline()
+                                self.close_menu()
+                        else:
+                            self.away_polls = 0
                         if not self.menu:
                             before = repr(self.model.tab)
                             before_tree = repr(self.model.tab["tree"]) if self.model.tab else None

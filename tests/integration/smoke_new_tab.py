@@ -33,7 +33,7 @@ def _exercise(resources: FixtureResources) -> None:
     wait(client, lambda: client.manifest(library), "viewer did not start")
     runtime = json.loads(client.manifest(library).read_text())
     viewer, source = Tmux(runtime["viewer_socket"]), Tmux(runtime["source_socket"])
-    wait(client, lambda: "Layouts saved" in sidebar(viewer), "sidebar did not initialize")
+    wait(client, lambda: "Configure…" in sidebar(viewer), "sidebar did not initialize")
 
     def key(name: str) -> None:
         client.type("\x07" + name)
@@ -78,12 +78,11 @@ def _exercise(resources: FixtureResources) -> None:
     assert online, "demo fixture sessions missing"
 
     # 1. A new tab is empty: no shell is created for it, the pane offers the choice,
-    #    the sidebar says so, and the pane has keyboard focus.
+    #    and the pane has keyboard focus.
     key("t")
     wait(client, lambda: len(saved(library).space["tabs"]) == 2, "new tab was not created")
     assert saved(library).pane.get("empty") is True, "the new tab did not open empty"
     wait(client, chooser_shown, "the new pane did not show the chooser")
-    wait(client, lambda: "Empty" in sidebar(viewer), "the sidebar did not label the empty pane")
     text = content()
     for name in online:
         assert name in text, f"the chooser did not list {name}\n{text}"
@@ -100,7 +99,6 @@ def _exercise(resources: FixtureResources) -> None:
     wait(client, lambda: not saved(library).pane.get("empty"), "Enter did not fill the pane")
     assert saved(library).pane["agent"] is None
     wait(client, shell_exists, "the chosen terminal was not created")
-    wait(client, lambda: "Shell" in sidebar(viewer), "the sidebar still shows an empty pane")
     wait(client, lambda: shell_attached(shells, shell_name()), "the chosen terminal did not attach")
     client.type("printf 'CHOSEN_%s\\n' TERMINAL\r")
     wait(
@@ -176,7 +174,7 @@ def _exercise(resources: FixtureResources) -> None:
     wait(client, lambda: client.manifest(library), "viewer did not reopen")
     runtime = json.loads(client.manifest(library).read_text())
     viewer = Tmux(runtime["viewer_socket"])
-    wait(client, lambda: "Layouts saved" in sidebar(viewer), "reopened sidebar did not initialize")
+    wait(client, lambda: "Configure…" in sidebar(viewer), "reopened sidebar did not initialize")
     assert saved(library).pane.get("empty") is True, "the empty pane was filled by a reopen"
     wait(client, chooser_shown, "the empty pane did not reopen as a chooser")
     assert kept_shell in shells.run("list-sessions", "-F", "#{session_name}"), (

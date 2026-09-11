@@ -9,7 +9,12 @@ import shlex
 import sys
 from pathlib import Path
 
-from tests.integration.support import Client, FixtureResources, wait
+from tests.integration.support import (
+    OUTLINE,
+    Client,
+    FixtureResources,
+    wait,
+)
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.model import leaves
@@ -152,7 +157,7 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
     viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
     wait(
         client,
-        lambda: "Layouts saved" in viewer.run("capture-pane", "-p", "-t", "%0"),
+        lambda: "Configure…" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
         "routing viewer did not initialize",
     )
     targets = [
@@ -214,9 +219,12 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
 
     for method in ("click", "shortcut"):
         for kind in ("tab", "workspace"):
+            if method == "click" and kind == "workspace":
+                # Workspaces are switched from the heading's chooser menu, two
+                # clicks apart; there is no single click to route in a burst.
+                continue
             for burst in (False, True):
                 client.type(direct_sequence("select-workspace-1") + direct_sequence("select-tab-1"))
-                lines = viewer.run("capture-pane", "-p", "-t", "%0").splitlines()
                 packets = []
                 for index in (1, 0, 1, 0):
                     tab = spaces[index if kind == "workspace" else 0]["tabs"][
@@ -225,12 +233,10 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
                     if method == "shortcut":
                         navigation = direct_sequence(f"select-{kind}-{index + 1}")
                     else:
-                        if kind == "tab":
-                            row, column = (4 if index else 2), 3
-                        else:
-                            label = f"[ {index + 1} ]"
-                            row = next(i for i, line in enumerate(lines) if label in line)
-                            column = lines[row].index(label) + 2
+                        # Tab rows start under the outline, the heading, its
+                        # blank row and the label, one row per tab; the
+                        # sequence is 1-based, so the first tab is row 5.
+                        row, column = (5 if index else 4), 4
                         navigation = f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m"
                     command, marker = packet()
                     expected.append((marker, terminal(tab)))

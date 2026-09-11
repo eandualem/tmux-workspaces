@@ -86,10 +86,10 @@ def check_terminal() -> None:
             "(including the SSH host), or use a terminal with an installed matching entry."
         ) from error
     colors, pairs = curses.tigetnum("colors"), curses.tigetnum("pairs")
-    if colors < 8 or pairs < 5:
+    if colors < 8 or pairs < 6:
         raise RuntimeError(
             f"TERM={terminal!r} reports {max(colors, 0)} colors and {max(pairs, 0)} color pairs; "
-            "at least 8 colors and 5 pairs are required. Use a color-capable terminal "
+            "at least 8 colors and 6 pairs are required. Use a color-capable terminal "
             "with matching terminfo."
         )
     if any(not curses.tigetstr(name) for name in ("cup", "clear", "sgr0")):

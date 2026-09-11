@@ -51,7 +51,8 @@ def _exercise(resources: FixtureResources) -> None:
         """
         rows = []
         for line in styled():
-            if "48;5;238" not in line:
+            # The selection background is the exact color in palette slot 18.
+            if "48;5;18" not in line:
                 continue
             text = ESCAPE_SEQUENCE.sub("", line).strip()
             if text and not text.startswith(">"):
@@ -99,7 +100,7 @@ def _exercise(resources: FixtureResources) -> None:
         select(label)
         press(ENTER)
 
-    wait(client, lambda: "Layouts saved" in panel(), "sidebar did not initialize")
+    wait(client, lambda: "Configure…" in panel(), "sidebar did not initialize")
     start = saved(library)
     tab_id, tab_name, pane_id = start.tab["id"], start.tab["name"], start.pane["id"]
     terminal = "=" + Shells.name(start.pane) + ":"
@@ -190,7 +191,7 @@ def _exercise(resources: FixtureResources) -> None:
     open_menu("m", "Tab options")
     activate("Return pane to shell")
     wait(client, lambda: saved(library).pane["agent"] is None, "return to shell failed")
-    wait(client, lambda: "Layouts saved" in panel(), "sidebar did not settle after resize")
+    wait(client, lambda: "Configure…" in panel(), "sidebar did not settle after resize")
 
     # Tab reordering and transfer are menu-only commands; both by keyboard here.
     key("t")
@@ -251,7 +252,7 @@ def _exercise(resources: FixtureResources) -> None:
             "workspace creation failed",
         )
     client.resize(160, 16)
-    wait(client, lambda: "Space 10" in panel() or "Layouts saved" in panel(), "resize failed")
+    wait(client, lambda: "Space 10" in panel() or "Configure…" in panel(), "resize failed")
     open_menu("w", "Workspaces")
     assert "Space 10" not in panel(), "the overflowing list already showed its last row"
     activate("Space 10")

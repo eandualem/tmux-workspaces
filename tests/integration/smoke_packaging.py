@@ -14,8 +14,17 @@ from contextlib import ExitStack, chdir
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.integration.support import Client, click_attach, click_button, saved, wait
+from tests.integration.support import (
+    OUTLINE,
+    Client,
+    click_attach,
+    click_button,
+    content_panes,
+    saved,
+    wait,
+)
 from tmux_workspaces.application import socket_path
+from tmux_workspaces.attachments import GROUPED_PREFIX
 from tmux_workspaces.model import leaves
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux, clean_env
@@ -57,6 +66,25 @@ def close_client(client: Client) -> None:
         if client.master is not None:
             os.close(client.master)
             client.master = None
+
+
+def external_panes(server) -> list[str]:
+    """The user's panes with their process and directory, one line each.
+
+    An attached pane joins a session through a grouped session of the viewer's
+    own, which shares the same windows; ``list-panes -a`` lists those panes
+    once per session, so the viewer's grouped sessions are left out.
+    """
+    return [
+        line.split("|", 1)[1]
+        for line in server.run(
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_name}|#{pane_id}|#{pane_pid}|#{pane_current_path}",
+        ).splitlines()
+        if not line.split("|", 1)[0].startswith(GROUPED_PREFIX)
+    ]
 
 
 def exercise(source: Path, root: Path) -> None:
@@ -141,13 +169,13 @@ def exercise(source: Path, root: Path) -> None:
             return client
 
         def sidebar(viewer):
-            return viewer.run("capture-pane", "-p", "-t", "%0")
+            return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
 
         def initialize(client, prefix, manifest=None):
             manifest = manifest or (lambda: client.manifest(library))
             wait(client, manifest, "installed viewer did not create its runtime manifest")
             viewer = Tmux(json.loads(manifest().read_text())["viewer_socket"])
-            wait(client, lambda: "Layouts saved" in sidebar(viewer), "installed sidebar missing")
+            wait(client, lambda: "Configure…" in sidebar(viewer), "installed sidebar missing")
 
             def installed_command():
                 for line in viewer.run("list-panes", "-F", "#{pane_start_command}").splitlines():
@@ -216,9 +244,7 @@ def exercise(source: Path, root: Path) -> None:
             f"HOME={home}",
             "/bin/sh -i",
         )
-        external_identity = source_server.run(
-            "list-panes", "-a", "-F", "#{pane_id}|#{pane_pid}|#{pane_current_path}"
-        )
+        external_identity = external_panes(source_server)
         client, viewer = launch(prefixes[0])
         original_leaf = saved(library).pane["id"]
         client.type("\x07rInstalled work\r")
@@ -232,7 +258,7 @@ def exercise(source: Path, root: Path) -> None:
             click_button(client, viewer, label)
             wait(
                 client,
-                lambda count=count: len(viewer.run("list-panes").splitlines()) == count + 2,
+                lambda count=count: len(content_panes(viewer)) == count + 2,
                 "installed split button failed",
             )
         attachment_leaf = saved(library).pane["id"]
@@ -246,7 +272,7 @@ def exercise(source: Path, root: Path) -> None:
         click_button(client, viewer, "Installed work")
         wait(
             client,
-            lambda: len(viewer.run("list-panes").splitlines()) == 5,
+            lambda: len(content_panes(viewer)) == 5,
             "saved four-pane tab missing",
         )
         select_leaf(client, viewer, original_leaf)
@@ -270,13 +296,11 @@ def exercise(source: Path, root: Path) -> None:
         # Navigation records the live cwd and rendered ratios before snapshotting
         # persistence. Starting a foreground command must survive this switch too.
         click_button(client, viewer, other_tab)
-        wait(
-            client, lambda: len(viewer.run("list-panes").splitlines()) == 2, "new tab not selected"
-        )
+        wait(client, lambda: len(content_panes(viewer)) == 2, "new tab not selected")
         click_button(client, viewer, "Installed work")
         wait(
             client,
-            lambda: len(viewer.run("list-panes").splitlines()) == 5,
+            lambda: len(content_panes(viewer)) == 5,
             "return tab lost splits",
         )
         expected_identity = identity()
@@ -288,7 +312,7 @@ def exercise(source: Path, root: Path) -> None:
         def check_retained(client, viewer, label):
             wait(
                 client,
-                lambda: len(viewer.run("list-panes").splitlines()) == 5,
+                lambda: len(content_panes(viewer)) == 5,
                 "reopen lost splits",
             )
             assert saved(library).tab["name"] == "Installed work"
@@ -298,9 +322,7 @@ def exercise(source: Path, root: Path) -> None:
                 shells.run("display-message", "-p", "-t", original_terminal, "#{pane_pid}")
                 == first_pid
             )
-            assert external_identity == source_server.run(
-                "list-panes", "-a", "-F", "#{pane_id}|#{pane_pid}|#{pane_current_path}"
-            )
+            assert external_identity == external_panes(source_server)
             assert (
                 next(p for p in leaves(saved(library).tab["tree"]) if p["id"] == attachment_leaf)[
                     "agent"
@@ -376,9 +398,7 @@ def exercise(source: Path, root: Path) -> None:
         assert outer.run("show-options", "-g") == host_options
         assert client.process.poll() is None
         assert identity() == expected_identity
-        assert external_identity == source_server.run(
-            "list-panes", "-a", "-F", "#{pane_id}|#{pane_pid}|#{pane_current_path}"
-        )
+        assert external_identity == external_panes(source_server)
         assert json.loads(state.read_text()) == foreground
         for runtime, membership in installed_trees.items():
             assert {

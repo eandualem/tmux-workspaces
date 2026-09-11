@@ -23,6 +23,7 @@ smoke:
 	$(PYTHON) -m tests.integration.smoke_shortcuts
 	$(PYTHON) -m tests.integration.smoke_menus
 	$(PYTHON) -m tests.integration.smoke_new_tab
+	$(PYTHON) -m tests.integration.smoke_gutters
 	$(PYTHON) -m tests.integration.smoke_standalone
 	$(PYTHON) -m tests.integration.smoke_environment
 	$(PYTHON) -m tests.integration.smoke

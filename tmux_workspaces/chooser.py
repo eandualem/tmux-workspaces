@@ -23,6 +23,7 @@ HINT = "↑↓ move · Enter open · click"
 EMPTY_ROSTER = "No tmux sessions to attach"
 ROSTER_HEADING = "Attach a session"
 MORE_ABOVE, MORE_BELOW = "↑ more above", "↓ more below"
+BAR_WIDTH = 48
 
 
 class Chooser:
@@ -99,8 +100,29 @@ class Chooser:
         return f"choose-session:{self.tab_id}:{self.leaf_id}:{name}"
 
 
-def draw(screen, chooser: Chooser, curses) -> dict[int, int]:
+def attribute_styles(curses) -> dict[str, int]:
+    """The chooser's look without a theme: attributes only, as it always drew."""
+    return {
+        "title": curses.A_BOLD,
+        "muted": curses.A_DIM,
+        "selected": curses.A_REVERSE,
+        "notice": curses.A_BOLD,
+    }
+
+
+def theme_styles(palette, curses) -> dict[str, int]:
+    """The chooser's look in the sidebar's colors, from an installed palette."""
+    return {
+        "title": palette.style("accent") | curses.A_BOLD,
+        "muted": palette.style("muted"),
+        "selected": palette.style("active"),
+        "notice": palette.style("accent") | curses.A_BOLD,
+    }
+
+
+def draw(screen, chooser: Chooser, curses, styles: dict[str, int] | None = None) -> dict[int, int]:
     """Paint the chooser; return screen row -> choice index for mouse hits."""
+    styles = styles or attribute_styles(curses)
     screen.erase()
     height, width = screen.getmaxyx()
     room = max(1, width - 2)
@@ -110,38 +132,43 @@ def draw(screen, chooser: Chooser, curses) -> dict[int, int]:
             with contextlib.suppress(curses.error):
                 screen.addnstr(row, column, text, max(0, width - column - 1), attribute)
 
-    put(1, 2, TITLE[:room], curses.A_BOLD)
-    put(2, 2, LEAD[:room], curses.A_DIM)
+    put(1, 2, TITLE[:room], styles["title"])
+    put(2, 2, LEAD[:room], styles["muted"])
     hits: dict[int, int] = {}
     # Rows 4 to height-3 hold the list; a roster taller than that scrolls with
     # the selection, and the rows above and below say so.
     items = chooser.layout()
     start, end = chooser.viewport(height - 6)
     if start > 0:
-        put(3, 2, MORE_ABOVE[:room], curses.A_DIM)
+        put(3, 2, MORE_ABOVE[:room], styles["muted"])
     row = 4
     labels = chooser.rows()
     for item in items[start:end]:
         if item is None:
-            put(row, 2, ROSTER_HEADING[:room], curses.A_DIM)
+            put(row, 2, ROSTER_HEADING[:room], styles["muted"])
             row += 1
             continue
         label, state = labels[item]
         selected = item == chooser.index
         marker = "▸ " if selected else "  "
-        put(row, 2, (marker + label)[:room], curses.A_REVERSE if selected else 0)
+        # The selected row is one filled run, padded so it reads as a bar; in
+        # a wide pane the bar stops short of the far edge.
+        text = (marker + label)[:room]
+        bar = max(len(text), min(room, BAR_WIDTH))
+        put(row, 2, text.ljust(bar) if selected else text, styles["selected"] if selected else 0)
         if state:
             column = min(width - len(state) - 2, 4 + len(label) + 2)
             if column > 4 + len(label):
-                put(row, column, state, curses.A_DIM)
+                inside = selected and column + len(state) <= 2 + bar
+                put(row, column, state, styles["selected"] if inside else styles["muted"])
         hits[row] = item
         row += 1
     if end < len(items):
-        put(row, 2, MORE_BELOW[:room], curses.A_DIM)
+        put(row, 2, MORE_BELOW[:room], styles["muted"])
     if not chooser.sessions:
-        put(row, 2, EMPTY_ROSTER[:room], curses.A_DIM)
+        put(row, 2, EMPTY_ROSTER[:room], styles["muted"])
     footer = chooser.message or chooser.error or HINT
-    put(height - 1, 2, footer[:room], curses.A_DIM if footer == HINT else curses.A_BOLD)
+    put(height - 1, 2, footer[:room], styles["muted"] if footer == HINT else styles["notice"])
     screen.refresh()
     return hits
 
@@ -179,7 +206,37 @@ def clicked_row(sequence: str) -> int | None:
     return None
 
 
-def run(screen, chooser: Chooser, source, action_socket: str, curses, write=None) -> None:
+def install_theme(
+    curses, theme_path, terminal_colors: int | None, write=None
+) -> dict[str, int] | None:
+    """Install the sidebar's theme in this pane, or None to draw with attributes.
+
+    The chooser is its own curses process, so it resolves the same file the
+    sidebar read against the same palette size. A theme that cannot be read or
+    installed never stops the chooser: it draws as it did without one.
+    """
+    if theme_path is None:
+        return None
+    from .theme import ThemeError, load_theme
+
+    try:
+        curses.start_color()
+        ceiling = getattr(curses, "COLORS", 0) or 8
+        colors = min(terminal_colors or ceiling, ceiling)
+        palette = load_theme(theme_path).theme.resolve(colors)
+        palette.install(curses, write)
+        # The empty pane shares the sidebar's background when one is configured.
+        screen_background = palette.style("normal")
+    except (ThemeError, ValueError, OSError, curses.error):
+        return None
+    styles = theme_styles(palette, curses)
+    styles["background"] = screen_background
+    return styles
+
+
+def run(
+    screen, chooser: Chooser, source, action_socket: str, curses, write=None, styles=None
+) -> None:
     """Show the roster until the viewer replaces this pane with what was chosen."""
     if write is None:
 
@@ -191,14 +248,17 @@ def run(screen, chooser: Chooser, source, action_socket: str, curses, write=None
     curses.mousemask(curses.ALL_MOUSE_EVENTS)
     screen.keypad(True)
     screen.timeout(500)
+    if styles and styles.get("background"):
+        with contextlib.suppress(curses.error):
+            screen.bkgdset(" ", styles["background"])
     write(MOUSE_ON)
     try:
-        _run(screen, chooser, source, action_socket, curses)
+        _run(screen, chooser, source, action_socket, curses, styles)
     finally:
         write(MOUSE_OFF)
 
 
-def _run(screen, chooser: Chooser, source, action_socket: str, curses) -> None:
+def _run(screen, chooser: Chooser, source, action_socket: str, curses, styles=None) -> None:
     chosen_at = 0.0
     hits: dict[int, int] = {}
     while True:
@@ -207,7 +267,7 @@ def _run(screen, chooser: Chooser, source, action_socket: str, curses) -> None:
             # The viewer acknowledged but nothing replaced this pane. Offer
             # the choice again rather than sit behind a stale notice.
             chooser.message, chosen_at = "", 0.0
-        hits = draw(screen, chooser, curses)
+        hits = draw(screen, chooser, curses, styles)
         key = screen.getch()
         choose = False
         row = None
@@ -253,7 +313,16 @@ def chooser_main(args) -> int:
         source.refresh()
         source.start()
         chooser = Chooser(args.tab, args.leaf)
-        curses.wrapper(lambda screen: run(screen, chooser, source, args.action_socket, curses))
+
+        def emit(text: str) -> None:
+            sys.stdout.write(text)
+            sys.stdout.flush()
+
+        def main(screen):
+            styles = install_theme(curses, args.theme, args.terminal_colors, emit)
+            run(screen, chooser, source, args.action_socket, curses, styles=styles)
+
+        curses.wrapper(main)
     finally:
         source.close()
     return 0

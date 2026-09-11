@@ -14,8 +14,10 @@ from tests.integration.ssh_support import SshHost
 from tests.integration.support import (
     FixtureResources,
     click_button,
+    content_panes,
     open_terminal,
     saved,
+    session_in_use,
     sidebar,
     tab_row,
     wait,
@@ -62,9 +64,7 @@ def exercise() -> None:
                     raise AssertionError(str(error) + "\n" + host.diagnostics()) from error
                 path = manifest()
                 viewer = Tmux(json.loads(path.read_text())["viewer_socket"])
-                wait(
-                    client, lambda: "Layouts saved" in sidebar(viewer), "SSH UI did not initialize"
-                )
+                wait(client, lambda: "Configure…" in sidebar(viewer), "SSH UI did not initialize")
                 connection = host.connection()
                 assert connection["connection"].split()[::2] == ["127.0.0.1", "127.0.0.1"]
                 assert connection["tty"].startswith("/dev/"), "SSH did not allocate a remote PTY"
@@ -160,9 +160,7 @@ def exercise() -> None:
                 )
                 wait(
                     client,
-                    lambda pane_count=pane_count: (
-                        len(viewer.run("list-panes").splitlines()) == pane_count
-                    ),
+                    lambda pane_count=pane_count: len(content_panes(viewer)) == pane_count,
                     "SSH resize lost focus fallback or the saved four-pane arrangement",
                 )
 
@@ -218,8 +216,7 @@ def exercise() -> None:
                 client,
                 lambda: (
                     saved(library).pane.get("agent") == "sample"
-                    and source.run("display-message", "-p", "-t", "=sample:", "#{session_attached}")
-                    == "1"
+                    and session_in_use(source, "=sample:")
                 ),
                 "SSH mouse attachment failed",
             )
@@ -256,10 +253,7 @@ def exercise() -> None:
             )
             wait(
                 client,
-                lambda: (
-                    source.run("display-message", "-p", "-t", "=sample:", "#{session_attached}")
-                    == "1"
-                ),
+                lambda: session_in_use(source, "=sample:"),
                 "SSH reconnect did not restore the saved external association",
             )
             assert shells.run(
@@ -311,10 +305,7 @@ def exercise() -> None:
             )
             wait(
                 client,
-                lambda: (
-                    source.run("display-message", "-p", "-t", "=sample:", "#{session_attached}")
-                    == "1"
-                ),
+                lambda: session_in_use(source, "=sample:"),
                 "SSH attachment did not reconnect after the disposable source returned",
             )
             assert (

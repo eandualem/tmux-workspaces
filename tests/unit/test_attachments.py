@@ -5,7 +5,7 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tmux_workspaces.attachments import leaf_main
 
@@ -81,3 +81,121 @@ class AttachmentTests(unittest.TestCase):
             leaf_main(self.args(agent="external", terminal=""))
         self.assertEqual([call.args[0][3] for call in run.call_args_list], ["has-session"])
         self.assertIn("external — session offline", output.getvalue())
+
+
+class GroupedAttachTests(unittest.TestCase):
+    """External sessions are joined through a grouped session of the viewer's own."""
+
+    def test_the_grouped_command_turns_off_its_own_status_and_destroys_itself(self):
+        from tmux_workspaces.attachments import grouped_attach_command
+
+        command = grouped_attach_command("/tmp/src.sock", "=manager:")
+        self.assertEqual(command[:4], ["tmux", "-S", "/tmp/src.sock", "new-session"])
+        self.assertIn("-E", command)
+        self.assertEqual(command[command.index("-t") + 1], "=manager:")
+        name = command[command.index("-s") + 1]
+        self.assertTrue(name.startswith("tw-"))
+        # Two chained commands, both aimed at the grouped session and never at the target.
+        text = " ".join(command)
+        self.assertIn(f"; set-option -t {name} status off", text)
+        self.assertIn(f"; set-option -t {name} destroy-unattached on", text)
+        self.assertNotIn("-t =manager: status", text)
+        # Each client gets a name of its own.
+        other = grouped_attach_command("/tmp/src.sock", "=manager:")
+        self.assertNotEqual(name, other[other.index("-s") + 1])
+
+    def test_an_agent_attaches_grouped_while_a_shell_attaches_plainly(self):
+        seen = []
+
+        def run(command, **kwargs):
+            seen.append(command)
+            if command[3] == "has-session":
+                # The preflight before an attach: the session exists.
+                return SimpleNamespace(returncode=0)
+            if command[3] == "show-options":
+                # The target's own settings, in tmux's quoting.
+                return SimpleNamespace(returncode=0, stdout='mouse on\nstatus-left "a \\"b\\""\n')
+            raise StopFixture
+
+        for kind, args in (
+            (
+                "agent",
+                SimpleNamespace(
+                    agent="manager",
+                    terminal="",
+                    source_socket="/tmp/s.sock",
+                    host_socket=None,
+                    host_pane=None,
+                ),
+            ),
+            (
+                "shell",
+                SimpleNamespace(
+                    agent="",
+                    terminal="terminal-abc",
+                    source_socket="/tmp/s.sock",
+                    host_socket=None,
+                    host_pane=None,
+                ),
+            ),
+        ):
+            seen.clear()
+            # The grouped client is a watched process; a plain attach blocks in run.
+            client = MagicMock()
+            client.__enter__.return_value = client
+            client.poll.return_value = None
+            with (
+                patch("tmux_workspaces.attachments.subprocess.run", side_effect=run),
+                patch("tmux_workspaces.attachments.subprocess.Popen", return_value=client) as popen,
+                patch("tmux_workspaces.attachments.time.sleep", side_effect=StopFixture),
+                self.assertRaises(StopFixture),
+            ):
+                leaf_main(args)
+            if kind == "agent":
+                command = popen.call_args.args[0]
+                self.assertEqual(command[3], "new-session", command)
+                name = command[command.index("-s") + 1]
+                text = " ".join(command)
+                # The target's options come first, then this session's own.
+                self.assertIn(
+                    f"; set-option -t {name} mouse on ; set-option -t {name} status-left", text
+                )
+                self.assertEqual(command[command.index("status-left") + 1], 'a "b"')
+                self.assertTrue(text.endswith(f"; set-option -t {name} destroy-unattached on"))
+                self.assertIn(f"; set-option -t {name} status off ;", text)
+                self.assertEqual([c[3] for c in seen[-2:]], ["has-session", "show-options"])
+                self.assertEqual(seen[-1][5], "=manager:")
+            else:
+                command = seen[-1]
+                popen.assert_not_called()
+                self.assertEqual(command[3], "attach-session", command)
+                self.assertNotIn("status", command)
+
+    def test_the_grouped_session_is_killed_once_its_target_is_gone(self):
+        """Grouped sessions keep each other's windows alive, so the viewer's
+        must not outlive the session it joined."""
+        from tmux_workspaces.attachments import run_grouped_attachment
+
+        seen = []
+        client = MagicMock()
+        client.__enter__.return_value = client
+        # Alive through the first check; gone after the kill.
+        client.poll.side_effect = [None, None, 0]
+
+        def run(command, **kwargs):
+            seen.append(command)
+            if command[3] == "has-session":
+                return SimpleNamespace(returncode=1)
+            return SimpleNamespace(returncode=0, stdout="")
+
+        with (
+            patch("tmux_workspaces.attachments.subprocess.run", side_effect=run),
+            patch("tmux_workspaces.attachments.subprocess.Popen", return_value=client) as popen,
+            patch("tmux_workspaces.attachments.time.sleep"),
+        ):
+            run_grouped_attachment("/tmp/s.sock", "=manager:")
+        name = popen.call_args.args[0][popen.call_args.args[0].index("-s") + 1]
+        self.assertEqual([c[3] for c in seen], ["show-options", "has-session", "kill-session"])
+        self.assertEqual(seen[1][5], "=manager:")
+        self.assertEqual(seen[2][4:], ["-t", name])
+        client.wait.assert_called_once()

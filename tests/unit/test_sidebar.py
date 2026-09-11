@@ -60,6 +60,8 @@ class SidebarTests(unittest.TestCase):
     def setUp(self):
         self.model = Model.initial()
         self.screen = Mock()
+        # The panel draws its interior into a subwindow; the tests read one mock.
+        self.screen.derwin.return_value = self.screen
         self.screen.getmaxyx.return_value = (38, 28)
         self.store = Mock()
         self.source = Mock(socket="/unused/source.sock", persistent_socket=True)
@@ -87,7 +89,10 @@ class SidebarTests(unittest.TestCase):
         self.addCleanup(colors.stop)
 
     def mouse(self, x, y, buttons):
-        with patch("tmux_workspaces.sidebar.curses.getmouse", return_value=(0, x, y, 0, buttons)):
+        # Coordinates are the panel interior's; the outline around it is one cell.
+        with patch(
+            "tmux_workspaces.sidebar.curses.getmouse", return_value=(0, x + 1, y + 1, 0, buttons)
+        ):
             self.sidebar.input(curses.KEY_MOUSE)
 
     def test_help_wraps_effective_keys_and_omits_disabled_actions(self):
@@ -202,12 +207,12 @@ class SidebarTests(unittest.TestCase):
 
     def test_right_click_never_triggers_regular_button_and_left_click_still_works(self):
         self.sidebar.draw()
-        self.mouse(24, 0, curses.BUTTON3_PRESSED)  # New-tab button has no context action.
+        self.mouse(23, 2, curses.BUTTON3_PRESSED)  # New-tab button has no context action.
         self.assertEqual(len(self.model.space["tabs"]), 1)
         self.assertIsNone(self.sidebar.menu)
         self.mouse(3, 2, curses.BUTTON3_RELEASED)
         self.assertIsNone(self.sidebar.menu)
-        self.mouse(24, 0, curses.BUTTON1_PRESSED)
+        self.mouse(23, 2, curses.BUTTON1_PRESSED)
         self.assertEqual(len(self.model.space["tabs"]), 2)
 
     def test_workspace_button_context_targets_clicked_workspace_and_header_opens_options(self):
@@ -222,13 +227,20 @@ class SidebarTests(unittest.TestCase):
         self.display.focused_leaf.return_value = first_tab["focus"]
         self.sidebar.draw()
 
-        self.mouse(9, 36, curses.BUTTON3_PRESSED)
-
+        # The chevron at the heading's right end is the workspace chooser.
+        self.mouse(24, 0, curses.BUTTON1_PRESSED)
         self.assertEqual(self.sidebar.menu, "workspace")
+        dict(self.sidebar._options({}))["Switch workspace"]()
+        self.assertEqual(self.sidebar.menu, "spaces")
+        dict(self.sidebar._options({}))["Other workspace"]()
+
         self.assertEqual(self.model.space["id"], target["id"])
         self.assertEqual(first, original)
         self.assertEqual(self.model.tab["tree"], target_tree)
         self.display.shells.close.assert_not_called()
+        self.sidebar.draw()
+        self.mouse(24, 0, curses.BUTTON3_PRESSED)
+        self.assertEqual(self.sidebar.menu, "workspace")
         dict(self.sidebar._options({}))["Rename workspace"]()
         self.assertEqual(self.sidebar.query, "Other workspace")
         self.sidebar.query = "Renamed workspace"
@@ -246,52 +258,72 @@ class SidebarTests(unittest.TestCase):
         self.assertIsNone(self.sidebar.menu)
         self.assertEqual(self.model.state, before)
         labels = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
-        self.assertIn("[ + ]", labels)
+        self.assertIn("+", labels)
         self.assertNotIn("+ Tab", labels)
-        self.assertIn("Attach session…", labels)
-        self.assertIn("Tab actions…", labels)
-        self.assertIn("Workspaces…", labels)
-        for x in range(22, 27):
+        self.assertNotIn("Attach session…", labels)
+        self.assertNotIn("Tab actions…", labels)
+        self.assertNotIn("Workspaces…", labels)
+        self.assertNotIn("Layouts saved", labels)
+        # Infrequent controls live behind Configure…, with leaving last after a rule.
+        self.assertIn("Configure…", labels)
+        for hidden in ("Shortcuts", "Colors…", "Detach"):
+            self.assertNotIn(hidden, labels)
+        self.sidebar.open_menu("configure")
+        options = [label for label, _ in self.sidebar._options({})]
+        self.assertEqual(options[:3], ["Colors…", "Shortcuts", "Refresh viewer…"])
+        self.assertEqual(options[-1], "Detach")
+        self.sidebar.close_menu()
+        self.sidebar.draw()
+        for x in range(21, 25):
             self.sidebar.draw()
             previous_count = len(self.model.space["tabs"])
-            self.mouse(x, 0, curses.BUTTON1_PRESSED)
+            self.mouse(x, 2, curses.BUTTON1_PRESSED)
             self.assertEqual(len(self.model.space["tabs"]), previous_count + 1)
 
-    def test_rectangular_workspace_buttons_are_clickable_across_their_width(self):
+    def test_the_heading_chevron_is_the_one_place_workspaces_are_switched_and_made(self):
         first = self.model.space
         self.model.add_workspace("Second")
         second = self.model.space
-        for x in range(1, 6):
-            self.sidebar.draw()
-            self.mouse(x, 36, curses.BUTTON1_PRESSED)
-            self.assertEqual(self.model.space["id"], first["id"])
-            self.sidebar.draw()
-            self.mouse(x + 6, 36, curses.BUTTON1_PRESSED)
-            self.assertEqual(self.model.space["id"], second["id"])
+        self.model.state["selected"] = first["id"]
         self.sidebar.draw()
-        self.mouse(25, 36, curses.BUTTON1_PRESSED)
+        labels = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
+        self.assertNotIn("workspaces", labels)
+        # Every cell of the chevron button opens the chooser.
+        for x in (23, 24):
+            self.sidebar.draw()
+            self.mouse(x, 0, curses.BUTTON1_PRESSED)
+            self.assertEqual(self.sidebar.menu, "workspace")
+            self.sidebar.close_menu()
+        self.mouse(24, 0, curses.BUTTON1_PRESSED)
+        dict(self.sidebar._options({}))["Switch workspace"]()
+        dict(self.sidebar._options({}))["Second"]()
+        self.assertEqual(self.model.space["id"], second["id"])
+        self.sidebar.draw()
+        self.mouse(24, 0, curses.BUTTON1_PRESSED)
+        dict(self.sidebar._options({}))["New workspace"]()
         self.assertEqual((self.sidebar.menu, self.sidebar.pending), ("name", "new-workspace"))
 
-    def test_overflow_workspace_arrows_reach_every_workspace_at_narrow_width(self):
-        self.screen.getmaxyx.return_value = (38, 18)
+    def test_workspace_shortcuts_still_cycle_at_narrow_width(self):
+        self.screen.getmaxyx.return_value = (38, 22)
         for index in range(1, 12):
             self.model.add_workspace(f"Workspace {index + 1}")
         spaces = self.model.state["workspaces"]
         self.model.state["selected"] = spaces[0]["id"]
         for expected in [*spaces[1:], spaces[0]]:
             self.sidebar.draw()
-            self.mouse(11, 36, curses.BUTTON1_PRESSED)
+            self.sidebar.action("next-workspace")
             self.assertEqual(self.model.space["id"], expected["id"])
-        self.sidebar.draw()
-        self.mouse(2, 36, curses.BUTTON1_PRESSED)
+        self.sidebar.action("previous-workspace")
         self.assertEqual(self.model.space["id"], spaces[-1]["id"])
+        self.sidebar.action("select-workspace-12")
+        self.assertEqual(self.model.space["id"], spaces[11]["id"])
         self.sidebar.draw()
-        rectangles = [
-            call.args[2].strip()
+        heading = next(
+            call.args[2]
             for call in self.screen.addnstr.call_args_list
-            if call.args[0] == 36 and call.args[1] == 4
-        ]
-        self.assertIn("[ 12 ]", rectangles)
+            if call.args[0] == 0 and call.args[1] == 1
+        )
+        self.assertTrue(heading.startswith("Workspace 1"))
 
     def test_indexed_tab_selection_stays_visible_with_shorter_footer(self):
         self.screen.getmaxyx.return_value = (30, 28)
@@ -302,7 +334,9 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.draw()
         labels = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
         self.assertTrue(any("9 Tab 9" in label for label in labels))
-        self.assertEqual(self.sidebar.tab_capacity(), 17)
+        # 28 rows inside the outline, less the heading, its blank row, the
+        # label and the five-row footer; this source reports no roster.
+        self.assertEqual(self.sidebar.tab_capacity(), 20)
         self.assertEqual(self.sidebar.tab_offset, 0)
 
     def test_compact_rows_keep_counts_and_click_targets_separate(self):
@@ -317,15 +351,20 @@ class SidebarTests(unittest.TestCase):
         cells = {
             (c.args[0], c.args[1]): c.args[2].strip() for c in self.screen.addnstr.call_args_list
         }
-        self.assertEqual(cells[2, 25], "2")
-        self.assertEqual(cells[3, 3], "2 panes")
+        # Every tab is one row. The selected row carries its count and then
+        # the ⋯ menu on the right inset; a resting row's count sits one cell in
+        # from the interior's edge. No row repeats what the panes hold.
+        self.assertEqual(cells[3, 21], "2")
+        self.assertEqual(cells[3, 23], "⋯")
         self.assertTrue(cells[4, 0].endswith("…"))
+        self.assertEqual(cells[4, 24], "1")
         self.assertIn("3 Third", cells[5, 0])
+        self.assertFalse(any(text in {"shells", "Shell", "Empty"} for text in cells.values()))
         # Counts and the right edge belong to the tab, not an adjacent row.
         self.mouse(25, 4, curses.BUTTON1_PRESSED)
         self.assertEqual(self.model.tab["id"], second["id"])
         self.sidebar.draw()
-        self.mouse(3, 4, curses.BUTTON3_PRESSED)  # Detail row moved with selection.
+        self.mouse(23, 4, curses.BUTTON1_PRESSED)  # The ⋯ moved with the selection.
         self.assertEqual(self.sidebar.menu, "tab")
         self.assertEqual(self.model.tab["id"], second["id"])
 
@@ -344,8 +383,9 @@ class SidebarTests(unittest.TestCase):
                 occupied.add((row, column))
         labels = [c.args[2] for c in self.screen.addnstr.call_args_list]
         self.assertTrue(any("31 Tab 31" in text for text in labels))
-        self.mouse(3, 13, curses.BUTTON1_PRESSED)
-        self.assertEqual(self.sidebar.menu, "agents")
+        # Configure… sits two rows above the icon row, inside the bounded footer.
+        self.mouse(3, 14, curses.BUTTON1_PRESSED)
+        self.assertEqual(self.sidebar.menu, "configure")
 
     def test_workspace_actions_create_rename_and_wrap_without_changing_saved_tabs(self):
         first = copy.deepcopy(self.model.space)
@@ -427,12 +467,16 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.draw()
         rows = self.drawn()
         self.assertIn((2, 1, "Refresh viewer"), rows)
-        self.assertIn((3, 1, "Restarts this viewer only."), rows)
+        # The note wraps inside the panel's interior; it starts on the row
+        # under the title.
+        self.assertTrue(
+            any(row[:2] == (3, 1) and row[2].startswith("Restarts this") for row in rows)
+        )
         option = next(row for row in rows if row[2].startswith("Refresh viewer now"))
         self.assertIn(
             (option[0], 1, option[1] + len(option[2])), [hit[:3] for hit in self.sidebar.hits]
         )
-        self.assertIn((4, 1, "Enter refresh · Esc cancel"), rows)
+        self.assertTrue(any(row[1] == 1 and row[2].startswith("Enter refresh") for row in rows))
         # Back leaves the viewer running with nothing requested.
         dict(self.sidebar._options({}))
         self.sidebar.input("\x1b")
@@ -645,7 +689,7 @@ class KeyboardMenuTests(SidebarTests):
 
     def overflowing_workspaces(self, count=20):
         """Open the workspace chooser on a list taller than its window."""
-        self.screen.getmaxyx.return_value = (20, 28)
+        self.screen.getmaxyx.return_value = (21, 28)
         for index in range(count - 1):
             self.model.add_workspace(f"Space {index + 2}")
         self.model.state["selected"] = self.model.state["workspaces"][0]["id"]
@@ -719,7 +763,7 @@ class KeyboardMenuTests(SidebarTests):
         self.assertEqual(self.sidebar.options[self.sidebar.selected][0], "manager")
 
     def test_scrolled_chooser_activates_a_row_that_is_actually_visible(self):
-        self.screen.getmaxyx.return_value = (16, 28)
+        self.screen.getmaxyx.return_value = (18, 28)
         self.sessions(*[f"session-{index:02d}" for index in range(20)])
         self.sidebar.action("attach")
         self.sidebar.scroll(6)
@@ -882,7 +926,9 @@ class KeyboardMenuTests(SidebarTests):
         self.screen.getmaxyx.return_value = (15, 28)
         self.sidebar.draw()
         drawn = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
-        self.assertEqual(drawn, ["Enlarge terminal", "Exit viewer"])
+        self.assertIn("Enlarge terminal", drawn)
+        self.assertIn("Detach", drawn)
+        self.assertNotIn("unseen", drawn)
         self.sidebar.input(curses.KEY_DOWN)
         self.sidebar.input("\n")
         self.assertIsNone(self.model.pane["agent"])
@@ -951,7 +997,7 @@ class KeyboardMenuTests(SidebarTests):
 
     def test_page_keys_move_a_whole_window_and_keep_the_selection_visible(self):
         names = self.overflowing_workspaces()
-        page = self.screen.getmaxyx()[0] - 9
+        page = self.sidebar.size()[0] - 9
 
         self.sidebar.input(curses.KEY_NPAGE)
         rows = self.painted_rows()
@@ -1001,6 +1047,8 @@ class ThemeMenuTests(unittest.TestCase):
         self.path = Path(directory.name) / "theme.toml"
         self.model = Model.initial()
         self.screen = Mock()
+        # The panel draws its interior into a subwindow; the tests read one mock.
+        self.screen.derwin.return_value = self.screen
         self.screen.getmaxyx.return_value = (38, 28)
         self.store = Mock()
         source = Mock(socket="/unused/source.sock", persistent_socket=True)
@@ -1054,7 +1102,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.colors, 256)
         self.assertEqual(
             [call.args for call in self.init_pair.call_args_list],
-            [(1, -1, -1), (2, 231, 238), (3, 108, -1), (4, 245, -1)],
+            [(1, 16, 17), (2, 16, 18), (3, 19, 17), (4, 20, 17), (5, 21, 22)],
         )
         self.assertEqual(self.sidebar.message, "")
 
@@ -1064,29 +1112,31 @@ class ThemeMenuTests(unittest.TestCase):
             self.sidebar.setup_theme()
         self.assertEqual(self.sidebar.colors, 8)
         self.assertEqual(
-            [call.args for call in self.init_pair.call_args_list[-4:]],
-            [(1, -1, -1), (2, 7, 4), (3, 6, -1), (4, 7, -1)],
+            [call.args for call in self.init_pair.call_args_list[-5:]],
+            [(1, 7, 0), (2, 7, 4), (3, 6, 0), (4, 7, 0), (5, 7, 0)],
         )
 
     def test_the_sidebar_base_takes_the_normal_role(self):
         configured = DEFAULT_THEME.with_role("normal", background=["blue"])
         self.path.write_text(configured.to_toml())
         self.sidebar.setup_theme()
-        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, -1, 4))
+        self.assertEqual(self.init_pair.call_args_list[-5].args, (1, 16, 4))
         self.screen.bkgdset.assert_called_with(" ", self.sidebar.style("normal"))
         self.screen.getmaxyx.return_value = (10, 10)
         self.sidebar.draw()
         small = [call.args for call in self.screen.addnstr.call_args_list]
-        self.assertEqual(small[0][2], "Enlarge terminal")
-        self.assertEqual(small[0][4], self.sidebar.style("normal"))
+        notice = next(call for call in small if call[2] == "Enlarge terminal")
+        self.assertEqual(notice[4], self.sidebar.style("normal"))
 
     def test_unreadable_config_reports_it_and_keeps_working_colors(self):
-        self.path.write_text("[active]\nforeground = '#8ab4f8'\n")
+        self.path.write_text("[active]\nforeground = '#8ab4f'\n")
         self.sidebar.setup_theme()
         self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
         self.assertTrue(self.sidebar.message.startswith("Error: active.foreground"))
 
     def test_colors_button_and_local_key_open_the_same_editor(self):
+        self.sidebar.draw()
+        self.click("Configure…")
         self.sidebar.draw()
         self.click("Colors…")
         self.assertEqual(self.sidebar.menu, "theme")
@@ -1122,9 +1172,9 @@ class ThemeMenuTests(unittest.TestCase):
         self.sidebar.draw()
         text = [drawn for _, _, drawn in self.drawn()]
         self.assertTrue(any(line.startswith("▶ Normal fg") for line in text))
-        for label in ("Apply", "Cancel", "Restore defaults", "< Back"):
+        for label in ("Apply", "Cancel", "Restore defaults", "‹ Back"):
             self.assertTrue(any(line.startswith(label) for line in text), label)
-        self.assertTrue(any("terminal default on terminal default" in line for line in text))
+        self.assertTrue(any("#cccccc on #22252b" in line for line in text))
 
     def test_a_refused_restore_keeps_the_editor_and_its_reason_on_screen(self):
         self.sidebar.input("t")
@@ -1240,16 +1290,18 @@ class ThemeMenuTests(unittest.TestCase):
         )
         self.assertEqual(header[4], self.sidebar.style("normal") | curses.A_BOLD)
 
-    def test_the_workspace_menu_reaches_the_same_editor(self):
-        self.sidebar.open_menu("workspace")
-        dict(self.sidebar._options({}))["Colors…"]()
+    def test_the_application_menu_reaches_the_same_editor(self):
+        self.sidebar.draw()
+        self.click("Configure…")
+        self.sidebar.draw()
+        self.click("Colors…")
         self.assertEqual(self.sidebar.menu, "theme")
         self.assertIsNotNone(self.sidebar.theme_editor)
         self.sidebar.input("\x1b")
         self.assertIsNone(self.sidebar.theme_editor)
 
     def test_a_short_terminal_scrolls_to_the_selected_role(self):
-        self.screen.getmaxyx.return_value = (16, 20)
+        self.screen.getmaxyx.return_value = (18, 22)
         self.sidebar.input("t")
         self.goto("muted", "attributes")
         self.sidebar.draw()
@@ -1268,7 +1320,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.type("blue")
         self.sidebar.input("\n")
         self.assertEqual(self.sidebar.theme.roles["active"].background, ("blue",))
-        self.assertEqual(self.init_pair.call_args_list[-3].args, (2, 231, 4))
+        self.assertEqual(self.init_pair.call_args_list[-4].args, (2, 16, 4))
         self.assertFalse(self.path.exists())
         self.sidebar.input("a")
         self.assertEqual(load_theme(self.path).theme, self.sidebar.theme)
@@ -1284,7 +1336,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertEqual(self.sidebar.theme.roles["normal"].foreground, ("blue",))
         self.sidebar.input("\x1b")
         self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
-        self.assertEqual(self.init_pair.call_args_list[-4].args, (1, -1, -1))
+        self.assertEqual(self.init_pair.call_args_list[-5].args, (1, 16, 17))
         self.assertFalse(self.path.exists())
         self.assertEqual(self.sidebar.message, "")
 
@@ -1302,13 +1354,13 @@ class ThemeMenuTests(unittest.TestCase):
     def test_rejected_value_keeps_the_colors_and_says_why(self):
         self.sidebar.input("t")
         self.sidebar.input("\n")
-        self.type("#8ab4f8")
+        self.type("#8ab4f")
         self.sidebar.input("\n")
         self.assertEqual(self.sidebar.theme, DEFAULT_THEME)
-        self.assertIn("not supported", self.sidebar.theme_editor.message)
+        self.assertIn("not a color", self.sidebar.theme_editor.message)
         self.sidebar.draw()
         self.assertTrue(
-            any("not supported" in drawn for _, _, drawn in self.drawn()),
+            any("not a color" in drawn for _, _, drawn in self.drawn()),
         )
 
     def test_concurrent_edit_is_reported_and_discards_nothing(self):
@@ -1360,13 +1412,12 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertTrue(self.sidebar.theme_editor.message.startswith("Error: "))
         self.assertFalse(self.sidebar.theme_editor.closed)
 
-    def test_workspace_menu_keyboard_activation_opens_colors_and_cancel_restores(self):
+    def test_the_keyboard_route_opens_colors_and_cancel_restores(self):
         self.sidebar.action("workspace-options")
         self.sidebar.draw()
-        self.sidebar.input(curses.KEY_END)
-        self.sidebar.draw()
-        self.assertEqual(self.sidebar.options[self.sidebar.selected][0], "Colors…")
-        self.sidebar.input("\r")
+        self.assertNotIn("Colors…", [label for label, _ in self.sidebar.options])
+        self.sidebar.close_menu()
+        self.sidebar.input("t")
         self.assertEqual(self.sidebar.menu, "theme")
         self.sidebar.theme_editor.preview(DEFAULT_THEME.with_role("normal", background=["blue"]))
         self.sidebar.close_menu()
@@ -1411,7 +1462,7 @@ class ThemeMenuTests(unittest.TestCase):
     def test_a_failure_is_bold_and_labelled_while_progress_is_neither(self):
         self.sidebar.input("t")
         self.sidebar.input("\n")
-        self.type("#8ab4f8")
+        self.type("#8ab4f")
         self.sidebar.input("\n")
         self.sidebar.draw()
         self.assertTrue(self.sidebar.theme_editor.message.startswith("Error: "))
@@ -1425,7 +1476,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertTrue(progress and not any(style & curses.A_BOLD for style in progress))
 
     def test_a_startup_theme_failure_is_bold_in_the_status_row(self):
-        self.path.write_text("[active]\nforeground = '#8ab4f8'\n")
+        self.path.write_text("[active]\nforeground = '#8ab4f'\n")
         self.sidebar.setup_theme()
         self.sidebar.draw()
         rows = self.styles_for("Error: ")
@@ -1433,8 +1484,9 @@ class ThemeMenuTests(unittest.TestCase):
         self.sidebar.message = ""
         self.screen.addnstr.reset_mock()
         self.sidebar.draw()
-        idle = self.styles_for("Layouts saved")
-        self.assertTrue(idle and not any(style & curses.A_BOLD for style in idle))
+        # Saving is quiet: with nothing to say, no status row is drawn at all.
+        self.assertFalse(self.styles_for("Error: "))
+        self.assertFalse(self.styles_for("Layouts saved"))
 
     def test_an_unchanged_editor_frame_is_not_repainted(self):
         self.sidebar.input("t")
@@ -1457,6 +1509,8 @@ class ShortcutMenuTests(unittest.TestCase):
         self.path.write_text(DEFAULT_KEYMAP.to_toml())
         self.model = Model.initial()
         self.screen = Mock()
+        # The panel draws its interior into a subwindow; the tests read one mock.
+        self.screen.derwin.return_value = self.screen
         self.screen.getmaxyx.return_value = (38, 28)
         source = Mock(socket="/unused/source.sock", persistent_socket=True)
         source.snapshot.return_value = ({}, "")

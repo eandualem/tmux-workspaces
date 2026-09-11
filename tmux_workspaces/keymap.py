@@ -53,7 +53,7 @@ ACTION_LABELS = MappingProxyType(
         "close-tab": "Close tab",
         "sidebar": "Focus navigation",
         "refresh-viewer": "Refresh viewer",
-        "quit": "Exit viewer",
+        "quit": "Detach viewer",
     }
     | {f"select-tab-{n}": f"Select tab {n}" for n in range(1, 10)}
     | {f"select-workspace-{n}": f"Select workspace {n}" for n in range(1, 10)}

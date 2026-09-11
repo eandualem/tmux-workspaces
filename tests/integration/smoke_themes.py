@@ -30,9 +30,10 @@ DEFAULT = -1
 # row reordering and width changes.
 ANCHORS = {
     "title": "Workspace",
-    "muted": "─────",
+    "muted": "tabs",
     "active": "▶",
-    "accent": "Shell",
+    # The add button on the tabs label row; the detail row is secondary text now.
+    "accent": "+",
 }
 # The workspace header occupies the top row, and the "Workspaces…" button
 # repeats its word further down the sidebar. Searching the whole screen for the
@@ -44,19 +45,24 @@ FIRST_ROW_ROLES = frozenset({"title"})
 _ATTRIBUTES = {1: "bold", 2: "dim", 4: "underline", 7: "reverse"}
 _CLEAR = {22: ("bold", "dim"), 24: ("underline",), 27: ("reverse",)}
 
-# The appearance shipped before any theme configuration existed: pair 1 is the
-# terminal default, 2 active, 3 accent and 4 muted.
+# The shipped appearance: pair 1 (normal) is the terminal default, so the
+# panel tmux paints behind the pane shows through; 2 active, 3 accent and 4
+# muted sit on that same default. The panel itself is a pane style, which a
+# capture of the pane's cells does not carry.
+# On 256 colors the shipped roles are exact RGB values in the pane's own
+# palette slots, defined through OSC 4: 16 text, 17 panel, 18 selection,
+# 19 accent, 20 secondary text, 21 outline, 22 surface.
 SHIPPED_256 = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
-    "muted": (245, DEFAULT, ()),
-    "active": (231, 238, ()),
-    "accent": (108, DEFAULT, ()),
+    "title": (16, 17, ("bold",)),
+    "muted": (20, 17, ()),
+    "active": (16, 18, ()),
+    "accent": (19, 17, ("bold",)),
 }
 SHIPPED_BASIC = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
-    "muted": (7, DEFAULT, ()),
+    "title": (7, 0, ("bold",)),
+    "muted": (7, 0, ()),
     "active": (7, 4, ()),
-    "accent": (6, DEFAULT, ()),
+    "accent": (6, 0, ("bold",)),
 }
 
 
@@ -127,10 +133,10 @@ class Screen:
     def at(self, anchor: str, *, first_row: bool = False):
         """The style in force where `anchor` starts, or None when it is not drawn.
 
-        `first_row` searches only the top row, for an anchor whose word also
-        appears elsewhere in the sidebar.
+        `first_row` searches only the heading row, the first inside the panel's
+        outline, for an anchor whose word also appears elsewhere in the sidebar.
         """
-        for text, states in self.lines[:1] if first_row else self.lines:
+        for text, states in self.lines[1:2] if first_row else self.lines:
             position = text.find(anchor)
             if position >= 0:
                 return states[position]
@@ -278,7 +284,7 @@ def default_appearance(directory: Path) -> None:
         assert_styles(viewer, SHIPPED_256, "restored 256-color viewer")
     print(
         "PASS: an unconfigured viewer draws the shipped 256-color roles "
-        "(muted 245, accent 108, active 231 on 238) and marks its selection without color",
+        "(exact RGB roles in slots 16-20) and marks its selection without color",
         flush=True,
     )
 
@@ -295,11 +301,12 @@ foreground = ["bright-magenta", "magenta"]
 foreground = 244
 """
 
+# Roles the file leaves alone keep the panel as their ground, slot 17.
 CUSTOM_256 = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
+    "title": (16, 17, ("bold",)),
     "active": (3, 27, ("bold",)),
-    "accent": (13, DEFAULT, ()),
-    "muted": (244, DEFAULT, ()),
+    "accent": (13, 17, ("bold",)),
+    "muted": (244, 17, ()),
 }
 
 
@@ -314,7 +321,8 @@ def write_config(path: Path, text: str) -> Path:
 
 
 def status(viewer: Tmux) -> str:
-    return screen(viewer).plain().splitlines()[-1].strip()
+    """The message row: above the four-row footer, inside the outline."""
+    return screen(viewer).plain().splitlines()[-6].strip().strip("│").strip()
 
 
 def configured_colors(directory: Path) -> None:
@@ -327,7 +335,7 @@ def configured_colors(directory: Path) -> None:
         assert_colorless_cues(viewer, "configured viewer")
 
     with FixtureResources(parent=directory) as resources:
-        write_config(config_path(resources), "[active]\nforeground = '#ff0000'\n")
+        write_config(config_path(resources), "[active]\nforeground = '#ff000'\n")
         library = resources.library("broken")
         client, viewer = launch(resources, library)
         assert_styles(viewer, SHIPPED_256, "viewer with an invalid theme")
@@ -356,7 +364,12 @@ def normal_background(directory: Path) -> None:
 
         def base_is_configured():
             drawn = Screen(viewer.run("capture-pane", "-e", "-N", "-p", "-t", "%0"))
-            blanks = [states for text, states in drawn.lines if states and not text.strip()]
+            # A blank interior row: nothing between the outline's two cells.
+            blanks = [
+                states[1:-1]
+                for text, states in drawn.lines
+                if len(states) > 2 and not text.strip().strip("│").strip()
+            ]
             return (
                 drawn.at("Workspace") == (7, 4, ("bold",))
                 and bool(blanks)
@@ -364,11 +377,18 @@ def normal_background(directory: Path) -> None:
             )
 
         wait(client, base_is_configured, "configured normal background missing from blank cells")
-        # Exercise the shared keyboard menu entry after integrating menu navigation.
+        # The workspace menu no longer carries Colors; the keyboard route is the
+        # sidebar's own t key once the panel has focus.
         client.type("\x07M")
         wait(client, lambda: "Workspace options" in screen(viewer).plain(), "workspace menu absent")
-        client.type("\x1b[F")
-        client.type("\r")
+        client.type("\x1b")
+        wait(
+            client,
+            lambda: "Workspace options" not in screen(viewer).plain(),
+            "menu did not close",
+        )
+        client.type("\x07s")
+        client.type("t")
         wait(
             client,
             lambda: "Viewer colors" in screen(viewer).plain(),
@@ -420,7 +440,8 @@ def defaults_and_apply(directory: Path) -> None:
             lambda: styles(viewer) == SHIPPED_256,
             "Apply did not leave the shipped colors installed",
         )
-        assert "[active]" in config.read_text(), config.read_text()
+        # The shipped colors are a named preset, so the file records the name.
+        assert 'preset = "default"' in config.read_text(), config.read_text()
 
         # The saved file is what a newly opened viewer reads.
         second_library = resources.library("reopened")

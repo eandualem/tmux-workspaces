@@ -31,40 +31,94 @@ with the arrow keys and press Enter, or click a row. Nothing is created until yo
 choose, so attaching never lands on top of a shell you did not ask for; an empty
 pane stays empty across exit and reopen until it is filled. Use a shell for
 commands, a status view, an editor, or any other terminal program.
-**Tab actions… → Rename tab** changes its name. Names belong to
+**Rename tab** in the tab menu changes its name. Names belong to
 you: attaching a session never changes them. In the name editor, type a name and
 click **Save name** or press Enter; Ctrl-u clears the existing name.
 
-Click **Split →** or **Split ↓** to add another pane beside or below the
-selected one. It opens with the same chooser as a new tab; a terminal chosen
-there starts in the original shell's working directory. Four panes still belong
-to one tab. Click a pane to select and type
-there. Drag the borders to adjust sizes. **Focus** temporarily shows one pane;
-**Next →** cycles panes and **Layout** restores the splits. Narrow terminals
-use temporary focus without discarding the arrangement.
+The selected tab's menu sits behind the **⋯** at the right end of its detail
+row, behind a right-click on any tab, and behind the tab-options shortcut.
+**Split right** or **Split below** there adds another pane beside or below the
+selected one, as do the split shortcuts. It opens with the same
+chooser as a new tab; a terminal chosen there starts in the original shell's
+working directory. Four panes still belong to one tab. Click a pane to select
+and type there. Drag the gap between panes to adjust sizes. **Focus pane** in
+the tab menu temporarily shows one pane; **Next pane** cycles panes and
+**Show layout** restores the splits. Narrow terminals use temporary focus
+without discarding the arrangement. The panel's bottom holds, with a blank
+row between each: an optional **Agents** roster, **Configure…**, and the
+workspace icons, with one blank row before the outline. **Configure…**
+gathers everything infrequent — **Colors…**, **Shortcuts**, **Refresh
+viewer…**, the **Show agent status** toggle and **Agent status…** — and, last
+after a rule, **Detach**, which leaves the viewer with every shell and
+attached session still running.
 
-To attach a session to a pane that already has a shell, select the pane, click
-**Attach session…** in the navigation panel, then choose a tmux session
-for that pane. This is a separate control from **Focus**. Type to filter the chooser.
-The pane's original shell stays running;
-**Tab actions… → Return pane to shell** brings it back. Each split can attach a different session or
-remain an ordinary terminal. Attachment names and states appear as secondary
-information, below the active tab’s name. Offline attachments stay associated with
+The roster is an overview of your agent-backbone agents, independent of the
+selected tab or pane: one row per active agent, a symbol in a fixed slot and
+the name. `▶` is working, `!` needs you (waiting for input, or blocked), `○`
+is idle and `?` an unknown state; **Agent status…** spells each state out and
+ends with this legend. Offline agents take no row. States come from
+agent-backbone's own reports, never from terminal text or a running process;
+when the connection fails the section says *Roster unavailable* rather than
+showing old states as current. Names keep one alphabetical order as states
+change. At most six rows are shown, with scrolling and a count when there are
+more, and on short windows the roster gives rows back to the tab list first.
+The roster appears when a state-reporting source is connected (`--backbone`,
+or the demo) and can be hidden with **Show agent status**; the choice is saved
+with the layout, applies before the first frame, and hides the whole section.
+Nothing in the panel names the session attached to the focused pane; name the
+tab for that.
+
+To attach a session to a pane that already has a shell, select the pane, open
+the tab menu's **Attach session**, then choose a tmux session for that pane.
+Type to filter the chooser. The pane's original shell stays running;
+**Return pane to shell** in the tab menu brings it back. Each split can attach a different session or
+remain an ordinary terminal. Offline attachments stay associated with
 their pane and reconnect when the session returns; the viewer never starts
-an external session. The roster is only an attachment chooser, never a source of tabs.
+an external session. An attached session is joined through a grouped tmux
+session of the viewer's own, which shares the session's windows but carries
+its own options: it starts with the settings of the session you attached
+(mouse mode included) and turns its status line off, so the row it took
+returns to the program inside, while the session you attached keeps its own
+status line and every other setting untouched. The grouped session disappears
+when the pane lets go of it, or as soon as the session it joined is gone, so
+a session that ends shows as offline instead of living on inside the viewer.
+The roster is only an attachment chooser, never a source of tabs.
 
-Pane borders stay plain. The navigation panel button, **Tab actions… → Attach session**
-and the attachment shortcut work on all supported tmux versions.
+The navigation panel is a rounded, outlined panel inset in the window, and
+the terminals sit on a slightly lighter surface beside it. Split panes are
+separated by one thin line in the outline color, with a blank column of
+surface on each side of it, so text never touches a boundary; no border marks
+the focused pane, the cursor does. The panel, surface and outline colors are
+single values in the colors editor and may be RGB values such as `#22252b`,
+so they can be matched to your terminal's theme. The padding is made of thin
+panes tmux cannot tell apart from the rest, so a click on one simply hands
+focus back to the pane you were in. The tab menu's **Attach session** and the
+attachment shortcut work on all supported tmux versions.
 Once open, the chooser keeps its selected destination even if focus moves to
 another pane. If another viewer removes or changes that destination, attach again
 from the updated pane instead of replacing the peer's change.
 
-Click a numbered workspace button to switch, **+** beside the buttons to create a
-workspace, or **Workspaces… → Switch workspace** to see the full list. **Workspaces…**
-renames a workspace or deletes an empty one. **Tab actions…** also reorders tabs or moves one to another
-workspace. Scroll the navigation panel with the wheel or its arrow controls.
+The workspace name at the top of the panel is the workspace chooser: click its
+**▾** (or right-click the name) to switch to another workspace, create one,
+rename it, give it an icon or delete an empty one. The icon row at the very
+bottom switches with one click: each workspace has a three-cell slot showing
+its icon, or its number when it has none, with the current one filled; a
+right-click on a slot opens that workspace's options, and when the row is
+full its last slot, **…**, opens the full list. **Set icon…** offers a small
+set of glyphs that render one cell wide in the usual terminal fonts, and
+**Number** takes the icon away again; the choice is saved with the workspace.
+The workspace shortcuts cycle and select by number as before. The tab menu
+also reorders tabs or moves one to another workspace. Scroll the navigation panel with the wheel or its arrow controls.
 
-**Exit viewer** or closing its terminal window leaves your saved tabs, normal
+**Colors…** opens the color editor. Its last row, **Preset**, steps through the
+shipped looks — `default`, `plain`, `forest`, `paper` and `mono` — with a live
+preview; the rows above tune each color role by hand. Apply writes the choice
+to a small TOML file; [THEMES.md](THEMES.md) describes the file and every role.
+The status line at the bottom of the panel shows a small light while the viewer
+is idle and its saved state is current; a message replaces it when something
+needs attention.
+
+**Detach** or closing the terminal window leaves your saved tabs, normal
 shells, running programs and agents available for reopening. Explicitly
 **closing a pane or tab ends its ordinary shells and their running programs**;
 attached external sessions keep running. This distinction also applies when
@@ -228,5 +282,5 @@ unverified; PTY checks with installed Ghostty terminfo are a separate result.
 
 Double-click the active tab name or the current workspace name beside the top +
 to edit that name in place. Enter saves; Escape or a click elsewhere cancels.
-The + creates a tab, and the numbered workspace buttons switch workspaces.
+The + on the tabs row creates a tab, and the ▾ beside the workspace name switches workspaces.
 Existing right-click menus and rename shortcuts remain available.

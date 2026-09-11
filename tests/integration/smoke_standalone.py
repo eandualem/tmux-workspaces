@@ -8,7 +8,17 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from tests.integration.support import Client, FixtureResources, click_button, saved, wait
+from tests.integration.support import (
+    OUTLINE,
+    Client,
+    FixtureResources,
+    click_button,
+    content_panes,
+    saved,
+    session_in_use,
+    user_sessions,
+    wait,
+)
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
@@ -83,14 +93,16 @@ def exercise(resources: FixtureResources) -> None:
         )
         tmux.run("set-option", "-t", "=" + name + ":", "status", "off")
 
-    def identities(tmux: Tmux) -> str:
-        return tmux.run("list-sessions", "-F", "#{session_id}:#{session_created}:#{session_name}")
+    def identities(tmux: Tmux) -> list[str]:
+        return user_sessions(tmux, "#{session_id}:#{session_created}:#{session_name}")
 
     def attached(tmux: Tmux, target: str) -> bool:
-        return int(tmux.run("display-message", "-p", "-t", target, "#{session_attached}") or 0) > 0
+        return session_in_use(tmux, target)
 
     def capture(tmux: Tmux, target: str) -> str:
-        return tmux.run("capture-pane", "-p", "-t", target)
+        text = tmux.run("capture-pane", "-p", "-t", target)
+        # The sidebar's outline is blanked so its lines compare as before.
+        return text.translate(OUTLINE) if target == "%0" else text
 
     def open_window(tmux: Tmux):
         client = resources.own_client(
@@ -107,7 +119,7 @@ def exercise(resources: FixtureResources) -> None:
         assert str(Path(runtime["shell_socket"]).resolve()) == shells.socket
         wait(
             client,
-            lambda: "Layouts saved" in capture(viewer, "%0"),
+            lambda: "Configure…" in capture(viewer, "%0"),
             "standalone sidebar did not initialize with poisoned Backbone configuration",
         )
         return client, viewer, manifest
@@ -195,7 +207,8 @@ def exercise(resources: FixtureResources) -> None:
     source.run("kill-session", "-t", "=" + broad_name + ":")
     wait(
         client,
-        lambda: "session offline" in capture(viewer, "=viewer:.1"),
+        # The first content pane: the sidebar comes first, gutters are skipped.
+        lambda: "session offline" in capture(viewer, content_panes(viewer)[1]),
         "missing offline attachment view",
     )
     assert saved(library).pane["agent"] == broad_name

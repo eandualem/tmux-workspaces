@@ -26,7 +26,7 @@ These checks do not widen the supported version range.
 
 Before opening the layout store or creating private servers, startup requires
 terminal input/output, a nonempty `TERM`, Python curses APIs, and a usable terminfo
-entry with at least eight colors, five color pairs, cursor positioning, screen
+entry with at least eight colors, six color pairs, cursor positioning, screen
 clearing and attribute reset. The existing eight-color palette remains supported;
 256 colors are not required. The probe reads terminfo without entering the screen
 or changing terminal modes. It does not contact an existing tmux session.

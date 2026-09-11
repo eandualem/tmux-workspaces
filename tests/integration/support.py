@@ -20,6 +20,7 @@ from contextlib import closing, suppress
 from pathlib import Path
 
 from tmux_workspaces.application import socket_path
+from tmux_workspaces.attachments import GROUPED_PREFIX
 from tmux_workspaces.model import Model
 from tmux_workspaces.tmux import Tmux, clean_env
 
@@ -349,8 +350,43 @@ def right_click(client: Client, viewer: Tmux, row: int, column: int = 3) -> None
     client.pump(0.3)
 
 
+OUTLINE = str.maketrans(dict.fromkeys("╭╮╰╯│─", " "))
+
+
+def user_sessions(server: Tmux, fields: str = "#{session_name}") -> list[str]:
+    """The sessions people run on a server: every session that is not one of the
+    viewer's own grouped attach sessions."""
+    listed = server.run("list-sessions", "-F", "#{session_name}\t" + fields, check=False)
+    kept = []
+    for line in listed.splitlines():
+        name, _tab, rest = line.partition("\t")
+        if not name.startswith(GROUPED_PREFIX):
+            kept.append(rest)
+    return kept
+
+
+def grouped_sessions(server: Tmux) -> list[str]:
+    """The viewer's grouped attach sessions currently on a server."""
+    return [
+        line
+        for line in server.run("list-sessions", "-F", "#{session_name}", check=False).splitlines()
+        if line.startswith(GROUPED_PREFIX)
+    ]
+
+
+def content_panes(viewer: Tmux) -> list[str]:
+    """The sidebar and content pane ids: every pane that is not a gutter."""
+    return [
+        line.split()[0]
+        for line in viewer.run("list-panes", "-F", "#{pane_id} #{?@viewer_gutter,1,0}").splitlines()
+        if line.endswith(" 0")
+    ]
+
+
 def sidebar(viewer: Tmux) -> str:
-    return viewer.run("capture-pane", "-p", "-t", "%0")
+    """The sidebar's text with its outline blanked, so columns stay in place
+    while lines strip and compare as they did before the panel had a frame."""
+    return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
 
 
 def tab_row(viewer: Tmux, name: str) -> int:
@@ -423,6 +459,20 @@ def open_terminal(client, viewer, library: Path) -> None:
     wait(client, lambda: shell_attached(shells, name), "the chosen terminal did not attach")
 
 
+def session_in_use(server: Tmux, target: str) -> bool:
+    """Whether a client is attached to the session or, for an external session
+    the viewer joins through a grouped session of its own, to its group."""
+    counts = server.run(
+        "display-message",
+        "-p",
+        "-t",
+        target,
+        "#{session_attached} #{session_group_attached}",
+        check=False,
+    ).split()
+    return sum(int(count) for count in counts if count.isdigit()) > 0
+
+
 def shell_attached(shells: Tmux, name: str) -> bool:
     attached = shells.run(
         "display-message", "-p", "-t", "=" + name + ":", "#{session_attached}", check=False
@@ -456,10 +506,82 @@ def click_attach(client, viewer, leaf_id):
     )
 
 
-def click_button(client, viewer, text):
-    if text == "+ Tab":
-        text = "[ + ]"
+# Pane actions moved from panel buttons into the tab menu; scenarios keep
+# naming the old buttons and are routed through the menu.
+MENU_ROUTES = {
+    "Split →": "Split right",
+    "Split ↓": "Split below",
+    "Focus": "Focus pane",
+    "Layout": "Show layout",
+    "Next →": "Next pane",
+    "Attach session…": "Attach session",
+}
+# Leaving is labelled for what it does: shells and sessions keep running.
+RENAMED = {"Exit": "Detach"}
+# Infrequent controls sit behind Configure…; scenarios keep naming them.
+CONFIGURE = {"Shortcuts", "Colors…", "Detach", "Refresh viewer…"}
 
+
+def click_button(client, viewer, text):
+    """Click the control labelled `text`, opening the menu it lives in first.
+
+    A click can miss on a loaded host: the sidebar redraws underneath it and
+    the row measured a moment ago holds a different button, or the press and
+    release straddle a repaint. A menu that should have opened is therefore
+    checked for the label it must show, and the opening click repeated a few
+    times before the scenario gives up; every later step verifies its own
+    effect already.
+    """
+    text = RENAMED.get(text, text)
+    opener = None
+    if text in CONFIGURE:
+        opener = "Configure…"
+    if text == "+ Tab":
+        # The plus sits at the right end of the tabs label row.
+        text = "+"
+    if text in MENU_ROUTES:
+        opener, text = "Tab actions…", MENU_ROUTES[text]
+    if text == "Tab actions…":
+        # The selected tab's menu sits behind the ellipsis at its row's end.
+        text = "⋯"
+    if opener == "Tab actions…":
+        opener = "⋯"
+    if not opener:
+        _click(client, viewer, text)
+        return
+    for attempt in range(4):
+        if attempt:
+            # A missed click may have opened something else, or nothing;
+            # Escape leaves a menu and is harmless on the plain sidebar.
+            client.type("\x1b")
+            client.pump(0.3)
+        _click(client, viewer, opener)
+        if not _appears(client, viewer, text, timeout=4.0):
+            assert attempt < 3, f"{opener} never opened a menu showing {text}"
+            continue
+        try:
+            _click(client, viewer, text, timeout=4.0)
+            return
+        except AssertionError as error:
+            # The menu showed the row and then went away before it could be
+            # clicked. Say where the keyboard focus sits, then open it again.
+            panes = viewer.run(
+                "list-panes", "-F", "#{pane_id} active=#{pane_active} gutter=#{@viewer_gutter}"
+            )
+            assert attempt < 3, f"{text} vanished after {opener} opened; panes:\n{panes}\n{error}"
+
+
+def _appears(client, viewer, text, timeout: float) -> bool:
+    """Whether `text` is drawn in the sidebar within `timeout`, without failing."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if text in viewer.run("capture-pane", "-p", "-t", "%0"):
+            return True
+        client.pump(0.1)
+    return False
+
+
+def _click(client, viewer, text, timeout: float = 10):
     def sidebar():
         return viewer.run("capture-pane", "-p", "-t", "%0")
 
@@ -479,7 +601,29 @@ def click_button(client, viewer, text):
         previous, seen["row"], seen["lines"] = seen.get("row"), row, lines
         return row is not None and row == previous
 
-    wait(client, settled, "missing button: " + text)
+    wait(client, settled, "missing button: " + text, timeout=timeout)
     lines, row = seen["lines"], seen["row"]
     top = int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
-    client.click(lines[row].index(text) + 2, row + top + 1)
+    # A one-glyph control sits at the right end of its hit area, so it is
+    # clicked on the glyph itself; a word is clicked one cell in.
+    offset = 1 if len(text) == 1 else 2
+    before = "\n".join(lines)
+    for _attempt in range(3):
+        client.click(lines[row].index(text) + offset, row + top + 1)
+        # A row of an open menu always changes the panel when clicked: it
+        # opens another menu, closes this one or shows a message. A click that
+        # left the menu exactly as it was is one the loaded host dropped, so
+        # it is sent again; buttons on the plain panel are never repeated,
+        # since a second click on a name would begin renaming it.
+        if "‹ Back" not in before:
+            return
+        deadline = time.monotonic() + 1.5
+        while time.monotonic() < deadline:
+            try:
+                changed = sidebar() != before
+            except RuntimeError:
+                # The row ended the viewer (Detach, a refresh): that is the change.
+                return
+            if changed:
+                return
+            client.pump(0.1)

@@ -9,6 +9,9 @@ from ..targets import valid_session
 
 
 class DemoProvider:
+    # Items carry an agent state, so they make up the sidebar's roster.
+    provides_states = True
+
     def __init__(self, path: Path):
         self.path = path
         self.last = Snapshot()
