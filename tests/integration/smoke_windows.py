@@ -108,8 +108,15 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     assert len(saved(library).space["tabs"]) == 1
     click(first, first_view, "Attach session…")
     click(first, first_view, "manager")
-    wait(second, lambda: "manager" in sidebar(second_view), "attachment not synchronized")
-    assert "1 Workspaces" in selected(second_view), "peer attachment redirected keyboard input"
+    # The roster names every demo agent, so the peer's own panes are what show
+    # the attachment arriving; the peer then keeps the keyboard on its panel
+    # rather than redirecting typing into the changed tab.
+    wait(second, lambda: " manager" in selected(second_view), "attachment not synchronized")
+    wait(
+        second,
+        lambda: "1 Workspaces" in selected(second_view),
+        "peer attachment redirected keyboard input",
+    )
     click(second, second_view, "+ Tab")
     click(second, second_view, "Attach session…")
     click(second, second_view, "researcher")

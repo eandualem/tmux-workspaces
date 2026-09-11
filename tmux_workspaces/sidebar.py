@@ -139,6 +139,9 @@ class Sidebar:
         self.selection = Selection()
         self.tab_offset = 0
         self.roster_offset = 0
+        # Consecutive polls that found the keyboard focus away from the panel
+        # while a menu or editor was open.
+        self.away_polls = 0
         # The interior rows the roster's agent rows occupy, for the wheel.
         self.roster_span: tuple[int, int] | None = None
         # The roster reading the frame being drawn works from; unread between frames.
@@ -1877,8 +1880,16 @@ class Sidebar:
                             # The user is typing in a pane they chose. End the
                             # overlay there rather than pulling focus back to a
                             # menu they can no longer see themselves using.
-                            self.clear_inline()
-                            self.close_menu()
+                            # Focus can also sit elsewhere for one poll while
+                            # tmux finishes selecting the panel after the click
+                            # that opened the menu, so it takes two polls in a
+                            # row to count as the user's choice.
+                            self.away_polls += 1
+                            if self.away_polls >= 2:
+                                self.clear_inline()
+                                self.close_menu()
+                        else:
+                            self.away_polls = 0
                         if not self.menu:
                             before = repr(self.model.tab)
                             before_tree = repr(self.model.tab["tree"]) if self.model.tab else None
