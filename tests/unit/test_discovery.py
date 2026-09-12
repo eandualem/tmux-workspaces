@@ -289,7 +289,16 @@ class DiscoveryTests(unittest.TestCase):
         for call in run.call_args_list:
             self.assertEqual(
                 call.args[0],
-                ["tmux", "-S", "/absent/source.sock", "list-sessions", "-F", "#{session_name}"],
+                [
+                    "tmux",
+                    "-S",
+                    "/absent/source.sock",
+                    "list-sessions",
+                    "-f",
+                    "#{!=:#{@tmux_workspaces_attachment},1}",
+                    "-F",
+                    "#{session_name}",
+                ],
             )
             self.assertNotIn("BACKBONE_API_KEY", call.kwargs["env"])
 

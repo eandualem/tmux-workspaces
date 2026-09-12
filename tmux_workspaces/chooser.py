@@ -217,14 +217,16 @@ def install_theme(
     """
     if theme_path is None:
         return None
-    from .theme import ThemeError, load_theme
+    from .theme import RGB_SLOTS, ThemeError, load_theme
 
     try:
         curses.start_color()
         ceiling = getattr(curses, "COLORS", 0) or 8
         colors = min(terminal_colors or ceiling, ceiling)
         palette = load_theme(theme_path).theme.resolve(colors)
-        palette.install(curses, write)
+        # A respawned chooser may inherit this private pane's old RGB overrides.
+        # Reset unused slots from the range we own before defining the new ones.
+        palette.install(curses, write, previous_rgb=RGB_SLOTS)
         # The empty pane shares the sidebar's background when one is configured.
         screen_background = palette.style("normal")
     except (ThemeError, ValueError, OSError, curses.error):

@@ -44,13 +44,13 @@ class Tmux:
     def __init__(self, socket: str):
         self.socket = socket
 
-    def run(self, *args: str, check: bool = True) -> str:
+    def run(self, *args: str, check: bool = True, timeout: float = 5) -> str:
         result = subprocess.run(
             ["tmux", "-S", self.socket, *map(str, args)],
             env=clean_env(),
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=timeout,
         )
         if check and result.returncode:
             raise RuntimeError(result.stderr.strip() or "tmux command failed")

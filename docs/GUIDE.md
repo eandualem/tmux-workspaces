@@ -130,6 +130,17 @@ shells, running programs and agents available for reopening. Explicitly
 attached external sessions keep running. This distinction also applies when
 another viewer window is displaying the same saved tab.
 
+### Attachment helper discovery
+
+Viewer-owned grouped attachment sessions carry the tmux session option
+`@tmux_workspaces_attachment=1` and are excluded from the viewer's attachment
+pickers. Ordinary sessions are never hidden merely because their names begin
+with `tw-`. Helpers created by older versions have no marker and remain visible
+until their existing attachment naturally closes; reopening that attachment
+creates a marked helper. Existing attachments and external sessions are not
+migrated or stopped by discovery. Other tools that list tmux sessions manage
+their own filtering.
+
 ## Keyboard shortcuts
 
 On macOS, `./ghostty` opens a dedicated Ghostty instance with direct Command

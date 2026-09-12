@@ -22,6 +22,7 @@ from tmux_workspaces.theme import (
     PRESET_NAMES,
     ROLES,
     Theme,
+    ThemeError,
     canonical_panel,
     parse_theme,
     preset_theme,
@@ -120,6 +121,24 @@ class PresetThemeTests(unittest.TestCase):
         self.assertEqual(palette.describe("muted"), "color 16 on #22252b")
         # Every remaining exact color still has a slot, from 17 upward.
         self.assertEqual(sorted(palette.rgb), [17, 18, 19, 20, 21, 22])
+
+    def test_live_theme_releases_rgb_slots_for_indexed_colors(self):
+        fake, writes = Curses(), []
+        first = DEFAULT_THEME.resolve(256)
+        first.install(fake, writes.append)
+        self.assertIn(16, first.rgb)
+        second = DEFAULT_THEME.with_role("muted", foreground=[16]).resolve(256)
+        second.install(fake, writes.append, previous_rgb=first.rgb)
+        self.assertTrue(writes[-1].startswith("\x1b]104;16\x1b\\"))
+        self.assertEqual(second.installed("muted")[0], 16)
+        third = preset_theme("plain").resolve(256)
+        third.install(fake, writes.append, previous_rgb=second.rgb)
+        for slot in set(second.rgb) - set(third.rgb):
+            self.assertIn(f"\x1b]104;{slot}\x1b\\", writes[-1])
+        writes.clear()
+        with self.assertRaises(ThemeError):
+            second.install(Curses(fail_on=2), writes.append, previous_rgb=first.rgb)
+        self.assertEqual(writes, [], "failed installation changed the pane palette")
 
     def test_tmux_spelling_of_installed_colors(self):
         self.assertEqual(tmux_color(-1), "default")
@@ -245,6 +264,16 @@ class ChooserThemeTests(unittest.TestCase):
         self.assertEqual(styles["muted"], 4)
         self.assertEqual(styles["background"], 1)
         self.assertTrue(styles["title"] & Curses.A_BOLD)
+
+    def test_respawned_chooser_resets_inherited_rgb_before_using_indexed_color(self):
+        self.path.write_text('preset = "default"\n[muted]\nforeground = "16"\n')
+        fake = Curses()
+        fake.COLORS = 256
+        emitted = []
+        self.assertIsNotNone(install_theme(fake, self.path, 256, emitted.append))
+        self.assertEqual(fake.pairs[4][0], 16)
+        self.assertIn("\x1b]104;16\x1b\\", "".join(emitted))
+        self.assertNotIn("\x1b]4;16;", "".join(emitted))
 
     def test_the_outer_terminal_bounds_the_chooser_palette(self):
         self.path.write_text('preset = "paper"\n')

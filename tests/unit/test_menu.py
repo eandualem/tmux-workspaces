@@ -1,6 +1,6 @@
 import unittest
 
-from tmux_workspaces.menu import Entry, Selection
+from tmux_workspaces.menu import RULE, Entry, Selection
 
 
 def entries(*keys):
@@ -138,6 +138,28 @@ class SelectionTests(unittest.TestCase):
         self.selection.scroll(-2)
         self.selection.show(rows, 3)
         self.assertEqual(self.active(), "row:2")
+
+    def test_scroll_boundaries_skip_separators_in_both_directions(self):
+        rows = [*entries("a", "b"), Entry("rule", RULE, lambda: "rule"), *entries("c", "d")]
+        self.selection.show(rows, 2)
+        self.selection.scroll(2)
+        visible = self.selection.show(rows, 2)
+        self.assertEqual(self.selection.entry().key, "c")
+        self.assertIn(self.selection.entry(), visible)
+        self.selection.scroll(-1)
+        visible = self.selection.show(rows, 2)
+        self.assertEqual(self.selection.entry().key, "b")
+        self.assertIn(self.selection.entry(), visible)
+
+    def test_window_containing_only_separator_arms_nothing(self):
+        rows = [*entries("a"), Entry("rule", RULE, lambda: "rule"), *entries("b")]
+        self.selection.show(rows, 1)
+        self.selection.scroll(1)
+        self.selection.show(rows, 1)
+        self.assertIsNone(self.selection.entry())
+        self.selection.scroll(1)
+        self.selection.show(rows, 1)
+        self.assertEqual(self.selection.entry().key, "b")
 
     def test_scrolling_past_the_end_clamps_to_the_last_window(self):
         rows = entries(*[f"row:{n}" for n in range(6)])

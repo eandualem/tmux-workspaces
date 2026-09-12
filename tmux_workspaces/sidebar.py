@@ -86,8 +86,46 @@ LEGEND = (
     ("○", "idle"),
     ("?", "state unknown"),
 )
-# Plain substitutes for a terminal that cannot show the symbols.
-ASCII_GLYPHS = {"▶": ">", "○": "o"}
+# One-cell substitutes keep controls and outlines aligned in limited encodings.
+ASCII_GLYPHS = {
+    "▶": ">",
+    "○": "o",
+    "‹": "<",
+    "▾": "v",
+    "↑": "^",
+    "↓": "v",
+    "←": "<",
+    "→": ">",
+    "↵": ">",
+    "…": "~",
+    "⋯": "~",
+    "·": ".",
+    "╭": "+",
+    "╮": "+",
+    "╰": "+",
+    "╯": "+",
+    "─": "-",
+    "│": "|",
+}
+
+
+def terminal_text(text: str, encoding: str) -> str:
+    """Keep representable text; replace other characters without shifting cells."""
+    text = visible(text)
+    try:
+        text.encode(encoding)
+        return text
+    except UnicodeEncodeError:
+        result = []
+        for char in text:
+            try:
+                char.encode(encoding)
+                result.append(char)
+            except UnicodeEncodeError:
+                result.append(ASCII_GLYPHS.get(char, "?" * cells(char)))
+        return "".join(result)
+
+
 # The roster is bounded so the tab list keeps its room: at most this many
 # agent rows, and never fewer tab rows than this.
 MAX_ROSTER_ROWS = 6
@@ -158,7 +196,12 @@ class Sidebar:
         self.roster_span: tuple[int, int] | None = None
         # The roster reading the frame being drawn works from; unread between frames.
         self._frame_roster: Snapshot | object | None = _UNREAD
-        self.unicode = "utf" in (locale.getpreferredencoding(False) or "").lower()
+        encoding = getattr(screen, "encoding", None)
+        self.encoding = (
+            encoding
+            if isinstance(encoding, str) and encoding
+            else locale.getpreferredencoding(False) or "ascii"
+        )
         self.message = ""
         self.running = True
         self.last_frame = None
@@ -200,7 +243,7 @@ class Sidebar:
     def install(self, theme) -> None:
         """Show a theme in place: four pair updates, no reopen and no redraw loop."""
         palette = theme.resolve(self.colors)
-        palette.install(curses, self.emit)
+        palette.install(curses, self.emit, previous_rgb=self.palette.rgb if self.palette else ())
         self.theme, self.palette, self.last_frame = theme, palette, None
         # The panel color is tmux's to paint: the sidebar's background, empty
         # panes and the band between panes, so the panel and the terminals are
@@ -811,20 +854,29 @@ class Sidebar:
         if height < 2 or width < 2:
             return
         style = self.style("outline")
+        top = terminal_text("╭" + "─" * (width - 2), self.encoding)
+        bottom = terminal_text("╰" + "─" * (width - 2), self.encoding)
+        vertical = terminal_text("│", self.encoding)
         with contextlib.suppress(curses.error):
-            self.screen.addnstr(0, 0, "╭" + "─" * (width - 2), width - 1, style)
-            self.screen.insstr(0, width - 1, "╮", style)
+            self.screen.addnstr(0, 0, top, width - 1, style)
+            self.screen.insstr(0, width - 1, terminal_text("╮", self.encoding), style)
             for row in range(1, height - 1):
-                self.screen.addnstr(row, 0, "│", 1, style)
-                self.screen.insstr(row, width - 1, "│", style)
-            self.screen.addnstr(height - 1, 0, "╰" + "─" * (width - 2), width - 1, style)
-            self.screen.insstr(height - 1, width - 1, "╯", style)
+                self.screen.addnstr(row, 0, vertical, 1, style)
+                self.screen.insstr(row, width - 1, vertical, style)
+            self.screen.addnstr(height - 1, 0, bottom, width - 1, style)
+            self.screen.insstr(height - 1, width - 1, terminal_text("╯", self.encoding), style)
 
     def put(self, y: int, x: int, text: str, style: int = 0, width: int | None = None) -> None:
         height, columns = self.size()
         if 0 <= y < height and 0 <= x < columns:
             with contextlib.suppress(curses.error):
-                self.body.addnstr(y, x, visible(text), min(width or columns, columns - x), style)
+                self.body.addnstr(
+                    y,
+                    x,
+                    terminal_text(text, self.encoding),
+                    min(width or columns, columns - x),
+                    style,
+                )
 
     def button(
         self,
@@ -1139,7 +1191,7 @@ class Sidebar:
         return sorted(entries, key=lambda entry: (entry[0].casefold(), entry[0]))
 
     def glyph(self, char: str) -> str:
-        return char if self.unicode else ASCII_GLYPHS.get(char, char)
+        return terminal_text(char, self.encoding)
 
     def symbol(self, state: str) -> str:
         return self.glyph(STATE_SYMBOLS.get(state, "?"))
@@ -1645,12 +1697,15 @@ class Sidebar:
         would otherwise change tabs or close shells after the window's final
         save. Their senders are still acknowledged, so no shortcut hangs.
         """
-        for action in self.actions.pending():
-            if not self.running:
-                continue
-            with self.display.snapshot_scope():
-                self.action(action)
-                self.draw()
+        with contextlib.closing(self.actions.pending()) as pending:
+            for action in pending:
+                if not self.running:
+                    continue
+                with self.display.snapshot_scope():
+                    self.action(action)
+                    if self.running and not self.config_popup:
+                        self.display.wait_for_input(self.model.tab)
+                    self.draw()
         return self.running
 
     def run(self) -> None:

@@ -42,6 +42,15 @@ without waits or retries between them, and require each marker exactly once in
 only its intended shell. These checks reduce fixture timing assumptions; they do
 not guarantee success under arbitrary host starvation or prove native GUI paint.
 
+`smoke_attachment_readiness` deliberately delays ordinary attachment startup by
+half a second in a disposable runtime copy. It sends workspace switches and
+commands as one burst across two four-pane layouts, checks each command arrives
+exactly once in its intended shell, and verifies shell process identities survive.
+The viewer acknowledges an ordinary-shell shortcut only after its own pane TTY
+has attached to that shell; another viewer's client cannot satisfy readiness.
+Unit checks cover the three-second deadline, stale/dead panes, failed action
+acknowledgements, and skipping offline external sessions and empty choosers.
+
 The keyboard-menu suite distinguishes tab switching from pane focus and explicit
 focus/restore layout. It checks the exact active leaf in four-pane layouts at
 160×38 and 72×16, including scrolling menus. Unit checks cover effective custom

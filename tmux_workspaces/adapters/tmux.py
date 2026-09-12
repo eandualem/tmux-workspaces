@@ -4,6 +4,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from ..attachments import GROUPED_MARKER
 from ..discovery import Snapshot
 from ..targets import valid_session
 from ..tmux import clean_env
@@ -16,7 +17,16 @@ class TmuxProvider:
     def read(self) -> Snapshot:
         try:
             result = subprocess.run(
-                ["tmux", "-S", self.socket, "list-sessions", "-F", "#{session_name}"],
+                [
+                    "tmux",
+                    "-S",
+                    self.socket,
+                    "list-sessions",
+                    "-f",
+                    f"#{{!=:#{{{GROUPED_MARKER}}},1}}",
+                    "-F",
+                    "#{session_name}",
+                ],
                 env=clean_env(),
                 capture_output=True,
                 text=True,
