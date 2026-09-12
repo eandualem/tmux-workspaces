@@ -245,6 +245,7 @@ class Sidebar:
         palette = theme.resolve(self.colors)
         palette.install(curses, self.emit, previous_rgb=self.palette.rgb if self.palette else ())
         self.theme, self.palette, self.last_frame = theme, palette, None
+        self.display.chooser_theme_state = theme.to_toml()
         # The panel color is tmux's to paint: the sidebar's background, empty
         # panes and the band between panes, so the panel and the terminals are
         # separated by a color gap rather than a line. A display that cannot
@@ -1553,6 +1554,7 @@ class Sidebar:
             with contextlib.suppress(curses.error):
                 curses.curs_set(1)
                 self.body.move(*cursor)
+                self.body.cursyncup()
         self.screen.refresh()
 
     def scroll(self, amount: int) -> None:

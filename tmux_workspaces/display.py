@@ -91,6 +91,7 @@ class Display:
         self.keymap = keymap or DEFAULT_KEYMAP
         # How a chooser pane builds the sidebar's session roster for itself.
         self.roster_args = tuple(roster_args)
+        self.chooser_theme_state: str | None = None
         # Two grounds, both painted by tmux so RGB values work. The panel is
         # the sidebar's; the surface is the terminals'. With a surface of its
         # own, every content pane is padded by a blank gutter column on each
@@ -681,6 +682,11 @@ class Display:
                 "--source-socket",
                 self.source_socket,
                 *self.roster_args,
+                *(
+                    ("--chooser-theme", self.chooser_theme_state)
+                    if self.chooser_theme_state
+                    else ()
+                ),
             )
         if pane["agent"]:
             source_socket = pane.get("source_socket") or self.source_socket

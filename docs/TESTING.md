@@ -59,6 +59,11 @@ after a leaf has already been mapped. Recovery must retain the requested focus,
 route typing to its shell, and restore the saved proportions when the window
 grows, with every original shell process preserved.
 
+Inline rename smoke checks the terminal's visible caret coordinates after typing,
+arrow keys and mouse placement, and that the caret hides outside editing.
+Theme refresh smoke uses two viewers to verify that newly created and resized
+choosers retain their viewer's installed colors until a local theme application.
+
 `smoke_attachment_policy` verifies local and inherited auto-destroy policies
 attach directly without creating a dangerous group. Source shell PIDs, settings
 and bindings survive viewer close, and a remaining viewer keeps the source usable
