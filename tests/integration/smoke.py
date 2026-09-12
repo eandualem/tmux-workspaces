@@ -65,6 +65,8 @@ def _exercise(resources: FixtureResources):
     initial = saved(library)
     assert len(initial.space["tabs"]) == 1
     assert initial.pane["agent"] is None
+    terminal = "=" + Shells.name(initial.pane) + ":"
+    wait(client, lambda: attached(terminal), "ordinary shell not attached")
     # No attachment yet: the tab list names no agent. The roster below it does,
     # one row per active demo agent with its state's symbol; the offline one
     # takes no row.
@@ -81,18 +83,14 @@ def _exercise(resources: FixtureResources):
         assert str(len(expected)) in label and "↓" in label, panel
     assert "notes" not in panel, "an offline agent took a roster row\n" + panel
     # The roster hides on request, the choice is saved, and it comes back.
-    button("Configure…")
     button("[x] Show agent status")
     wait(client, lambda: saved(library).state.get("show_agents") is False, "toggle not saved")
     button("‹ Back")
     wait(client, lambda: "Agents" not in sidebar() and "manager" not in sidebar(), "roster shown")
-    button("Configure…")
     button("[ ] Show agent status")
     wait(client, lambda: saved(library).state.get("show_agents") is True, "toggle not saved")
     button("‹ Back")
     wait(client, lambda: "▶ manager" in sidebar(), "roster did not return")
-    terminal = "=" + Shells.name(initial.pane) + ":"
-    wait(client, lambda: attached(terminal), "ordinary shell not attached")
     client.type(
         "export WSV_CHECK=still_here; cd /tmp; "
         'printf \'STATE:%s:%s:%s\\n\' "$WSV_CHECK" "${TMUX-unset}" "${TMUX_PANE-unset}"\r'

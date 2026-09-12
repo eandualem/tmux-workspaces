@@ -514,7 +514,14 @@ MENU_ROUTES = {
 # Leaving is labelled for what it does: shells and sessions keep running.
 RENAMED = {"Exit": "Detach"}
 # Infrequent controls sit behind Configure…; scenarios keep naming them.
-CONFIGURE = {"Shortcuts", "Colors…", "Detach", "Refresh viewer…"}
+CONFIGURE = {
+    "Shortcuts",
+    "Colors…",
+    "Detach",
+    "Refresh viewer…",
+    "[x] Show agent status",
+    "[ ] Show agent status",
+}
 
 
 def click_button(client, viewer, text):

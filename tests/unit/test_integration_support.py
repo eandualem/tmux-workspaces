@@ -315,6 +315,23 @@ class GestureSynchronizationTests(unittest.TestCase):
             _click(client, viewer, "Go")
         self.assertEqual(client.click.call_args_list, [((2, 2),), ((6, 2),)])
 
+    def test_roster_toggle_waits_for_its_menu_before_clicking(self):
+        from tests.integration.support import click_button
+
+        client, viewer = Mock(), Mock()
+        with (
+            patch("tests.integration.support._click") as click,
+            patch("tests.integration.support._appears", side_effect=[False, True]),
+            patch("builtins.print") as output,
+        ):
+            click_button(client, viewer, "[x] Show agent status")
+        self.assertEqual(
+            [call.args[2] for call in click.call_args_list],
+            ["Configure…", "Configure…", "[x] Show agent status"],
+        )
+        output.assert_called_once()
+        self.assertIn("RETRY:", output.call_args.args[0])
+
 
 if __name__ == "__main__":
     unittest.main()
