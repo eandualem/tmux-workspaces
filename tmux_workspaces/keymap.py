@@ -51,6 +51,7 @@ ACTION_LABELS = MappingProxyType(
         "previous-workspace": "Previous workspace",
         "close-pane": "Close pane",
         "close-tab": "Close tab",
+        "copy-selection": "Copy selection",
         "sidebar": "Focus navigation",
         "refresh-viewer": "Refresh viewer",
         "quit": "Detach viewer",
@@ -64,7 +65,9 @@ _ACTION_ORDER = tuple(ACTION_LABELS)
 # it kept working before these menus existed. An unconfigured default here gives
 # that key up rather than refusing to load; anything the user assigned to these
 # actions is theirs and still collides like every other explicit binding.
-YIELDING_DEFAULTS = frozenset({"tab-options", "workspace-options", "refresh-viewer"})
+YIELDING_DEFAULTS = frozenset(
+    {"tab-options", "workspace-options", "refresh-viewer", "copy-selection"}
+)
 _NAMED_KEYS = {
     key.lower(): key
     for key in (

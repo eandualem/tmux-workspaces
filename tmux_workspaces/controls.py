@@ -31,6 +31,7 @@ SHORTCUTS = {
     "x": "close-pane",
     "&": "close-tab",
     "f": "refresh-viewer",
+    "y": "copy-selection",
 }
 
 # Explicit codes stay stable when bindings are added. These are terminal input
@@ -54,6 +55,7 @@ DIRECT_SHORTCUTS = {
     "sidebar": ("super+b", "⌘B", 9015),
     "close-pane": ("super+w", "⌘W", 9016),
     "close-tab": ("super+shift+w", "⌘⇧W", 9017),
+    "copy-selection": ("super+c", "⌘C", 9053),
     **{f"select-tab-{n}": (f"super+{n}", f"⌘{n}", 9020 + n) for n in range(1, 10)},
     **{f"select-workspace-{n}": (f"super+alt+{n}", f"⌘⌥{n}", 9040 + n) for n in range(1, 10)},
 }

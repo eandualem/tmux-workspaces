@@ -57,8 +57,31 @@ The shipped map follows Ghostty's usual keys, with the actions applied to saved 
 Out-of-range numbered shortcuts do nothing. New workspaces start empty; use
 Command-T for their first tab. Attachment never renames the tab or stops its
 parked ordinary shell. **Return pane to shell** in the tab menu brings that shell back.
-Command-C/V, font-size, app preferences and normal shell Control shortcuts retain
-their usual behavior. Click **Shortcuts…** for the active profile's controls.
+Command-C copies the viewer selection; Command-V, font-size, app preferences and
+normal shell Control shortcuts retain their usual behavior. Choose
+**Configure… → View shortcuts…** for the active profile's controls.
+
+## Selecting and copying terminal text
+
+Drag within a content pane to select text. Releasing the mouse keeps the
+highlight without copying. Double-click selects a word; triple-click selects a
+line. This works independently of whether the attached application requests
+mouse events or uses an alternate screen. A selection stays within its pane,
+and background output does not clear it.
+
+Press **Command-C** in a newly opened dedicated `./ghostty` window, or press the
+viewer prefix (default **Ctrl-g**), release it, then **y** to copy. The highlight
+remains after copying. **Escape** or a click outside the selection clears it;
+clicking elsewhere in the same pane also returns to the live terminal. Copy with
+no viewer selection does nothing. A resize or layout change may clear the
+selection; select again after the pane has settled.
+
+The portable shortcut uses tmux's clipboard output (OSC52), so the terminal must
+allow clipboard writes. Ordinary `./run` windows keep their terminal's existing
+Command-C binding; use Ctrl-g, y there. Customize **Copy selection** through
+**Configure… → Edit shortcuts…**. Dedicated terminal bindings are loaded when
+that window opens, so reopen `./ghostty` to pick up the new Command-C mapping.
+Your normal Command-V paste binding remains available.
 
 ## Right-click
 
@@ -97,7 +120,7 @@ remain available in every profile unless overridden by a user keymap:
 
 If an existing keymap uses **f** for another action or as its prefix, that setting
 takes precedence over the new refresh default. **Refresh viewer** remains available
-in **Shortcuts…**, even without a key binding.
+in **Configure… → View shortcuts…**, even without a key binding.
 
 The Command keys require the Ghostty profile; opening `./run` inside a normal
 Ghostty window keeps Ghostty's native Command bindings. Installing the TPM plugin
@@ -116,8 +139,8 @@ explains config files and per-launch overrides.
 
 Navigation-panel clicks also wait for the selected tab or workspace to take focus
 before following text is released. Rapid clicks and double-click renaming use the
-same ordering; content clicks, selection, scrolling and right-clicks retain their
-tmux behavior. The PTY suites check immediate typing and burst navigation in
+same ordering. Content clicks, scrolling and right-clicks reach the nested terminal;
+drag and double/triple-click selection belong to the viewer. The PTY suites check immediate typing and burst navigation in
 one- and four-pane arrangements, including unique delivery to the intended shell.
 
 ```sh
@@ -160,7 +183,7 @@ does not use `open -F`, which can discard native saved state.
 
 ## Keyboard coverage and customization
 
-The dedicated terminal profile has 17 core action bindings plus numbered selection
+The dedicated terminal profile has 18 core action bindings plus numbered selection
 for tabs and workspaces 1–9. Navigation, creating tabs/workspaces, splitting,
 renaming, focus and closing are available by shortcut.
 

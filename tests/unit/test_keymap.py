@@ -35,6 +35,18 @@ class KeymapTests(unittest.TestCase):
         self.assertEqual(ACTION_CODES["workspaces"], 9018)
         self.assertEqual(ACTION_CODES["refresh-viewer"], 9050)
 
+    def test_copy_defaults_preserve_older_custom_bindings(self):
+        self.assertEqual(DEFAULT_KEYMAP.bindings["copy-selection"], ("y",))
+        self.assertEqual(DEFAULT_KEYMAP.direct["copy-selection"], ("super+c",))
+        self.assertEqual(direct_sequence("copy-selection"), "\x1b[9053~")
+        custom = Keymap.from_dict(
+            {"bindings": {"new-tab": ["y"]}, "direct": {"new-tab": ["super+c"]}}
+        )
+        self.assertEqual(custom.bindings["copy-selection"], ())
+        self.assertEqual(custom.direct["copy-selection"], ())
+        with self.assertRaisesRegex(ValueError, "duplicate key"):
+            Keymap.from_dict({"bindings": {"new-tab": ["y"], "copy-selection": ["y"]}})
+
     def test_refresh_action_ships_a_prefix_key_without_claiming_a_profile_trigger(self):
         self.assertEqual(DEFAULT_KEYMAP.bindings["refresh-viewer"], ("f",))
         self.assertIn(("f", "Refresh viewer"), DEFAULT_KEYMAP.prefix_help_rows())

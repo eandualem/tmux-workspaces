@@ -29,6 +29,7 @@ def reference_rows(keymap, width):
                 "previous-pane",
                 "focus",
                 "close-pane",
+                "copy-selection",
             ],
         ),
         ("Workspaces", [a for a in ACTION_LABELS if "workspace" in a]),
