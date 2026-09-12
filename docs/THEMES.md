@@ -1,8 +1,7 @@
 # Viewer colors
 
-Use **Configure… → Edit colors JSON…** for the [built-in JSON editor](JSON_SETTINGS.md).
-Save validates the draft and applies its colors to this viewer. The older
-per-row editor remains under **Colors…**.
+Use **Configure… → Edit theme…** for the [built-in editor](JSON_SETTINGS.md).
+Edit a preset or individual colors in JSON, then Save to apply them to this viewer.
 
 The viewer draws its own layer — the sidebar, the selected row, dividers, hints
 and messages — and nothing else. This document describes how to change those
@@ -176,70 +175,27 @@ Two other things are drawn in these colors, so the window reads as one layer:
   for the sidebar; and a palette the terminal refuses to install falls back to
   the attribute-only look.
 
-## Editing colors
+## Editing the theme
 
-Open the editor with the **Colors…** button in the sidebar, or press `t` while
-the sidebar has focus and no menu is open — from a terminal pane, that is the
-prefix, then `s`, then `t`. Both routes lead to the same screen.
+Open **Configure… → Edit theme…**, or press `t` with the sidebar focused and no
+menu open. The built-in editor shows the selected theme as JSON, with Save,
+Cancel, paste, undo/redo and formatting. Saved colors apply immediately to this
+viewer; editing a draft does not preview it. Cancel leaves the file and current
+appearance unchanged. The old per-row editor and separate Colors menu are retired.
 
-- Move with `↑`/`↓` or the mouse wheel, or click a row.
-- `↵` opens the value under the cursor; `↵` again accepts it and previews it
-  immediately.
-- The **Panel** and **Surface** rows take those grounds as text: `default`, a
-  name, 0-255 or `#rrggbb`. Each previews as soon as it is accepted, like a
-  role field; a surface change that turns padding on or off shows at the next
-  layout change.
-- The last row, **Preset**, names the preset the colors currently equal, or
-  `custom`. On that row `↵`, `→` or a click previews the next preset and `←`
-  the previous one; the status line describes the preset shown. Custom colors
-  sit before the first preset and after the last, so one step always reaches a
-  named look, and Cancel still restores what you had.
-- An invalid value is reported in place and is never previewed or saved. The
-  field stays open with the text you typed so you can correct it.
-- `a`, or the **Apply** button, writes the file and closes the editor.
-- `d`, or **Restore defaults**, previews the shipped colors without saving;
-  apply to keep them.
-- `Esc`, **Cancel**, or leaving the editor by any other route restores the
-  colors the viewer had before the editor opened, including previewed changes
-  and anything the editor picked up from the file. One `Esc` leaves the whole
-  editor, from an open value field as well, and a value you never accepted goes
-  with it.
+Set `preset` to `default`, `plain`, `forest`, `paper` or `mono`; explicit role or
+ground values override it. To use just a preset, replace the draft with, for
+example, `{"preset":"paper"}`. See [editing controls](JSON_SETTINGS.md).
 
-Each role has one row per field. A narrow sidebar shortens the field name before
-it shortens the role name — `Selected background` becomes `Selected bg`, then
-`Sele… bg` — so two fields of one role never read the same, and the key hint at
-the top drops to the longest form that fits. The value column shows the ordered
-fallback list you typed, comma separated.
+Saving uses the existing TOML file and conflict-checked atomic writer. It asks
+before removing comments or custom formatting. Invalid values, unsafe targets,
+read-only files and concurrent changes leave the draft open with the reason.
+A file that could not be read is never replaced; fix its permissions or size
+and reopen the editor. The theme-file limit is 16 KiB.
 
-The editor closes only once the colors it is leaving you with are actually
-installed. In the rare case where the terminal refuses them, it stays open with
-the reason instead of leaving the colors you cancelled on screen.
-
-Applying changes the running viewer at once. It updates five color pairs; it
-does not reopen the viewer, restart a shell, redraw on a timer or run a
-subprocess, and nothing about the theme is read or written on an idle frame.
-
-### When the file cannot be written
-
-A read-only file is reported when the editor opens, and Apply says so rather
-than failing silently. If the file changed on disk since the viewer read it,
-Apply refuses and says so. In every refusal the colors on screen and the draft
-you were editing are both kept, so nothing you were working on is lost. Saving
-writes a temporary file in the same directory and renames it into place, so a
-reader never sees a half-written theme, and the viewer refuses to replace a
-symbolic link or anything that is not a regular file.
-
-A file that exists but whose contents could not be read is never replaced, even
-if its permissions are repaired while the editor is open: the viewer would be
-destroying colors nobody has seen, and it has no digest to compare against. Fix
-the permissions and reopen the editor. A file too large to read within the 16 KiB
-limit is refused for the same reason — a concurrent edit to it cannot be detected
-— so the diagnostic asks you to shrink it rather than promising a replacement.
-
-An invalid or unreadable file at startup does not stop the viewer: it keeps the
-shipped colors and reports the problem in the status line. Colors never block
-the workspace layer, so if the terminal refuses a theme outright the viewer falls
-back to the shipped one, and then to the terminal's own colors.
+An invalid or unreadable startup theme keeps the viewer on shipped colors with
+a diagnostic. If the terminal refuses theme installation, startup falls back
+to the shipped theme and then the terminal's own colors.
 
 ## Palettes, and which terminal is asked
 
@@ -296,13 +252,13 @@ an explicit skip naming the missing tools, and `--required` turns that skip into
 a failure.
 
 The suite also captures blank cells with `capture-pane -e -N` to verify a
-configured normal background, opens Colors through the workspace keyboard menu,
-and checks that cancelling a defaults preview restores the configured background.
+configured normal background. The settings popup smoke suite checks a saved
+theme reaches the displayed panel and Cancel preserves it.
 
 Unit tests cover the presets themselves: each resolves without an invisible
 role on 8, 16 and 256 colors, the `preset` key composes with role overrides, a
-saved preset round-trips through its name, the editor's preset row cycles and
-previews, the panel reaches tmux as border, sidebar and empty-pane styles,
+saved preset round-trips through its name, the panel reaches tmux as border,
+sidebar and empty-pane styles,
 and the chooser installs the same file the sidebar read. The pane styles and
 border band were also read back from a private tmux server on macOS with tmux
 3.7c during development, on `default` and `plain`.
@@ -324,7 +280,7 @@ To check it yourself, on a disposable library so your own is untouched:
 TMUX_WORKSPACES_DATA_DIR=$(mktemp -d) ./run
 ```
 
-Open **Colors…**, and with the terminal on a light theme and then a dark one,
+Open **Configure… → Edit theme…**, and with the terminal on a light theme and then a dark one,
 confirm that the selected row is legible and obviously selected, that the `▶`
 marker and the dividers are visible, that hints and the status line are readable
 against the background, and that a failure — try entering `#8ab4f8` — stands out

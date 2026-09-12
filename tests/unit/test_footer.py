@@ -244,10 +244,8 @@ class FooterTests(unittest.TestCase):
         self.assertIn("builder", self.labels())
         self.sidebar.open_menu("configure")
         options = self.options()
-        self.assertEqual(
-            options[:3], ["Edit colors JSON…", "Edit shortcuts JSON…", "Refresh viewer…"]
-        )
-        self.assertEqual(options[5:7], ["[x] Show agent status", "Agent status…"])
+        self.assertEqual(options[:3], ["Edit theme…", "Edit shortcuts…", "View shortcuts…"])
+        self.assertEqual(options[4:6], ["[x] Show agent status", "Agent status…"])
         self.assertEqual(options[-2:], [RULE, "Detach"])
         dict(self.sidebar._options({}))["[x] Show agent status"]()
         self.assertIs(self.model.state["show_agents"], False)
@@ -288,11 +286,10 @@ class FooterTests(unittest.TestCase):
         self.assertEqual(
             self.options(),
             [
-                "Edit colors JSON…",
-                "Edit shortcuts JSON…",
+                "Edit theme…",
+                "Edit shortcuts…",
+                "View shortcuts…",
                 "Refresh viewer…",
-                "Colors…",
-                "Shortcuts",
                 RULE,
                 "Detach",
             ],

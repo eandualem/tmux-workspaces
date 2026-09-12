@@ -1,6 +1,6 @@
-# Edit settings as JSON
+# Edit settings
 
-Open **Configure… → Edit colors JSON…** or **Edit shortcuts JSON…**. The built-in
+Open **Configure… → Edit theme…** or **Edit shortcuts…**. The built-in
 editor opens over the workspace, using most of the terminal. It needs no external
 editor or extra Python package. Existing shells and attached sessions keep running.
 
@@ -81,8 +81,23 @@ Color JSON can start with a preset and override individual colors:
 
 Explicit values override the preset. The default new-file view includes the
 default color fields so they can be edited directly. See [color roles and
-fallbacks](THEMES.md). The older per-row controls remain available under
-**Colors…** and **Shortcuts → Edit shortcuts…**.
+fallbacks](THEMES.md).
+
+## View shortcuts
+
+**Configure… → View shortcuts…** opens a separate read-only reference, grouped
+into tabs, panes, workspaces and viewer actions. Wide terminals show action,
+prefix and terminal keys in columns; narrow terminals stack and wrap them.
+It shows the current viewer's bindings, including custom aliases, even if a
+configuration file has changed since launch. It also works with `--no-keymap`.
+Terminal keys require a matching terminal profile; the reference does not imply
+that a terminal has installed those keys.
+
+Use arrows, PageUp/PageDown, Home/End or the mouse wheel to scroll. Click Close
+or press Escape/F10 to return. Typing, pasted text, Enter and clicks on shortcut
+rows cannot execute the listed actions or change settings. If a paste is
+interrupted, wait two seconds then Escape/F10 can close it. The old per-row
+editors and clickable sidebar shortcut list have been removed.
 
 ## Verification scope
 

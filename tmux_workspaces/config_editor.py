@@ -64,7 +64,7 @@ class Editor:
             self.put(2, 0, "Esc cancels; your draft is retained")
             self.screen.refresh()
             return
-        title = f"{self.draft.kind.title()} · JSON editor"
+        title = "Edit theme" if self.draft.kind == "colors" else "Edit shortcuts"
         self.put(0, 1, title, curses.A_BOLD)
         self.put(1, 1, str(self.draft.file.path), curses.A_DIM)
         self.put(2, 1, "JSON view · saved as TOML", curses.A_DIM)

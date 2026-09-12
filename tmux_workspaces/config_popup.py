@@ -12,11 +12,14 @@ from .tmux import clean_env
 
 
 class ConfigPopup:
-    def __init__(self, display, kind, path):
+    def __init__(self, display, kind, path, *, keymap=None):
         self.display, self.kind = display, kind
         self.resources = contextlib.ExitStack()
         directory = self.resources.enter_context(tempfile.TemporaryDirectory(prefix="tw-json-"))
         self.result = Path(directory) / "result.json"
+        if kind == "reference":
+            path = Path(directory) / "keymap.json"
+            path.write_text(json.dumps(keymap.to_dict()))
         self.stderr = self.resources.enter_context(tempfile.TemporaryFile())  # noqa: SIM115
         self.started = time.monotonic()
         command = script_command(

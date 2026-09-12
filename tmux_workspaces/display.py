@@ -312,8 +312,8 @@ class Display:
         """Paint the grounds: the sidebar's panel, the terminals' surface and
         the separators between split panes.
 
-        Called whenever a palette installs, including a preview in the colors
-        editor, so every ground changes with the sidebar rather than a step
+        Called whenever a palette installs, including after a saved theme edit,
+        so every ground changes with the sidebar rather than a step
         behind it. The focused pane is not marked by its border: the owner
         asked for no highlighted border at all. Before ``setup`` the values are
         only remembered; ``setup`` applies them with the window options. A

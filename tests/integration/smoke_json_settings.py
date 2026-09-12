@@ -17,7 +17,7 @@ from tests.integration.support import (
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.keymap import DEFAULT_KEYMAP, parse_keymap
 from tmux_workspaces.shells import Shells
-from tmux_workspaces.theme import parse_theme
+from tmux_workspaces.theme import parse_theme, preset_theme
 from tmux_workspaces.tmux import Tmux
 
 
@@ -96,28 +96,76 @@ def popup(resources):
     )
     shell_pid = shells.run("display-message", "-p", "-t", target, "#{pane_pid}")
 
+    # Help describes this viewer, even after another writer changes the file.
+    original_keys = keys.read_bytes()
+    keys.write_text('prefix = "C-b"\n')
+    reference_file = keys.read_bytes()
+    client.output = b""
+    click_button(client, viewer, "View shortcuts…")
+    wait(client, lambda: b"read-only" in client.output, "shortcut reference missing")
+    assert b"Ctrl-g" in client.output, "reference did not use the running keymap"
+    client.type("\x1b[200~REFERENCE_SENTINEL\x13\x03\x07t\x1b[201~\x1b[9001~\r")
+    client.type("\x1b[6~\x1b[F")
+    wait(client, lambda: b"PREFIX CONTROLS" in client.output, "reference did not scroll")
+    client.resize(44, 14)
+    client.pump(0.2)
+    client.resize(140, 40)
+    client.pump(0.2)
+    # tmux retains the popup's own geometry after resize. Use the visible Close
+    # row from its terminal output, rather than assume the terminal's dimensions.
+    positions = re.findall(rb"\x1b\[(\d+);(\d+)H", client.output.rsplit(b"Close", 1)[0])
+    close_row, close_column = map(int, positions[-1])
+    client.click(close_column + 3, close_row)
+    wait(client, lambda: "Configure…" in sidebar(viewer), "mouse Close did not restore viewer")
+    assert keys.read_bytes() == reference_file, "reference wrote the keymap"
+    assert len(saved(library).space["tabs"]) == 1, "reference executed a shortcut"
+    assert "REFERENCE_SENTINEL" not in shells.run("capture-pane", "-p", "-t", target)
+    keys.write_bytes(original_keys)
+
+    client.output = b""
+    click_button(client, viewer, "View shortcuts…")
+    wait(client, lambda: b"read-only" in client.output, "reference did not reopen")
+    client.type("\x1b")
+    wait(client, lambda: "Configure…" in sidebar(viewer), "Escape did not close reference")
+    assert shells.run("display-message", "-p", "-t", target, "#{pane_pid}") == shell_pid
+    print(
+        "PASS: read-only effective shortcuts, scroll/resize, mouse/Escape close and isolation",
+        flush=True,
+    )
+
     def open_editor(label):
         client.output = b""
         click_button(client, viewer, label)
-        wait(client, lambda: b"JSON editor" in client.output, "popup did not show editor")
+        wait(
+            client,
+            lambda: b"saved as TOML" in client.output,
+            "popup did not show editor",
+        )
 
-    open_editor("Edit colors JSON…")
+    open_editor("Edit theme…")
     replace(client, '{"preset":"paper"}')
     client.type("\x13")
     wait(client, lambda: "Colors saved and applied" in sidebar(viewer), "colors did not apply")
     assert parse_theme(colors.read_bytes()).preset_name() == "paper"
+    expected_panel = "bg=" + preset_theme("paper").surface
+    wait(
+        client,
+        lambda: viewer.run("show-options", "-pv", "-t", "%0", "window-style") == expected_panel,
+        "saved theme did not reach the displayed surface",
+    )
 
-    open_editor("Edit colors JSON…")
+    open_editor("Edit theme…")
     replace(client, '{"panel":"CANCEL_SENTINEL"}')
     client.type("\x1b")
     wait(client, lambda: b"Unsaved edits" in client.output, "Cancel did not ask about the draft")
     client.type("\x1b")
     wait(client, lambda: "Configure…" in sidebar(viewer), "Cancel did not return to viewer")
     assert parse_theme(colors.read_bytes()).preset_name() == "paper"
+    assert viewer.run("show-options", "-pv", "-t", "%0", "window-style") == expected_panel
     history = shells.run("capture-pane", "-p", "-J", "-S", "-", "-t", target)
     assert "CANCEL_SENTINEL" not in history, "editor text leaked to a workspace shell"
 
-    open_editor("Edit shortcuts JSON…")
+    open_editor("Edit shortcuts…")
     replace(client, '{"prefix":"C-a"}')
     client.type("\x13")
     wait(
