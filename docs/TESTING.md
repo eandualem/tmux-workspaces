@@ -48,6 +48,9 @@ commands as one burst across two four-pane layouts, checks each command arrives
 exactly once in its intended shell, and verifies shell process identities survive.
 The viewer acknowledges an ordinary-shell shortcut only after its own pane TTY
 has attached to that shell; another viewer's client cannot satisfy readiness.
+An additional gated probe clicks a different pane while shell creation is being
+acknowledged, verifies the original attachment identity is unchanged, and checks
+that focus and subsequent typing follow the click without a stale warning.
 Unit checks cover the three-second deadline, stale/dead panes, failed action
 acknowledgements, and skipping offline external sessions and empty choosers.
 

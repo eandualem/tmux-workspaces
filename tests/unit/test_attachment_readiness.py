@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from tmux_workspaces.controls import Actions
 from tmux_workspaces.display import Display
@@ -53,7 +53,7 @@ class AttachmentReadinessTests(unittest.TestCase):
                 self.display.shells.tmux.run.assert_not_called()
                 self.display.select_sidebar.assert_not_called()
 
-    def test_ready_client_with_replaced_dead_or_refocused_viewer_is_rejected(self):
+    def test_ready_client_with_replaced_dead_or_missing_viewer_is_rejected(self):
         for changed in (
             self.row.replace("|567", "|568"),
             self.row.replace("|1|0|", "|1|1|"),
@@ -68,6 +68,94 @@ class AttachmentReadinessTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "attachment changed"):
                     self.display.wait_for_input(self.tab)
                 self.display.select_sidebar.assert_called()
+
+    def second_pane(self):
+        second = {"id": "fedcbafedcba", "agent": None}
+        self.tab["tree"] = {"first": self.leaf, "second": second}
+        self.display.panes["fedcbafedcba"] = "%2"
+        return second, "%2|fedcbafedcba|tab|1|0|/dev/ttys456|890"
+
+    def test_focus_change_waits_for_the_new_panes_own_client(self):
+        _, second = self.second_pane()
+        switched = self.row.replace("|1|0|", "|0|0|") + "\n" + second
+        self.display.tmux.run.side_effect = [self.row, switched, switched, switched]
+        self.display.shells.tmux.run.side_effect = [
+            "terminal-abcdefabcdef|/dev/ttys123",
+            "terminal-fedcbafedcba|/dev/other",
+            "terminal-fedcbafedcba|/dev/ttys456",
+        ]
+        self.display.wait_for_input(self.tab)
+        self.assertEqual(self.display.shells.tmux.run.call_count, 3)
+        self.display.select_sidebar.assert_not_called()
+
+    def test_focus_change_to_sidebar_external_or_empty_stops_waiting(self):
+        for kind in ("sidebar", "external", "empty"):
+            with self.subTest(kind=kind):
+                self.setUp()
+                leaf, second = self.second_pane()
+                if kind == "sidebar":
+                    second = "%0|||1|0|/dev/panel|123"
+                elif kind == "external":
+                    leaf["agent"] = "offline-external"
+                else:
+                    leaf["empty"] = True
+                self.display.tmux.run.side_effect = [
+                    self.row,
+                    self.row.replace("|1|0|", "|0|0|") + "\n" + second,
+                ]
+                self.display.wait_for_input(self.tab)
+                self.assertEqual(self.display.shells.tmux.run.call_count, 1)
+                self.display.select_sidebar.assert_not_called()
+
+    def test_focus_change_still_rejects_changed_original_identity(self):
+        _, second = self.second_pane()
+        inactive = self.row.replace("|1|0|", "|0|0|")
+        for changed in (
+            inactive.replace("|567", "|568"),
+            inactive.replace("|0|0|", "|0|1|"),
+            inactive.replace("abcdefabcdef|tab", "replacement|tab"),
+            inactive.replace("|tab|", "|other-tab|"),
+            inactive.replace("/dev/ttys123", "/dev/reused"),
+            "",
+        ):
+            with self.subTest(changed=changed):
+                self.display.tmux.run.side_effect = [self.row, changed + "\n" + second]
+                with self.assertRaisesRegex(RuntimeError, "attachment changed"):
+                    self.display.wait_for_input(self.tab)
+
+    def test_original_identity_remains_protected_while_new_pane_attaches(self):
+        _, second = self.second_pane()
+        switched = self.row.replace("|1|0|", "|0|0|") + "\n" + second
+        self.display.tmux.run.side_effect = [self.row, switched, switched.replace("|567", "|568")]
+        self.display.shells.tmux.run.return_value = ""
+        with self.assertRaisesRegex(RuntimeError, "attachment changed"):
+            self.display.wait_for_input(self.tab)
+        self.assertEqual(self.display.shells.tmux.run.call_count, 2)
+
+    def test_focus_change_cannot_restart_the_attachment_deadline(self):
+        _, second = self.second_pane()
+        self.display.tmux.run.side_effect = [
+            self.row,
+            self.row.replace("|1|0|", "|0|0|") + "\n" + second,
+        ]
+        with (
+            patch("tmux_workspaces.display.time.monotonic", side_effect=[0, 0.1, 0.4, 0.8, 1.01]),
+            self.assertRaisesRegex(RuntimeError, "not ready"),
+        ):
+            self.display.wait_for_input(self.tab, timeout=1)
+        self.assertEqual(self.display.shells.tmux.run.call_count, 1)
+        self.display.select_sidebar.assert_called_once()
+
+    def test_focus_change_rejects_unknown_or_retargeted_destination(self):
+        _, second = self.second_pane()
+        for changed in (second.replace("%2", "%99"), second.replace("|tab|", "|other-tab|")):
+            with self.subTest(changed=changed):
+                self.display.tmux.run.side_effect = [
+                    self.row,
+                    self.row.replace("|1|0|", "|0|0|") + "\n" + changed,
+                ]
+                with self.assertRaisesRegex(RuntimeError, "attachment (changed|disappeared)"):
+                    self.display.wait_for_input(self.tab)
 
     def test_missing_client_times_out_and_returns_focus_to_navigation(self):
         self.display.shells.tmux.run.return_value = ""

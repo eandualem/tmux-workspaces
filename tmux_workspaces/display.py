@@ -539,6 +539,7 @@ class Display:
         if not tab:
             return
         deadline = time.monotonic() + timeout
+        identities: dict[str, list[str]] = {}
 
         def query(tmux: Tmux, *args: str) -> str:
             remaining = deadline - time.monotonic()
@@ -556,41 +557,48 @@ class Display:
                 "#{pane_id}|#{@viewer_leaf_id}|#{@viewer_tab_id}|#{pane_active}|"
                 "#{pane_dead}|#{pane_tty}|#{pane_pid}",
             )
-            return next(
-                (
-                    parts
-                    for row in rows.splitlines()
-                    if len(parts := row.split("|")) == 7 and parts[3] == "1"
-                ),
-                None,
-            )
+            panes = {
+                parts[0]: parts for row in rows.splitlines() if len(parts := row.split("|")) == 7
+            }
+            for pane, identity in identities.items():
+                current = panes.get(pane)
+                if not current or current[:3] + current[4:] != identity:
+                    raise RuntimeError("Terminal attachment changed; try selecting it again")
+            return next((parts for parts in panes.values() if parts[3] == "1"), None)
 
         try:
             initial = focused()
-            if initial and initial[0] == self.sidebar:
-                return
-            leaf = next(
-                (
-                    item
-                    for item in leaves(tab["tree"])
-                    if initial and self.panes.get(item["id"]) == initial[0]
-                ),
-                None,
-            )
-            if not leaf:
-                raise RuntimeError("Terminal attachment disappeared; try selecting it again")
-            if leaf["agent"] or is_empty(leaf):
-                return
-            if initial[1:3] != [leaf["id"], tab["id"]] or initial[4] != "0" or not initial[5]:
-                raise RuntimeError("Terminal attachment changed; try selecting it again")
-            expected = f"{Shells.name(leaf)}|{initial[5]}"
             while True:
+                if initial and initial[0] == self.sidebar:
+                    return
+                leaf = next(
+                    (
+                        item
+                        for item in leaves(tab["tree"])
+                        if initial and self.panes.get(item["id"]) == initial[0]
+                    ),
+                    None,
+                )
+                if not leaf:
+                    raise RuntimeError("Terminal attachment disappeared; try selecting it again")
+                if initial[1:3] != [leaf["id"], tab["id"]]:
+                    raise RuntimeError("Terminal attachment changed; try selecting it again")
+                if leaf["agent"] or is_empty(leaf):
+                    return
+                if initial[4] != "0" or not initial[5]:
+                    raise RuntimeError("Terminal attachment changed; try selecting it again")
+                identities[initial[0]] = initial[:3] + initial[4:]
+                expected = f"{Shells.name(leaf)}|{initial[5]}"
                 clients = query(
                     self.shells.tmux, "list-clients", "-F", "#{session_name}|#{client_tty}"
                 )
-                # Recheck after probing the source: pane IDs can survive respawn.
-                if focused() != initial:
-                    raise RuntimeError("Terminal attachment changed; try selecting it again")
+                # A click can supersede this selection while its client starts.
+                # Validate the original identities, then follow the new target
+                # without restarting the deadline or releasing input early.
+                current = focused()
+                if current != initial:
+                    initial = current
+                    continue
                 if expected in clients.splitlines():
                     return
                 time.sleep(min(0.01, max(0, deadline - time.monotonic())))
