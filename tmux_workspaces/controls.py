@@ -95,10 +95,20 @@ def mouse_action(action: str) -> tuple[int, int] | None:
     return None
 
 
+def resize_action(action: str) -> tuple[str, int, int] | None:
+    match = re.fullmatch(r"resize:(start|move|end):(-1|[0-9]{1,5}):(-1|[0-9]{1,5})", action)
+    if match:
+        phase, x, y = match.groups()
+        if int(x) <= 65535 and int(y) <= 65535:
+            return phase, int(x), int(y)
+    return None
+
+
 def valid_action(action: str) -> bool:
     return len(action.encode()) <= MAX_ACTION_BYTES and (
         action in ACTIONS
         or mouse_action(action) is not None
+        or resize_action(action) is not None
         or re.fullmatch(r"attach-pane:[a-f0-9]{12}:[a-f0-9]{12}", action) is not None
         or pane_choice(action) is not None
     )

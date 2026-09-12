@@ -71,9 +71,14 @@ A `panel` or `surface` value, or a role table, after the `preset` line
 overrides that part of the preset, so `preset = "plain"` followed by
 `[accent]` with `foreground = "red"` is plain with a red accent, and
 `panel = "#1f2430"` on its own is the default look on a different panel.
-Without a `preset` line everything starts from `default`. The colors editor
-cycles through the presets too, and when it saves colors that equal a preset
-exactly it writes the name rather than the grounds and five tables.
+Inherited normal, accent and muted backgrounds follow `panel`, including after
+saving and reopening. An explicit role `background` takes precedence and stays
+fixed; remove that key to inherit the panel again. The outline background follows
+`surface` in the same way. Bright ground colors accept
+both `bright-blue` and tmux's `brightblue` spelling.
+Without a `preset` line everything starts from `default`. The theme editor
+keeps the preset and inherited backgrounds in the saved file; it does not turn
+inherited backgrounds into explicit overrides.
 
 Every preset carries an explicit basic-palette fallback for each role color, so
 an eight-color terminal gets a deliberate choice rather than an approximation.

@@ -76,6 +76,7 @@ def rule_main(args) -> int:
 # prefix, so tools and tests can tell them from the sessions people run.
 GROUPED_PREFIX = "tw-"
 GROUPED_MARKER = "@tmux_workspaces_attachment"
+GROUPED_SOURCE_SESSION = "@tmux_workspaces_source_session"
 # How often a grouped attachment checks that the session it joined still exists.
 TARGET_PROBE_SECONDS = 2
 
@@ -90,6 +91,7 @@ def grouped_attach_command(
     target: str,
     name: str | None = None,
     options: list[list[str]] | None = None,
+    window: str | None = None,
 ) -> list[str]:
     """Attach to an external session through a grouped session of this viewer's own.
 
@@ -107,10 +109,13 @@ def grouped_attach_command(
     for option in [
         *(options or []),
         [GROUPED_MARKER, "1"],
+        [GROUPED_SOURCE_SESSION, target],
         ["status", "off"],
         ["destroy-unattached", "on"],
     ]:
         command += [";", "set-option", "-t", name, *option]
+    if window:
+        command += [";", "select-window", "-t", f"={name}:{window}"]
     return command
 
 
@@ -148,7 +153,7 @@ def session_exists(source_socket: str, target: str) -> bool:
     )
 
 
-def run_grouped_attachment(source_socket: str, target: str) -> None:
+def run_grouped_attachment(source_socket: str, target: str, window: str = "") -> None:
     """Run one grouped attach client until it detaches or the target ends.
 
     Sessions in a group keep each other's windows alive, so a grouped session
@@ -160,19 +165,49 @@ def run_grouped_attachment(source_socket: str, target: str) -> None:
     keep the old group's windows alive.
     """
     resolved = subprocess.run(
-        ["tmux", "-S", source_socket, "display-message", "-p", "-t", target, "#{session_id}"],
+        [
+            "tmux",
+            "-S",
+            source_socket,
+            "display-message",
+            "-p",
+            "-t",
+            target,
+            "#{session_id}|#{window_id}|#{pid}",
+        ],
         env=clean_env(),
         capture_output=True,
         text=True,
         check=False,
         timeout=5,
     )
-    session_id = resolved.stdout.strip()
+    identity = resolved.stdout.strip().split("|")
+    if len(identity) != 3:
+        return
+    session_id, current_window, server_pid = identity
     if resolved.returncode or not session_id.startswith("$") or not session_id[1:].isdigit():
+        return
+    # Window IDs may be reused by a restarted server or a replacement session.
+    # Only a hint captured from this exact source incarnation is meaningful.
+    hint = window.split(":")
+    window = hint[2] if len(hint) == 3 and hint[:2] == [server_pid, session_id] else ""
+    if window:
+        windows = subprocess.run(
+            ["tmux", "-S", source_socket, "list-windows", "-t", session_id, "-F", "#{window_id}"],
+            env=clean_env(),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+        if windows.returncode or window not in windows.stdout.splitlines():
+            window = ""
+    window = window or current_window
+    if not window.startswith("@") or not window[1:].isdigit():
         return
     name = grouped_session_name()
     options = target_session_options(source_socket, session_id)
-    command = grouped_attach_command(source_socket, session_id, name, options)
+    command = grouped_attach_command(source_socket, session_id, name, options, window)
     with subprocess.Popen(command, env=clean_env()) as client:
         while client.poll() is None:
             # One probe every couple of seconds per attached pane; a killed
@@ -194,6 +229,11 @@ def run_grouped_attachment(source_socket: str, target: str) -> None:
 
 
 def leaf_main(args) -> int:
+    # respawn-pane retains the chooser's OSC palette overrides. Reset only the
+    # slots our UI owns, on this private viewer PTY, before a shell/TUI attaches.
+    from .theme import RGB_SLOTS
+
+    print("".join(f"\x1b]104;{slot}\x1b\\" for slot in RGB_SLOTS), end="", flush=True)
     name = args.agent or args.terminal
     if not name:
         print(
@@ -225,7 +265,9 @@ def leaf_main(args) -> int:
         elif exists:
             notice = ""
             if args.agent:
-                run_grouped_attachment(args.source_socket, target)
+                run_grouped_attachment(
+                    args.source_socket, target, getattr(args, "attachment_window", "")
+                )
             else:
                 subprocess.run(command, env=clean_env(), check=False)
             time.sleep(1)

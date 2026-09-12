@@ -3,16 +3,18 @@
 import json
 import shlex
 import tempfile
+import tomllib
 from contextlib import closing
 from pathlib import Path
 
 from tests.integration.smoke_json_settings import replace
+from tests.integration.smoke_themes import screen
 from tests.integration.support import FixtureResources, click_button, sidebar, wait
 from tmux_workspaces.adapters.tmux import TmuxProvider
 from tmux_workspaces.attachments import GROUPED_MARKER
 from tmux_workspaces.model import leaves
 from tmux_workspaces.persistence import Store
-from tmux_workspaces.theme import preset_theme
+from tmux_workspaces.theme import parse_theme, preset_theme
 from tmux_workspaces.tmux import Tmux
 
 
@@ -127,6 +129,28 @@ def exercise(resources):
     assert b"\x1b]104;16" not in client.output, "palette reset escaped the private pane"
     rules = viewer.run("list-panes", "-F", "#{pane_start_command}")
     assert "--color red" in rules, rules
+    save_theme({"preset": "paper", "panel": "bright-blue", "surface": "brightgreen"})
+    wait(
+        client,
+        lambda: (screen(viewer).at("Workspace", first_row=True) or (None, None))[1] == 12,
+        "panel override did not change the sidebar interior",
+    )
+    wait(
+        client,
+        lambda: {style[1] for style in screen(viewer).lines[0][1]} == {10},
+        "surface override did not reach the frame",
+    )
+    restored = tomllib.loads(theme.read_text())
+    assert "background" not in restored["normal"], "Save froze an inherited panel background"
+    restored["panel"] = "bright-red"
+    save_theme(restored)
+    wait(
+        client,
+        lambda: (screen(viewer).at("Workspace", first_row=True) or (None, None))[1] == 9,
+        "panel edit after reopening did not apply",
+    )
+    assert parse_theme(theme.read_bytes()).panel == "brightred"
+    assert parse_theme(theme.read_bytes()).surface == "brightgreen"
     previous_pid = chooser_pid()
     save_theme({"preset": "plain"})
     wait(client, lambda: not gutters(), "padded-to-plain theme retained gutters")

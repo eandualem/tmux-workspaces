@@ -41,7 +41,11 @@ class SettingsDraft:
             data = {"panel": default.panel, "surface": default.surface} | {
                 role: {
                     "foreground": list(value.foreground),
-                    "background": list(value.background),
+                    **(
+                        {}
+                        if role in default._panel_roles | default._surface_roles
+                        else {"background": list(value.background)}
+                    ),
                     "attributes": list(value.attributes),
                 }
                 for role, value in default.roles.items()

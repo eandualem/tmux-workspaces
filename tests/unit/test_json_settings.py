@@ -26,6 +26,22 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(value.prefix, "C-a")
         self.assertEqual(value.bindings["new-tab"], ("u",))
 
+    def test_panel_edit_stays_effective_after_saving_and_reopening(self):
+        path = self.root / "theme.toml"
+        for color in ("bright-blue", "red"):
+            draft = SettingsDraft("colors", path)
+            data = json.loads(draft.initial)
+            data["panel"] = color
+            data["surface"] = color
+            self.assertNotIn("background", data["normal"])
+            self.assertNotIn("background", data["outline"])
+            self.assertTrue(draft.save(json.dumps(data)), draft.message)
+            theme = parse_theme(path.read_bytes())
+            self.assertEqual(theme.roles["normal"].background, (color,))
+            self.assertEqual(theme.roles["accent"].background, (color,))
+            self.assertEqual(theme.roles["muted"].background, (color,))
+            self.assertEqual(theme.roles["outline"].background, (color,))
+
     def test_invalid_json_and_domain_values_never_change_the_working_file(self):
         for kind, default, bad in (
             ("shortcuts", DEFAULT_KEYMAP, '{"bindings":{"new-tab":["r"]}}'),

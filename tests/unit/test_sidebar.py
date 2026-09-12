@@ -325,6 +325,11 @@ class SidebarTests(unittest.TestCase):
         with patch("tmux_workspaces.sidebar.ConfigPopup", return_value=popup):
             self.sidebar.open_config_editor("colors")
         self.assertEqual(self.sidebar.menu, "json-settings")
+        self.display.cancel_resize.assert_called_once_with()
+        self.display.cancel_resize.reset_mock()
+        self.sidebar.action("resize:end:-1:-1")
+        self.display.cancel_resize.assert_called_once_with()
+        self.display.resize_split.assert_not_called()
         self.sidebar.action("close-tab")
         self.sidebar.input("t")
         self.assertEqual(self.model.state, before)

@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable
 
 from .config_popup import ConfigPopup
-from .controls import Actions, mouse_action, pane_choice
+from .controls import Actions, mouse_action, pane_choice, resize_action
 from .discovery import Snapshot
 from .display import Display
 from .events import InputEvents
@@ -256,6 +256,9 @@ class Sidebar:
         # terminal's, which is only visible once someone configures one.
         with contextlib.suppress(curses.error):
             self.screen.bkgdset(" ", palette.style("normal"))
+            # Pair redefinition invalidates curses' physical color state.
+            # A normal erase/redraw can leave the first run in default colors.
+            self.screen.clearok(True)
 
     def setup_theme(self) -> None:
         """Read the user's colors once. An unusable file keeps working colors."""
@@ -369,6 +372,7 @@ class Sidebar:
         return self.draw_field(self.inline_editor, row, x, width)
 
     def open_config_editor(self, kind: str) -> None:
+        self.display.cancel_resize()
         if self.config_popup:
             return
         path = self.keymap_path if kind == "shortcuts" else theme_path(self.theme_path)
@@ -603,7 +607,14 @@ class Sidebar:
         self.display.select_sidebar()
 
     def action(self, name: str) -> None:
+        resize = resize_action(name)
+        if not resize or self.config_popup:
+            self.display.cancel_resize()
         if self.config_popup:
+            return
+        if resize:
+            if self.display.resize_split(self.model.tab, *resize):
+                self.save()
             return
         if name == "copy-selection":
             self.display.copy_selection()
