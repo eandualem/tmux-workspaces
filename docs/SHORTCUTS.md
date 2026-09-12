@@ -120,7 +120,7 @@ remain available in every profile unless overridden by a user keymap:
 
 If an existing keymap uses **f** for another action or as its prefix, that setting
 takes precedence over the new refresh default. **Refresh viewer** remains available
-in **Configure… → View shortcuts…**, even without a key binding.
+in **Configure… → Refresh viewer…**, even without a key binding.
 
 The Command keys require the Ghostty profile; opening `./run` inside a normal
 Ghostty window keeps Ghostty's native Command bindings. Installing the TPM plugin

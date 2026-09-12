@@ -1,5 +1,6 @@
 """Ordinary attachment startup and recovery retain external-session guards."""
 
+import struct
 import subprocess
 import unittest
 from contextlib import redirect_stdout
@@ -83,6 +84,30 @@ class AttachmentTests(unittest.TestCase):
         self.assertIn("external — session offline", output.getvalue())
 
 
+class SeparatorTests(unittest.TestCase):
+    def test_named_colors_match_indexed_colors_in_both_directions(self):
+        from tmux_workspaces.attachments import rule_main
+        from tmux_workspaces.theme import Theme
+
+        for color, code in (("red", 1), ("bright-white", 15), ("1", 1)):
+            for vertical in (False, True):
+                output = StringIO()
+                with (
+                    patch("fcntl.ioctl", return_value=struct.pack("HHHH", 2, 6, 0, 0)),
+                    patch("tmux_workspaces.attachments.time.sleep", side_effect=StopFixture),
+                    redirect_stdout(output),
+                    self.assertRaises(StopFixture),
+                ):
+                    rule_main(
+                        SimpleNamespace(
+                            color=Theme.from_dict({"outline": {"foreground": color}}).separator(),
+                            vertical=vertical,
+                        )
+                    )
+                self.assertIn(f"\x1b[38;5;{code}m", output.getvalue())
+                self.assertIn("│" if vertical else "─", output.getvalue())
+
+
 class GroupedAttachTests(unittest.TestCase):
     """External sessions are joined through a grouped session of the viewer's own."""
 
@@ -95,8 +120,9 @@ class GroupedAttachTests(unittest.TestCase):
         self.assertEqual(command[command.index("-t") + 1], "=manager:")
         name = command[command.index("-s") + 1]
         self.assertTrue(name.startswith("tw-"))
-        # Two chained commands, both aimed at the grouped session and never at the target.
+        # Chained options target only the grouped session, including its ownership marker.
         text = " ".join(command)
+        self.assertIn(f"; set-option -t {name} @tmux_workspaces_attachment 1", text)
         self.assertIn(f"; set-option -t {name} status off", text)
         self.assertIn(f"; set-option -t {name} destroy-unattached on", text)
         self.assertNotIn("-t =manager: status", text)
@@ -112,6 +138,8 @@ class GroupedAttachTests(unittest.TestCase):
             if command[3] == "has-session":
                 # The preflight before an attach: the session exists.
                 return SimpleNamespace(returncode=0)
+            if command[3] == "display-message":
+                return SimpleNamespace(returncode=0, stdout="$8\n")
             if command[3] == "show-options":
                 # The target's own settings, in tmux's quoting.
                 return SimpleNamespace(returncode=0, stdout='mouse on\nstatus-left "a \\"b\\""\n')
@@ -163,8 +191,11 @@ class GroupedAttachTests(unittest.TestCase):
                 self.assertEqual(command[command.index("status-left") + 1], 'a "b"')
                 self.assertTrue(text.endswith(f"; set-option -t {name} destroy-unattached on"))
                 self.assertIn(f"; set-option -t {name} status off ;", text)
-                self.assertEqual([c[3] for c in seen[-2:]], ["has-session", "show-options"])
-                self.assertEqual(seen[-1][5], "=manager:")
+                self.assertEqual(
+                    [c[3] for c in seen[-3:]], ["has-session", "display-message", "show-options"]
+                )
+                self.assertEqual(seen[-1][5], "$8")
+                self.assertEqual(command[command.index("-t") + 1], "$8")
             else:
                 command = seen[-1]
                 popen.assert_not_called()
@@ -184,8 +215,11 @@ class GroupedAttachTests(unittest.TestCase):
 
         def run(command, **kwargs):
             seen.append(command)
+            if command[3] == "display-message":
+                return SimpleNamespace(returncode=0, stdout="$8\n")
             if command[3] == "has-session":
-                return SimpleNamespace(returncode=1)
+                # The original ID is gone, but a replacement already uses its name.
+                return SimpleNamespace(returncode=0 if command[-1] == "=manager:" else 1)
             return SimpleNamespace(returncode=0, stdout="")
 
         with (
@@ -195,7 +229,24 @@ class GroupedAttachTests(unittest.TestCase):
         ):
             run_grouped_attachment("/tmp/s.sock", "=manager:")
         name = popen.call_args.args[0][popen.call_args.args[0].index("-s") + 1]
-        self.assertEqual([c[3] for c in seen], ["show-options", "has-session", "kill-session"])
-        self.assertEqual(seen[1][5], "=manager:")
-        self.assertEqual(seen[2][4:], ["-t", name])
+        self.assertEqual(
+            [c[3] for c in seen],
+            ["display-message", "show-options", "has-session", "kill-session"],
+        )
+        self.assertEqual(seen[2][5], "$8")
+        self.assertEqual(seen[3][4:], ["-t", name])
         client.wait.assert_called_once()
+
+    def test_missing_session_identity_does_not_create_a_group(self):
+        from tmux_workspaces.attachments import run_grouped_attachment
+
+        for result in (
+            SimpleNamespace(returncode=1, stdout=""),
+            SimpleNamespace(returncode=0, stdout=""),
+        ):
+            with (
+                patch("tmux_workspaces.attachments.subprocess.run", return_value=result),
+                patch("tmux_workspaces.attachments.subprocess.Popen") as popen,
+            ):
+                run_grouped_attachment("/tmp/s.sock", "=manager:")
+            popen.assert_not_called()

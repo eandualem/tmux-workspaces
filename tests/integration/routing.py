@@ -217,6 +217,27 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
             for marker, destination in expected
         )
 
+    def wait_routed(description):
+        try:
+            wait(client, routed, description)
+        except AssertionError as error:
+            observed = contents()
+            mismatches = [
+                {
+                    "marker": marker,
+                    "expected": destination,
+                    "actual_counts": {
+                        target: text.count(marker)
+                        for target, text in observed.items()
+                        if marker in text
+                    },
+                }
+                for marker, destination in expected
+                if [target for target, text in observed.items() if marker in text] != [destination]
+                or observed[destination].count(marker) != 1
+            ]
+            raise AssertionError(f"{description}: {json.dumps(mismatches)}\n{error}") from error
+
     for method in ("click", "shortcut"):
         for kind in ("tab", "workspace"):
             if method == "click" and kind == "workspace":
@@ -256,12 +277,12 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
                     packets.append(navigation + command)
                     if not burst:
                         os.write(client.master, packets[-1].encode())
-                        wait(client, routed, f"immediate {method}/{kind} input misrouted")
+                        wait_routed(f"immediate {method}/{kind} input misrouted")
                 if burst:
                     # Multiple navigation events and commands in one write:
                     # no readiness wait between physical inputs.
                     os.write(client.master, "".join(packets).encode())
-                    wait(client, routed, f"burst {method}/{kind} input misrouted")
+                    wait_routed(f"burst {method}/{kind} input misrouted")
     client.pump(0.3)
     assert routed(), "delayed or duplicate delivery reached an unintended shell"
     assert identities() == original, "navigation changed a shell process"

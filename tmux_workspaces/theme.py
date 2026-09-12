@@ -429,12 +429,14 @@ class Palette:
             text += f" ({self.colors}-color fallback)"
         return text
 
-    def install(self, curses, write=None) -> None:
+    def install(self, curses, write=None, *, previous_rgb=()) -> None:
         """Install pairs 1-4 once. On failure, restore the pairs already in use.
 
         ``write`` sends text to the pane's terminal; it receives the palette
         definitions for any RGB colors. Without it, such colors show as
-        whatever the slots held, so a viewer always passes one.
+        whatever the slots held, so a viewer always passes one. ``previous_rgb``
+        identifies this pane's old RGB overrides; released slots are reset before
+        the new palette is displayed.
         """
         previous = dict(_INSTALLED)
         curses.start_color()
@@ -498,8 +500,12 @@ class Palette:
         self._repaired.update(repaired)
         _INSTALLED.clear()
         _INSTALLED.update(installed)
-        if write is not None and self.rgb:
-            write(palette_sequence({name: slot for slot, name in self.rgb.items()}))
+        if write is not None:
+            released = sorted(set(previous_rgb) - set(self.rgb))
+            sequence = "".join(f"\x1b]104;{slot}\x1b\\" for slot in released)
+            sequence += palette_sequence({name: slot for slot, name in self.rgb.items()})
+            if sequence:
+                write(sequence)
 
 
 # The pairs currently installed in this process, so a failed apply can roll back.

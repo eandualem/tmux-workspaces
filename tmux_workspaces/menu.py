@@ -107,6 +107,16 @@ class Selection:
         elif self.index > last:
             self.offset = self.index - available + 1
         self.follow_view = False
+        if self.entries[self.index].label == RULE:
+            selectable = [
+                i
+                for i in range(self.offset, min(self.offset + available, len(self.entries)))
+                if self.entries[i].label != RULE
+            ]
+            if not selectable:
+                self.active = self.displayed = None
+                return self.entries[self.offset : self.offset + available]
+            self.index = min(selectable, key=lambda i: abs(i - self.index))
         if not self.stale:
             self.active = self.entries[self.index].key
         if drawn and not self.stale:

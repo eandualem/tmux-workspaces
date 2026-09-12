@@ -361,6 +361,10 @@ class Display:
         """
         self.panel_color, self.surface = panel, surface
         self.separator = separator or panel
+        # Palette installation can change padding and the startup palette of
+        # existing choosers, even when the tab and its geometry are unchanged.
+        # Invalidate both the same-tab fast path and container reuse.
+        self._rendered_key = self._rendered_shape = self._rendered_geometry = None
         if not self._setup_done:
             return
         style = self._band_style()

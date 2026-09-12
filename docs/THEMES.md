@@ -281,9 +281,14 @@ TMUX_WORKSPACES_DATA_DIR=$(mktemp -d) ./run
 Open **Configure… → Edit theme…**, and with the terminal on a light theme and then a dark one,
 confirm that the selected row is legible and obviously selected, that the `▶`
 marker and the dividers are visible, that hints and the status line are readable
-against the background, and that a failure — try entering `#8ab4f8` — stands out
+against the background, and that a failure — try entering `#8ab4f` — stands out
 as an error. Then record the terminals, their themes and what you saw in
 [ACCEPTANCE.md](ACCEPTANCE.md).
 
 Everything above about which color codes are emitted is verified; nothing above
 is a claim about how those colors are rendered to a human eye.
+
+Live theme saves refresh existing chooser colors and add or remove padding for the
+selected theme. Terminal clients may redraw, while their underlying shells and
+attached sessions keep running. Switching from RGB to indexed colors restores
+released palette slots, and named outline colors apply to split separators too.

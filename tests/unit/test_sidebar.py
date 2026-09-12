@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from tmux_workspaces.keymap import DEFAULT_KEYMAP, Keymap
 from tmux_workspaces.model import LayoutConflict, Model, leaves
-from tmux_workspaces.sidebar import Sidebar
+from tmux_workspaces.sidebar import Sidebar, terminal_text
 from tmux_workspaces.theme import DEFAULT_THEME
 
 
@@ -100,6 +100,55 @@ class SidebarTests(unittest.TestCase):
             self.sidebar.save()
         self.display.render.assert_called_once()
         self.display.select_sidebar.assert_called_with()
+
+    def test_ascii_frames_menus_and_user_names_remain_drawable_and_clickable(self):
+        self.sidebar.encoding = "ascii"
+        self.model.space["name"] = "Café 界"
+        self.model.space["icon"] = "◆"
+        self.model.tab["name"] = "Résumé 界"
+        before = copy.deepcopy(self.model.state)
+
+        def require_ascii(_row, _column, text, *_args):
+            text.encode("ascii")
+
+        self.screen.addnstr.side_effect = require_ascii
+        self.screen.insstr.side_effect = require_ascii
+        self.sidebar.draw()
+        drawn = [call.args[2] for call in self.screen.addnstr.call_args_list]
+        self.assertIn("+" + "-" * 26, drawn)
+        self.assertIn("Caf? ??", drawn)
+        self.assertTrue(any("R?sum? ??" in text for text in drawn))
+        self.assertEqual(self.model.state, before)
+        configure = next(
+            call.args
+            for call in self.screen.addnstr.call_args_list
+            if call.args[2].strip() == "Configure~"
+        )
+        row, start = configure[:2]
+        self.mouse(start, row, curses.BUTTON1_PRESSED)
+        self.sidebar.draw()
+        self.assertEqual(self.sidebar.menu, "configure")
+        self.sidebar.open_menu("icon")
+        self.sidebar.draw()
+        self.sidebar.open_menu("tab")
+        self.sidebar.draw()
+        self.assertEqual(self.model.state, before)
+
+    def test_terminal_text_preserves_supported_characters_and_display_width(self):
+        text = "Café 界 ◆ ─"
+        self.assertEqual(terminal_text(text, "utf-8"), text)
+        self.assertEqual(terminal_text(text, "latin-1"), "Café ?? ? -")
+        self.assertEqual(terminal_text("╭─│", "cp437"), "+─│")
+        self.assertEqual(terminal_text("e\u0301界", "ascii"), "e??")
+
+    def test_window_encoding_takes_precedence_over_locale(self):
+        self.screen.encoding = "utf-8"
+        with patch("tmux_workspaces.sidebar.locale.getpreferredencoding", return_value="ascii"):
+            sidebar = Sidebar(
+                self.screen, self.model, self.store, self.source, self.display, Mock()
+            )
+        self.assertEqual(sidebar.encoding, "utf-8")
+        self.assertEqual(sidebar.glyph("▶"), "▶")
 
     def test_right_click_inactive_tab_renames_target_and_preserves_previous_layout(self):
         first = self.model.tab

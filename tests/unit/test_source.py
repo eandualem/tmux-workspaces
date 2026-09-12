@@ -137,7 +137,16 @@ class SourceTests(unittest.TestCase):
         self.assertTrue(all(item["origin"] == "tmux" for item in sessions.values()))
         self.assertEqual(
             run.call_args.args[0],
-            ["tmux", "-S", source.socket, "list-sessions", "-F", "#{session_name}"],
+            [
+                "tmux",
+                "-S",
+                source.socket,
+                "list-sessions",
+                "-f",
+                "#{!=:#{@tmux_workspaces_attachment},1}",
+                "-F",
+                "#{session_name}",
+            ],
         )
         self.assertNotIn("BACKBONE_API_KEY", run.call_args.kwargs["env"])
 

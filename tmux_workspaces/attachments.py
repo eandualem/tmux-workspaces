@@ -34,6 +34,10 @@ def rule_main(args) -> int:
     import sys
     import termios
 
+    from .theme import COLOR_NAMES, color_index, tmux_spelling
+
+    named_colors = {tmux_spelling(name): color_index(name) for name in COLOR_NAMES}
+
     def paint(color: str) -> None:
         try:
             rows, cols = struct.unpack("HHHH", fcntl.ioctl(1, termios.TIOCGWINSZ, b"\0" * 8))[:2]
@@ -45,6 +49,8 @@ def rule_main(args) -> int:
             sequence = f"\033[38;2;{r};{g};{b}m"
         elif color.startswith("colour") and color[6:].isdigit():
             sequence = f"\033[38;5;{int(color[6:])}m"
+        elif color in named_colors and color != "default":
+            sequence = f"\033[38;5;{named_colors[color]}m"
         if args.vertical:
             # One thin line down a one-column pane: the same weight as the rule
             # between stacked panes, rather than a filled column of color.
@@ -69,6 +75,7 @@ def rule_main(args) -> int:
 # Grouped sessions the viewer creates for its own attach clients carry this
 # prefix, so tools and tests can tell them from the sessions people run.
 GROUPED_PREFIX = "tw-"
+GROUPED_MARKER = "@tmux_workspaces_attachment"
 # How often a grouped attachment checks that the session it joined still exists.
 TARGET_PROBE_SECONDS = 2
 
@@ -97,7 +104,12 @@ def grouped_attach_command(
     """
     name = name or grouped_session_name()
     command = ["tmux", "-S", source_socket, "new-session", "-E", "-t", target, "-s", name]
-    for option in [*(options or []), ["status", "off"], ["destroy-unattached", "on"]]:
+    for option in [
+        *(options or []),
+        [GROUPED_MARKER, "1"],
+        ["status", "off"],
+        ["destroy-unattached", "on"],
+    ]:
         command += [";", "set-option", "-t", name, *option]
     return command
 
@@ -143,17 +155,30 @@ def run_grouped_attachment(source_socket: str, target: str) -> None:
     left standing after the target was killed would keep the target's shells
     running inside the viewer. The client is therefore watched: once the
     target is gone, the grouped session is killed too, the client returns and
-    the pane shows the session as offline like any other attachment.
+    the pane shows the session as offline like any other attachment. Resolve
+    the immutable session ID first: a new session reusing its name must not
+    keep the old group's windows alive.
     """
+    resolved = subprocess.run(
+        ["tmux", "-S", source_socket, "display-message", "-p", "-t", target, "#{session_id}"],
+        env=clean_env(),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+    session_id = resolved.stdout.strip()
+    if resolved.returncode or not session_id.startswith("$") or not session_id[1:].isdigit():
+        return
     name = grouped_session_name()
-    options = target_session_options(source_socket, target)
-    command = grouped_attach_command(source_socket, target, name, options)
+    options = target_session_options(source_socket, session_id)
+    command = grouped_attach_command(source_socket, session_id, name, options)
     with subprocess.Popen(command, env=clean_env()) as client:
         while client.poll() is None:
             # One probe every couple of seconds per attached pane; a killed
             # session shows as offline soon enough without a process a second.
             time.sleep(TARGET_PROBE_SECONDS)
-            if client.poll() is None and not session_exists(source_socket, target):
+            if client.poll() is None and not session_exists(source_socket, session_id):
                 subprocess.run(
                     ["tmux", "-S", source_socket, "kill-session", "-t", name],
                     env=clean_env(),

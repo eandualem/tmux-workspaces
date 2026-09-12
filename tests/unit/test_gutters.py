@@ -67,8 +67,19 @@ class GutterLayoutTests(unittest.TestCase):
             "40",
             f"tmux -S {self.viewer.socket} attach -t viewer",
         )
-        time.sleep(0.6)
+        self.until(
+            lambda: bool(self.viewer.run("list-clients", "-F", "#{client_pid}", check=False)),
+            "fixture client did not attach",
+        )
         self.root = root
+
+    def until(self, predicate, description):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if predicate():
+                return
+            time.sleep(0.05)
+        self.fail(description)
 
     def tearDown(self):
         for server in (self.outer, self.viewer, self.shells):
@@ -221,7 +232,10 @@ class GutterLayoutTests(unittest.TestCase):
         leaf, content = next(iter(before.items()))
         self.viewer.run("select-pane", "-t", content)
         self.viewer.run("select-pane", "-t", sorted(gutters_before)[0])
-        time.sleep(0.2)
+        self.until(
+            lambda: self.viewer.run("display-message", "-p", "#{pane_id}") == content,
+            "focus did not bounce off the gutter",
+        )
         self.assertEqual(self.viewer.run("display-message", "-p", "#{pane_id}"), content)
         self.assertEqual(display.focused_leaf(), leaf)
 

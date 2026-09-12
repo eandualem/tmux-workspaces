@@ -145,7 +145,7 @@ class FooterTests(unittest.TestCase):
     def test_symbols_have_plain_fallbacks_and_states_have_names(self):
         self.assertEqual(self.sidebar.symbol("busy"), "▶")
         self.assertEqual(self.sidebar.symbol("blocked"), "!")
-        self.sidebar.unicode = False
+        self.sidebar.encoding = "ascii"
         self.assertEqual(self.sidebar.symbol("busy"), ">")
         self.assertEqual(self.sidebar.symbol("idle"), "o")
         self.assertEqual(self.sidebar.symbol("waiting_for_human"), "!")
