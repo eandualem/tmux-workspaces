@@ -41,9 +41,15 @@ row, behind a right-click on any tab, and behind the tab-options shortcut.
 selected one, as do the split shortcuts. It opens with the same
 chooser as a new tab; a terminal chosen there starts in the original shell's
 working directory. Four panes still belong to one tab. Click a pane to select
-and type there. Drag the gap between panes to adjust sizes. **Focus pane** in
-the tab menu temporarily shows one pane; **Next pane** cycles panes and
-**Show layout** restores the splits. Narrow terminals use temporary focus
+and type there. Drag the gap between panes to adjust sizes. The tab menu offers
+**Previous tab / Next tab** to switch complete layouts, and **Previous pane /
+Next pane** to move input focus inside the selected tab. **Focus one pane**
+temporarily shows only that pane; **Restore layout** shows the splits again.
+Split right creates a vertical divider; split below creates a horizontal divider.
+Selecting a menu row with the arrow keys shows its effective prefix or terminal
+profile shortcut below the list. Disabled bindings are identified, and long
+bindings point to **Configure → Shortcuts** for their full text.
+Narrow terminals use temporary focus
 without discarding the arrangement. The panel's bottom holds, with a blank
 row between each: an optional **Agents** roster, **Configure…**, and the
 workspace icons, with one blank row before the outline. **Configure…**

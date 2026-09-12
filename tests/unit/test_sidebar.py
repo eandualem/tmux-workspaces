@@ -280,6 +280,87 @@ class SidebarTests(unittest.TestCase):
             self.mouse(x, 2, curses.BUTTON1_PRESSED)
             self.assertEqual(len(self.model.space["tabs"]), previous_count + 1)
 
+    def test_tab_menu_navigation_preserves_layouts_and_returns_input_focus(self):
+        first = self.model.tab
+        self.model.add_tab()
+        second = self.model.tab
+        self.model.split("right")
+        self.model.split("below")
+        self.model.split("right")
+        self.display.focused_leaf.return_value = second["focus"]
+        layouts = [copy.deepcopy(tab["tree"]) for tab in (first, second)]
+        for label, target in (("Previous tab", first), ("Next tab", second)):
+            self.sidebar.open_menu("tab")
+            dict(self.sidebar._options({}))[label]()
+            self.assertIs(self.model.tab, target)
+            self.assertIsNone(self.sidebar.menu)
+        self.assertEqual([tab["tree"] for tab in (first, second)], layouts)
+
+        original = second["focus"]
+        self.display.select.side_effect = lambda leaf: setattr(
+            self.display.focused_leaf, "return_value", leaf
+        )
+        for focused in (False, True):
+            self.model.state["focus"] = focused
+            self.sidebar.open_menu("tab")
+            dict(self.sidebar._options({}))["Previous pane"]()
+            self.assertNotEqual(second["focus"], original)
+            self.assertIsNone(self.sidebar.menu)
+            self.sidebar.open_menu("tab")
+            dict(self.sidebar._options({}))["Next pane"]()
+            self.assertEqual(second["focus"], original)
+            self.assertIsNone(self.sidebar.menu)
+            self.assertEqual(self.model.state["focus"], focused)
+        self.display.shells.close.assert_not_called()
+
+    def test_tab_menu_shortcut_hints_follow_effective_map_and_fit_without_clipping(self):
+        self.sidebar.keymap = Keymap.from_dict(
+            {
+                "prefix": "C-b",
+                "bindings": {"previous-tab": ["F2"], "next-tab": []},
+                "direct": {"previous-tab": ["super+alt+f2"], "next-tab": []},
+            }
+        )
+        self.sidebar.open_menu("tab")
+        self.sidebar.draw()
+        self.sidebar.move_selection(1)
+        self.sidebar.draw()
+        self.assertEqual(self.sidebar.tab_shortcut_hint(26), "Ctrl-b, then F2")
+        self.assertEqual(self.sidebar.tab_shortcut_hint(16), "See Shortcuts")
+        self.sidebar.shortcut_hints = "command"
+        self.assertEqual(self.sidebar.tab_shortcut_hint(26), "⌘⌥F2")
+        self.sidebar.move_selection(1)
+        self.sidebar.draw()
+        self.assertEqual(self.sidebar.tab_shortcut_hint(26), "No direct key")
+        self.sidebar.shortcut_hints = "prefix"
+        self.assertEqual(self.sidebar.tab_shortcut_hint(26), "No prefix key")
+        self.sidebar.move_selection(1)  # Split right has two default aliases.
+        self.sidebar.draw()
+        self.assertEqual(self.sidebar.tab_shortcut_hint(16), "See Shortcuts")
+
+    def test_navigation_menu_hit_targets_follow_short_narrow_scrolling(self):
+        self.screen.getmaxyx.return_value = (16, 20)
+        self.sidebar.open_menu("tab")
+        self.sidebar.draw()
+        for _ in self.sidebar._options({}):
+            if self.sidebar.selection.entry().label == "Next pane":
+                break
+            self.sidebar.move_selection(1)
+            self.sidebar.draw()
+        else:
+            self.fail("Next pane was not reachable by keyboard")
+        with patch.object(self.sidebar, "menu_next_pane") as advance:
+            self.sidebar.last_frame = None
+            self.sidebar.draw()
+            row = next(
+                call.args[0]
+                for call in reversed(self.screen.addnstr.call_args_list)
+                if call.args[2].strip() == "Next pane"
+            )
+            self.assertLess(row, self.sidebar.size()[0] - 3)
+            self.mouse(3, row, curses.BUTTON1_PRESSED)
+        advance.assert_called_once_with()
+
     def test_the_heading_chevron_is_the_one_place_workspaces_are_switched_and_made(self):
         first = self.model.space
         self.model.add_workspace("Second")
