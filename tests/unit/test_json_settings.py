@@ -3,7 +3,7 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from tmux_workspaces.config_editor import Editor, clip
 from tmux_workspaces.json_settings import SettingsDraft
@@ -112,6 +112,75 @@ class SettingsTests(unittest.TestCase):
 
 
 class BufferTests(unittest.TestCase):
+    def test_empty_deletes_preserve_undo_and_redo_history(self):
+        for key, position in ((curses.KEY_BACKSPACE, 0), (curses.KEY_DC, 3)):
+            buffer = TextBuffer("abc")
+            buffer.replace("x")
+            buffer.undo()
+            buffer.cursor = position
+            before = (list(buffer.undo_stack), list(buffer.redo_stack))
+            buffer.key(key)
+            self.assertEqual(buffer.text, "abc")
+            self.assertEqual((buffer.undo_stack, buffer.redo_stack), before)
+            self.assertIsNone(buffer.anchor)
+            buffer.undo(redo=True)
+            self.assertEqual(buffer.text, "xabc")
+
+    def test_incomplete_paste_recovers_without_changing_draft_and_cancel_works(self):
+        screen = Mock()
+        screen.getmaxyx.return_value = (30, 100)
+        draft = Mock(initial="{}", file=Mock(limit=100), message="")
+        editor = Editor(screen, draft)
+        with patch("tmux_workspaces.config_editor.time.monotonic", return_value=10):
+            for key in "\x1b[200~partial\x1b[201":
+                editor.feed(key)
+            editor.feed(curses.KEY_MOUSE)
+        with patch("tmux_workspaces.config_editor.time.monotonic", return_value=13):
+            editor.idle()
+            self.assertFalse(editor.pasting)
+            self.assertEqual(editor.buffer.text, "{}")
+            self.assertIn("Incomplete paste", editor.message)
+            editor.feed("\x1b")
+        with patch("tmux_workspaces.config_editor.time.monotonic", return_value=14):
+            editor.idle()
+        self.assertTrue(editor.done)
+        draft.save.assert_not_called()
+
+    def test_active_paste_renews_timeout_and_inserts_as_one_undo_step(self):
+        editor = Editor(Mock(), Mock(initial="", file=Mock(limit=100), message=""))
+        with patch("tmux_workspaces.config_editor.time.monotonic", return_value=10):
+            for key in "\x1b[200~a":
+                editor.feed(key)
+        with patch("tmux_workspaces.config_editor.time.monotonic", return_value=11.5):
+            editor.feed("b")
+        with patch("tmux_workspaces.config_editor.time.monotonic", return_value=13):
+            editor.idle()
+            self.assertTrue(editor.pasting)
+            for key in "c\x1b[201~":
+                editor.feed(key)
+        self.assertEqual(editor.buffer.text, "abc")
+        editor.buffer.undo()
+        self.assertEqual(editor.buffer.text, "")
+
+    def test_timed_out_paste_tail_cannot_save_or_edit_before_end_marker(self):
+        screen = Mock()
+        screen.getmaxyx.return_value = (30, 100)
+        draft = Mock(initial="{}", file=Mock(limit=100), message="")
+        editor = Editor(screen, draft)
+        with patch("tmux_workspaces.config_editor.time.monotonic", return_value=10):
+            for key in "\x1b[200~partial":
+                editor.feed(key)
+        with patch("tmux_workspaces.config_editor.time.monotonic", return_value=13):
+            editor.idle()
+            for key in "delayed\x13\x1a\x03\x1b[201~":
+                editor.feed(key)
+        self.assertEqual(editor.buffer.text, "{}")
+        self.assertFalse(editor.done)
+        self.assertFalse(editor.paste_discarding)
+        draft.save.assert_not_called()
+        editor.feed("\x13")
+        draft.save.assert_called_once_with("{}")
+
     def test_multiline_navigation_delete_and_undo_redo(self):
         buffer = TextBuffer("abc\n  def\n")
         buffer.key(curses.KEY_DOWN)

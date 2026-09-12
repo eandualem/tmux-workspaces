@@ -16,6 +16,10 @@ Use the visible **Save**, **Cancel** and **Help** buttons with the mouse, or:
 - Terminal paste inserts text, not viewer actions. A bracketed paste is one undo
   step. Unsupported terminal shortcut sequences are ignored by the editor.
 
+If a paste is interrupted for two seconds, its incomplete text is discarded and
+the draft stays unchanged. Delayed paste input remains isolated; paste again or
+press Escape to cancel. Normal editing resumes when the paste end marker arrives.
+
 Wait until the editor appears before typing. During opening, viewer actions are
 suppressed to keep early input out of workspace shells. The editor retains its
 draft when resized; below 40 columns or 12 rows it asks for more room and disables

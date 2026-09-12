@@ -44,7 +44,9 @@ class Editor:
         self.sequence = ""
         self.sequence_time = 0.0
         self.pasting = False
+        self.paste_discarding = False
         self.paste = ""
+        self.paste_time = 0.0
         self.paste_overflow = False
 
     def put(self, row, column, text, style=0):
@@ -174,6 +176,8 @@ class Editor:
 
     def feed(self, key):
         """Consume complete escape/paste sequences; pasted controls never run actions."""
+        if self.pasting and isinstance(key, str):
+            self.paste_time = time.monotonic()
         if self.sequence:
             if not isinstance(key, str):
                 self.sequence = ""
@@ -181,6 +185,8 @@ class Editor:
             self.sequence += key
             if self.sequence == "\x1b[200~":
                 self.pasting, self.paste, self.paste_overflow = True, "", False
+                self.paste_discarding = False
+                self.paste_time = time.monotonic()
                 self.sequence = ""
             elif self.sequence == "\x1b[201~":
                 if self.pasting:
@@ -188,6 +194,7 @@ class Editor:
                     if self.paste_overflow or not self.buffer.replace(self.paste):
                         self.message = "Paste exceeds text limit; draft unchanged."
                     self.pasting, self.paste = False, ""
+                self.paste_discarding = False
                 self.sequence = ""
             elif len(self.sequence) >= 3 and (key.isalpha() or key == "~"):
                 self.sequence = ""  # Unsupported CSI/direct shortcut, never text.
@@ -203,10 +210,20 @@ class Editor:
                     self.paste += value
                 else:
                     self.paste_overflow = True
+        elif self.paste_discarding:
+            # A delayed paste tail must not turn into live Save or edit keys.
+            # A new paste/end marker or explicit Escape/F10 can recover safely.
+            if key == curses.KEY_F10:
+                self.cancel()
         else:
             self.key(key)
 
     def idle(self):
+        if self.pasting and time.monotonic() - self.paste_time > 2.0:
+            self.pasting, self.paste, self.paste_overflow = False, "", False
+            self.paste_discarding = True
+            self.sequence = ""
+            self.message = "Incomplete paste discarded; draft unchanged. Paste again or press Esc."
         if self.sequence and time.monotonic() - self.sequence_time > 0.15:
             sequence, self.sequence = self.sequence, ""
             if sequence == "\x1b" and not self.pasting:

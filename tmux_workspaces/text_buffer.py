@@ -79,7 +79,9 @@ class TextBuffer:
                     if key == curses.KEY_DC
                     else max(0, self.cursor - 1)
                 )
-            self.replace("")
+            if self.anchor != self.cursor:
+                self.replace("")
+            self.anchor = None
         elif key in ("\n", "\r", curses.KEY_ENTER):
             line = self.text.split("\n")[row]
             indent = len(line) - len(line.lstrip(" "))

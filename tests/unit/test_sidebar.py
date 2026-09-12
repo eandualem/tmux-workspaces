@@ -300,12 +300,38 @@ class SidebarTests(unittest.TestCase):
         self.display.shells.close.assert_not_called()
 
     def test_json_popup_launch_failure_returns_to_viewer_with_a_visible_error(self):
-        with patch("tmux_workspaces.sidebar.ConfigPopup", side_effect=OSError("could not spawn")):
+        with (
+            patch("tmux_workspaces.sidebar.ConfigPopup", side_effect=OSError("could not spawn")),
+            patch.object(self.sidebar, "save", side_effect=LayoutConflict("concurrent edit")),
+        ):
             self.sidebar.open_config_editor("colors")
         self.assertIsNone(self.sidebar.config_popup)
         self.assertIsNone(self.sidebar.menu)
         self.assertIn("Could not open settings editor", self.sidebar.status_text())
         self.display.shells.close.assert_not_called()
+
+    def test_json_popup_close_never_writes_layout_and_saved_colors_still_apply(self):
+        self.sidebar.actions = FakeActions()
+        for result in ({"saved": False}, {"error": "popup failed"}, {"saved": True}):
+            popup = Mock(kind="colors")
+            popup.poll.return_value = result
+            self.sidebar.config_popup = popup
+            self.sidebar.menu = "json-settings"
+            with (
+                patch.object(self.sidebar, "save", side_effect=LayoutConflict("concurrent edit")),
+                patch("tmux_workspaces.sidebar.load_theme") as load,
+                patch.object(self.sidebar, "install") as install,
+            ):
+                load.return_value = Mock(diagnostic=None, theme=DEFAULT_THEME)
+                self.assertTrue(self.sidebar.finish_config_editor())
+                if result.get("saved"):
+                    install.assert_called_once_with(DEFAULT_THEME)
+                    self.assertEqual(self.sidebar.message, "Colors saved and applied")
+                else:
+                    install.assert_not_called()
+            self.assertIsNone(self.sidebar.menu)
+            self.assertIsNone(self.sidebar.config_popup)
+            popup.close.assert_called_once()
 
     def test_json_shortcuts_require_a_selected_file_and_offer_refresh_after_save(self):
         with patch("tmux_workspaces.sidebar.ConfigPopup") as create:
@@ -318,7 +344,8 @@ class SidebarTests(unittest.TestCase):
         popup.poll.return_value = {"saved": True}
         with patch("tmux_workspaces.sidebar.ConfigPopup", return_value=popup):
             self.sidebar.open_config_editor("shortcuts")
-        self.sidebar.finish_config_editor()
+        with patch.object(self.sidebar, "save", side_effect=LayoutConflict("concurrent edit")):
+            self.sidebar.finish_config_editor()
         self.assertEqual(self.sidebar.menu, "refresh")
         self.assertEqual(self.sidebar.menu_message, "Shortcuts saved")
         self.assertEqual(self.sidebar.keymap, DEFAULT_KEYMAP)

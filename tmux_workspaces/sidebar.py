@@ -369,7 +369,8 @@ class Sidebar:
         try:
             self.config_popup = ConfigPopup(self.display, kind, path)
         except (OSError, RuntimeError) as error:
-            self.show()
+            self.close_menu()
+            self.display.render(self.model.tab, self.model.state["focus"])
             self.message = "Could not open settings editor: " + visible(str(error))
 
     def finish_config_editor(self) -> bool:
@@ -383,7 +384,8 @@ class Sidebar:
         kind = self.config_popup.kind
         self.config_popup.close()
         self.config_popup = None
-        self.show()
+        self.close_menu()
+        self.display.render(self.model.tab, self.model.state["focus"])
         if result.get("error"):
             self.message = visible(result["error"])
         elif result.get("saved"):
@@ -393,7 +395,7 @@ class Sidebar:
                     self.message = visible(loaded.diagnostic)
                 else:
                     self.install(loaded.theme)
-                    self.show()
+                    self.display.render(self.model.tab, self.model.state["focus"])
                     self.message = "Colors saved and applied"
             else:
                 self.refresh_viewer()
