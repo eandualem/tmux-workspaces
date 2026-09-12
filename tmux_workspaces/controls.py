@@ -163,15 +163,17 @@ class Actions:
             except BlockingIOError:
                 return
             if valid_action(action):
+                applied = False
                 try:
                     yield action
+                    applied = True
                 finally:
                     # A synchronous tmux binding waits until the sidebar has
                     # applied the action (including focus) before releasing input.
                     # Older callers without a return address stay compatible.
                     if sender:
                         with contextlib.suppress(OSError):
-                            self.receiver.sendto(b"applied", sender)
+                            self.receiver.sendto(b"applied" if applied else b"failed", sender)
 
     def close(self):
         self.receiver.close()

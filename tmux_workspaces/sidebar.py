@@ -1697,12 +1697,15 @@ class Sidebar:
         would otherwise change tabs or close shells after the window's final
         save. Their senders are still acknowledged, so no shortcut hangs.
         """
-        for action in self.actions.pending():
-            if not self.running:
-                continue
-            with self.display.snapshot_scope():
-                self.action(action)
-                self.draw()
+        with contextlib.closing(self.actions.pending()) as pending:
+            for action in pending:
+                if not self.running:
+                    continue
+                with self.display.snapshot_scope():
+                    self.action(action)
+                    if self.running and not self.config_popup:
+                        self.display.wait_for_input(self.model.tab)
+                    self.draw()
         return self.running
 
     def run(self) -> None:

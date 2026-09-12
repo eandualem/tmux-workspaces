@@ -4,6 +4,8 @@ import contextlib
 import os
 import re
 import shlex
+import subprocess
+import time
 from dataclasses import dataclass
 
 from .entrypoints import script_command
@@ -454,6 +456,80 @@ class Display:
     def select_sidebar(self) -> None:
         self.invalidate_snapshot()
         self.tmux.run("select-pane", "-t", self.sidebar)
+
+    def wait_for_input(self, tab: dict | None, *, timeout: float = 3) -> None:
+        """Keep shortcut input queued until this ordinary shell client attaches.
+
+        A respawned pane exists before its nested tmux client starts. A later
+        navigation can kill that wrapper with typed input still in its PTY.
+        Match both session and viewer TTY: another viewer is not readiness here.
+        External sessions and empty choosers have their own recovery UI.
+        """
+        if not tab:
+            return
+        deadline = time.monotonic() + timeout
+
+        def query(tmux: Tmux, *args: str) -> str:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError("Terminal attachment is not ready; try selecting it again")
+            return tmux.run(*args, timeout=remaining)
+
+        def focused() -> list[str] | None:
+            rows = query(
+                self.tmux,
+                "list-panes",
+                "-t",
+                self.sidebar,
+                "-F",
+                "#{pane_id}|#{@viewer_leaf_id}|#{@viewer_tab_id}|#{pane_active}|"
+                "#{pane_dead}|#{pane_tty}|#{pane_pid}",
+            )
+            return next(
+                (
+                    parts
+                    for row in rows.splitlines()
+                    if len(parts := row.split("|")) == 7 and parts[3] == "1"
+                ),
+                None,
+            )
+
+        try:
+            initial = focused()
+            if initial and initial[0] == self.sidebar:
+                return
+            leaf = next(
+                (
+                    item
+                    for item in leaves(tab["tree"])
+                    if initial and self.panes.get(item["id"]) == initial[0]
+                ),
+                None,
+            )
+            if not leaf:
+                raise RuntimeError("Terminal attachment disappeared; try selecting it again")
+            if leaf["agent"] or is_empty(leaf):
+                return
+            if initial[1:3] != [leaf["id"], tab["id"]] or initial[4] != "0" or not initial[5]:
+                raise RuntimeError("Terminal attachment changed; try selecting it again")
+            expected = f"{Shells.name(leaf)}|{initial[5]}"
+            while True:
+                clients = query(
+                    self.shells.tmux, "list-clients", "-F", "#{session_name}|#{client_tty}"
+                )
+                # Recheck after probing the source: pane IDs can survive respawn.
+                if focused() != initial:
+                    raise RuntimeError("Terminal attachment changed; try selecting it again")
+                if expected in clients.splitlines():
+                    return
+                time.sleep(min(0.01, max(0, deadline - time.monotonic())))
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+            self.select_sidebar()
+            if isinstance(error, subprocess.TimeoutExpired):
+                raise RuntimeError(
+                    "Terminal attachment is not ready; try selecting it again"
+                ) from error
+            raise
 
     def _leaf_command(self, pane: dict | None) -> str:
         if not pane:
