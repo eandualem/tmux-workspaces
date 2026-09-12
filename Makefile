@@ -13,6 +13,7 @@ test:
 	$(PYTHON) -m unittest discover -s scripts/tests -v
 
 smoke:
+	$(PYTHON) -m tests.integration.smoke_selection
 	$(PYTHON) -m tests.integration.smoke_json_settings
 	$(PYTHON) -m tests.integration.smoke_themes
 	$(PYTHON) -m tests.integration.smoke_refresh

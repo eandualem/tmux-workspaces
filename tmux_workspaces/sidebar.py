@@ -562,6 +562,9 @@ class Sidebar:
     def action(self, name: str) -> None:
         if self.config_popup:
             return
+        if name == "copy-selection":
+            self.display.copy_selection()
+            return
         mouse = mouse_action(name)
         if mouse:
             x, y = mouse

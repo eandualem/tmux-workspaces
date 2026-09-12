@@ -50,7 +50,7 @@ def bracketed_paste(client: Client, shells: Tmux, target: str) -> None:
 
 
 def native_mouse(directory: Path, client: Client, viewer: Tmux) -> None:
-    """Check nested application forwarding and tmux's plain-pane selection."""
+    """Check nested right-click/wheel forwarding and explicit plain-pane copy."""
     recording, ready = directory / "mouse.bytes", directory / "mouse.ready"
     program = directory / "mouse_app.py"
     program.write_text(
@@ -82,15 +82,6 @@ def native_mouse(directory: Path, client: Client, viewer: Tmux) -> None:
         data = recording.read_bytes() if recording.exists() else b""
         return re.findall(rb"\x1b\[<([0-9]+);[0-9]+;[0-9]+M", data)
 
-    for count in (2, 3):
-        client.pump(0.5)
-        before = len(downs())
-        os.write(client.master, (click() * count).encode())
-        wait(
-            client,
-            lambda before=before, count=count: len(downs()) >= before + count,
-            "content multi-click was not forwarded",
-        )
     os.write(client.master, (click(2) + click(64)).encode())
     wait(client, lambda: b"2" in downs() and b"64" in downs(), "content right-click or wheel lost")
     client.type("\x03")
@@ -115,9 +106,17 @@ def native_mouse(directory: Path, client: Client, viewer: Tmux) -> None:
         os.write(client.master, (click() * count).encode())
         wait(
             client,
+            lambda: viewer.run("display-message", "-p", "-t", pane, "#{selection_present}") == "1",
+            "native multi-click did not retain selection",
+        )
+        assert viewer.run("show-buffer", check=False) == "", "multi-click copied on release"
+        client.type(direct_sequence("copy-selection"))
+        wait(
+            client,
             lambda text=text: viewer.run("show-buffer", check=False).strip() == text,
             "native double/triple selection changed",
         )
+        client.type("\x1b")
 
 
 def exercise(directory: Path, pane_count: int) -> None:

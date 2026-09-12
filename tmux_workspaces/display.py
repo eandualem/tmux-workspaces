@@ -148,7 +148,7 @@ class Display:
             "set-hook",
             "-g",
             "after-select-pane",
-            'if-shell -F "#{@viewer_gutter}" "select-pane -l"',
+            'if-shell -F "#{@viewer_gutter}" "select-pane -l" "copy-mode -q -t \'{last}\'"',
         )
         # Forward wheel events to nested tmux, whose copy-mode owns agent scrollback.
         for key in ("WheelUpPane", "WheelDownPane"):
@@ -157,12 +157,43 @@ class Display:
         # their action and focus. Raw forwarding races text from the same read
         # into the sidebar before it has handled navigation.
         native_click = "select-pane -t = ; send-keys -M"
-        native_double = (
-            "select-pane -t = ; if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' "
-            "{ send-keys -M } "
-            "{ copy-mode -H ; send-keys -X select-word ; run-shell -d 0.3 ; "
-            "send-keys -X copy-pipe-and-cancel }"
+        native_double = "select-pane -t = ; copy-mode -H ; send-keys -X select-word"
+        # Selection belongs to the viewer, including when a nested application
+        # requests mouse events. Its frozen pane buffer cannot include a sibling
+        # pane, and background output cannot erase the user's highlight.
+        self.tmux.run(
+            "bind-key",
+            "-n",
+            "MouseDrag1Pane",
+            "if-shell",
+            "-F",
+            f"#{{||:#{{==:#{{mouse_pane}},{self.sidebar}}},#{{@viewer_gutter}}}}",
+            "send-keys -M",
+            "select-pane -t = ; copy-mode -M",
         )
+        for table in ("copy-mode", "copy-mode-vi"):
+            self.tmux.run(
+                "bind-key",
+                "-T",
+                table,
+                "MouseDragEnd1Pane",
+                "send-keys",
+                "-X",
+                "stop-selection",
+            )
+            self.tmux.run(
+                "bind-key",
+                "-T",
+                table,
+                "MouseDown1Pane",
+                "copy-mode -q ; select-pane -t = ; send-keys -M",
+            )
+            for key, selection in (
+                ("DoubleClick1Pane", "select-word"),
+                ("TripleClick1Pane", "select-line"),
+            ):
+                self.tmux.run("bind-key", "-T", table, key, "send-keys", "-X", selection)
+            self.tmux.run("bind-key", "-T", table, "Escape", "send-keys", "-X", "cancel")
         for key, native in (
             ("MouseDown1Pane", native_click),
             ("SecondClick1Pane", "send-keys -M"),
@@ -241,6 +272,15 @@ class Display:
     def padded(self) -> bool:
         """Whether panes are padded: only on a surface of the theme's own."""
         return self.surface != "default"
+
+    def copy_selection(self) -> None:
+        """Copy only an explicit viewer selection, leaving its highlight intact."""
+        self.tmux.run(
+            "if-shell",
+            "-F",
+            "#{selection_present}",
+            "send-keys -X copy-selection-no-clear",
+        )
 
     def _band_style(self) -> str:
         # Foreground and background alike: the line glyphs vanish into the

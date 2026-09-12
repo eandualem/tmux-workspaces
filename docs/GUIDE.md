@@ -150,7 +150,7 @@ highlight and **Enter** activates it. Type to filter the attachment chooser;
 reordering/transfer and empty-workspace deletion are available from these menus.
 
 Press **Ctrl-g**, release it, then press the listed key. These actions operate
-inside the viewer and match the clickable controls. **Shortcuts…** shows them
+inside the viewer and match the clickable controls. **Configure… → View shortcuts…** shows them
 in the navigation panel.
 
 - **t** (or **c**): new tab.
@@ -165,6 +165,7 @@ in the navigation panel.
 - **[ / ]**: previous / next workspace; **R**: rename workspace.
 - **s**: select the navigation panel.
 - **x**: close the focused pane; **&**: close the tab.
+- **y**: copy the highlighted terminal selection.
 - **d**: detach the viewer, preserving its terminals.
 
 When using `./run` without a terminal shortcut profile, Command-D and other
@@ -172,7 +173,10 @@ shortcuts captured by Ghostty or another terminal app remain that app's shortcut
 a key the app consumes. Use the viewer shortcuts above for saved splits;
 the viewer does not modify your terminal configuration. The usual Ctrl-b
 prefix reaches the inner tmux attachment. Mouse reporting must be enabled;
-holding your terminal's selection modifier may bypass application clicks.
+drag to select within a pane, then use Ctrl-g, y to copy. Release keeps the
+highlight; Escape or a click clears it. In a fresh dedicated `./ghostty` window,
+Command-C copies the same selection. See [selection and copying](SHORTCUTS.md#selecting-and-copying-terminal-text)
+for clipboard support and terminal profile details.
 
 ## Isolation and saved state
 
@@ -248,8 +252,9 @@ Run the viewer on the machine hosting tmux (locally, through SSH, or in WSL).
 This is not a native Windows tmux server or a remote terminal transport.
 `TERMINFO` and `TERMINFO_DIRS` are preserved for terminals such as Ghostty
 that supply their own terminal definitions. It adds a second tmux layer;
-scrolling, copy/clipboard and rendering depend on your terminal and the inner
-session's mouse configuration. Writable attachments participate in tmux
+scrolling and rendering depend on your terminal and the inner session's mouse
+configuration. Selection belongs to the viewer; copying requires the terminal
+to support and allow OSC52 clipboard writes. Writable attachments participate in tmux
 sizing, so another viewer showing the same terminal can affect its size.
 Layout changes recreate attachment clients and can produce a brief redraw.
 Offline demo states are fixtures; demo shells are not AI agents.
