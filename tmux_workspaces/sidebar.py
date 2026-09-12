@@ -366,7 +366,11 @@ class Sidebar:
             self.menu_message = "No keymap file; reopen without --no-keymap to edit shortcuts."
             return
         self.open_menu("json-settings")
-        self.config_popup = ConfigPopup(self.display, kind, path)
+        try:
+            self.config_popup = ConfigPopup(self.display, kind, path)
+        except (OSError, RuntimeError) as error:
+            self.show()
+            self.message = "Could not open settings editor: " + visible(str(error))
 
     def finish_config_editor(self) -> bool:
         result = self.config_popup.poll()

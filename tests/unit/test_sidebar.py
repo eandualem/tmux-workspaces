@@ -299,6 +299,14 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(self.sidebar.actions.acknowledged, ["close-tab", "new-tab"])
         self.display.shells.close.assert_not_called()
 
+    def test_json_popup_launch_failure_returns_to_viewer_with_a_visible_error(self):
+        with patch("tmux_workspaces.sidebar.ConfigPopup", side_effect=OSError("could not spawn")):
+            self.sidebar.open_config_editor("colors")
+        self.assertIsNone(self.sidebar.config_popup)
+        self.assertIsNone(self.sidebar.menu)
+        self.assertIn("Could not open settings editor", self.sidebar.status_text())
+        self.display.shells.close.assert_not_called()
+
     def test_json_shortcuts_require_a_selected_file_and_offer_refresh_after_save(self):
         with patch("tmux_workspaces.sidebar.ConfigPopup") as create:
             self.sidebar.open_config_editor("shortcuts")
