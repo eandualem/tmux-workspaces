@@ -304,10 +304,12 @@ Shortcuts and CLI help are generated from it, including aliases and numbered
 selection; long help rows wrap and scroll. `--print-keymap toml` emits the complete
 effective map, and `--print-keymap ghostty` emits exact triggers and CSI codes.
 Diagnostic printing requires no terminal or tmux server and creates no library.
-After editing configuration, launch a fresh viewer. New surfaces in an existing
-Ghostty instance retain that instance's map so their help matches its terminal
-profile; start a fresh `./ghostty` instance to apply a new map. No hot reload is
-performed. Existing shells and saved arrangements remain independent of keymaps.
+After editing configuration, use **Configure… → Refresh viewer…** or launch a
+fresh viewer. The built-in editor offers that refresh flow after Save; changes
+made in an external editor can use the same Configure entry. A dedicated Ghostty
+instance freezes its native profile, so start a fresh `./ghostty` instance to
+apply native-key changes. Automatic hot reload is not performed. Existing shells
+and saved arrangements remain independent of keymaps.
 
 User keymaps and keyboard menu navigation are separate features. The keymap
 feature landed first; menu navigation supplies the previously missing keyboard

@@ -43,13 +43,11 @@ are used and the same path is where the editor saves. The file may be at most
 works; saving through one does not, and is refused rather than replacing your
 link with a plain file.
 
-The file is read at startup, and again each time you open the colors editor.
-Editing it in another program does not disturb a running viewer while you are
-working: nothing is re-read on an idle frame. But because opening the editor
-shows the file as it now stands, opening it after an external edit will restyle
-the viewer to match that file, even though you changed nothing yourself; the
-editor says `Saved colors shown` when that happens. Cancel restores what was on
-screen before you opened the editor, and nothing is written unless you apply.
+The file is read at startup, and again when you open **Configure… → Edit theme…**.
+The editor shows the saved file as a draft; opening it does not restyle the viewer.
+**Save** (`F2` / `Ctrl-S`) validates and writes a changed draft, then applies it.
+Cancel leaves the file and current appearance unchanged. External file edits
+do not change a running viewer while idle; use **Refresh viewer…** to load them.
 
 ## Presets
 
