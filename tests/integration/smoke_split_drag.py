@@ -112,6 +112,7 @@ def exercise(resources, direction):
             (p["id"], p["left"], p["top"], p["width"], p["height"]) for p in panes(viewer)
         ] == before
         fixed()
+        assert set(viewer.run("list-panes", "-F", "#{pane_in_mode}").splitlines()) == {"0"}
     for delta in (-200, 200):
         drag(delta)
         fixed()

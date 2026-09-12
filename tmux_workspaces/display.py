@@ -1009,7 +1009,17 @@ class Display:
             self._split_drag = None
             self.tmux.run("set-option", "-g", "@viewer_resizing", "0")
         if x < 0 or y < 0:
+            if phase == "start" and self.padded and tab:
+                # Hidden borders have no pane-relative coordinates. Consume
+                # their whole gesture: older tmux releases classify motion
+                # crossing into content as MouseDrag1Pane, which otherwise
+                # starts a selection and changes the focused pane.
+                self.tmux.batch([["copy-mode", "-q", "-t", pane] for pane in self.panes.values()])
+                self._split_drag = {}  # Captured padding gesture, without a split to resize.
+                self.tmux.run("set-option", "-g", "@viewer_resizing", "1")
             return False
+        if drag == {}:
+            return False  # Padding remains captured even in a focused or narrow layout.
         if not self.padded or not tab or len(self.panes) != len(leaves(tab["tree"])):
             self.cancel_resize()
             return False

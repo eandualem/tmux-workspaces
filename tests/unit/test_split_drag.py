@@ -51,6 +51,36 @@ class SplitDragTests(unittest.TestCase):
         self.assertIsNone(self.display._split_drag)
         self.display.tmux.run.assert_called_with("set-option", "-g", "@viewer_resizing", "0")
 
+    def test_hidden_border_captures_motion_without_resizing_or_selecting_content(self):
+        before = copy.deepcopy(self.model.tab)
+        self.assertFalse(self.display.resize_split(self.model.tab, "start", -1, -1))
+        self.assertIsNotNone(self.display._split_drag)
+        self.display.tmux.run.assert_called_with("set-option", "-g", "@viewer_resizing", "1")
+        self.display.tmux.reset_mock()
+        self.assertFalse(self.display.resize_split(self.model.tab, "move", 102, 3))
+        self.display.tmux.run.assert_not_called()
+        self.assertEqual(self.model.tab, before)
+        self.assertFalse(self.display.resize_split(self.model.tab, "end", 102, 3))
+        self.assertIsNone(self.display._split_drag)
+        self.display.tmux.run.assert_called_once_with("set-option", "-g", "@viewer_resizing", "0")
+
+    def test_hidden_border_capture_can_be_cancelled_before_release(self):
+        self.display.resize_split(self.model.tab, "start", -1, -1)
+        self.display.cancel_resize()
+        self.assertIsNone(self.display._split_drag)
+        self.display.tmux.run.assert_called_with("set-option", "-g", "@viewer_resizing", "0")
+
+    def test_hidden_border_capture_survives_a_focused_layout_until_release(self):
+        self.display.panes.pop(next(iter(self.display.panes)))
+        self.display.resize_split(self.model.tab, "start", -1, -1)
+        self.display.tmux.reset_mock()
+        self.assertFalse(self.display.resize_split(self.model.tab, "move", 102, 3))
+        self.assertIsNotNone(self.display._split_drag)
+        self.display.tmux.run.assert_not_called()
+        self.display.resize_split(self.model.tab, "end", 104, 3)
+        self.assertIsNone(self.display._split_drag)
+        self.display.tmux.run.assert_called_once_with("set-option", "-g", "@viewer_resizing", "0")
+
     def test_gesture_cannot_resize_another_tab_with_reused_pane_ids(self):
         self.display.resize_split(self.model.tab, "start", 94, 3)
         other = copy.deepcopy(self.model.tab)
