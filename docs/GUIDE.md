@@ -48,12 +48,12 @@ temporarily shows only that pane; **Restore layout** shows the splits again.
 Split right creates a vertical divider; split below creates a horizontal divider.
 Selecting a menu row with the arrow keys shows its effective prefix or terminal
 profile shortcut below the list. Disabled bindings are identified, and long
-bindings point to **Configure → Shortcuts** for their full text.
+bindings point to **Configure → View shortcuts** for their full text.
 Narrow terminals use temporary focus
 without discarding the arrangement. The panel's bottom holds, with a blank
 row between each: an optional **Agents** roster, **Configure…**, and the
 workspace icons, with one blank row before the outline. **Configure…**
-gathers everything infrequent — **Colors…**, **Shortcuts**, **Refresh
+gathers everything infrequent — **Edit theme…**, **Edit shortcuts…**, **View shortcuts…**, **Refresh
 viewer…**, the **Show agent status** toggle and **Agent status…** — and, last
 after a rule, **Detach**, which leaves the viewer with every shell and
 attached session still running.
@@ -116,10 +116,10 @@ set of glyphs that render one cell wide in the usual terminal fonts, and
 The workspace shortcuts cycle and select by number as before. The tab menu
 also reorders tabs or moves one to another workspace. Scroll the navigation panel with the wheel or its arrow controls.
 
-**Colors…** opens the color editor. Its last row, **Preset**, steps through the
-shipped looks — `default`, `plain`, `forest`, `paper` and `mono` — with a live
-preview; the rows above tune each color role by hand. Apply writes the choice
-to a small TOML file; [THEMES.md](THEMES.md) describes the file and every role.
+**Edit theme…** opens the built-in JSON editor with Save and Cancel. Choose a
+preset or tune individual colors; saved changes apply to the running viewer.
+[THEMES.md](THEMES.md) describes every role. **Edit shortcuts…** uses the same
+editor, while **View shortcuts…** opens a read-only reference to the active keys.
 The status line at the bottom of the panel shows a small light while the viewer
 is idle and its saved state is current; a message replaces it when something
 needs attention.

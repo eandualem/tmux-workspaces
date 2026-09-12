@@ -35,7 +35,7 @@ its name, and a ▾ chooser at the right; a blank row follows, then the `tabs`
 label with the + that adds a tab, then the tab rows. The bottom, from the
 outline up: a blank row, the workspace icon row (one three-cell slot per
 workspace with the current one filled and an … slot when the row is full), a
-blank row, Configure… (Colors…, Shortcuts, Refresh viewer…, Show agent
+blank row, Configure… (Edit theme…, Edit shortcuts…, View shortcuts…, Refresh viewer…, Show agent
 status, Agent status…, then Detach after a rule), and a row that carries a
 message only while there is something to say. Above that, when a
 state-reporting source is connected and the setting is on, the `Agents`
@@ -49,7 +49,7 @@ Content panes keep the full available content height and sit on the surface
 color beside the panel; each is padded by one blank column on either side, and
 split panes are separated by one thin line in the outline color, down or
 across. No border
-marks the focused pane. Colors… in the panel switches presets and edits each
+marks the focused pane. Edit theme… in Configure edits presets and each
 role and ground; see [THEMES.md](THEMES.md).
 
 ## Try these interactions

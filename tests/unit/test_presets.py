@@ -3,7 +3,6 @@ that now follow the viewer's colors."""
 
 from __future__ import annotations
 
-import curses
 import shlex
 import tempfile
 import unittest
@@ -21,7 +20,6 @@ from tmux_workspaces.theme import (
     DEFAULT_THEME,
     PRESET_DETAILS,
     PRESET_NAMES,
-    ROLE_LABELS,
     ROLES,
     Theme,
     canonical_panel,
@@ -29,7 +27,6 @@ from tmux_workspaces.theme import (
     preset_theme,
     tmux_color,
 )
-from tmux_workspaces.theme_editor import PRESET, ThemeEditor, fit_labels, hint
 
 
 class FakeCursesError(Exception):
@@ -128,97 +125,6 @@ class PresetThemeTests(unittest.TestCase):
         self.assertEqual(tmux_color(-1), "default")
         self.assertEqual(tmux_color(0), "colour0")
         self.assertEqual(tmux_color(110), "colour110")
-
-
-class PresetRowTests(unittest.TestCase):
-    """The editor's last row cycles presets; every other row is unchanged."""
-
-    def setUp(self):
-        self.installed, self.saved = [], []
-        self.editor = ThemeEditor(
-            DEFAULT_THEME,
-            self.saved.append,
-            self.installed.append,
-            DEFAULT_THEME,
-            labels=ROLE_LABELS,
-        )
-
-    def goto_preset(self):
-        self.editor.select(len(self.editor.targets) - 1)
-        self.assertTrue(self.editor.on_preset)
-
-    def test_the_preset_row_names_the_preset_or_custom(self):
-        rows = self.editor.rows()
-        self.assertEqual(rows[-1][:3], ("Preset", PRESET, "default"))
-        self.assertEqual(rows[-2][:3], ("Surface", "surface", "#292c33"))
-        self.assertEqual(rows[-3][:3], ("Panel", "panel", "#22252b"))
-        self.assertEqual(len(rows), len(ROLES) * 3 + 3)
-        self.editor.preview(DEFAULT_THEME.with_role("muted", foreground=["red"]))
-        self.assertEqual(self.editor.rows()[-1][2], "custom")
-        self.assertIn("Custom", self.editor.describe_preset())
-
-    def test_enter_and_the_arrow_keys_cycle_presets_with_a_live_preview(self):
-        self.goto_preset()
-        self.editor.key("\n")
-        self.assertIsNone(self.editor.field)
-        self.assertEqual(self.editor.draft, preset_theme(PRESET_NAMES[1]))
-        self.assertEqual(self.installed, [preset_theme(PRESET_NAMES[1])])
-        self.assertEqual(self.editor.preset(), PRESET_NAMES[1])
-        self.assertIn(PRESET_DETAILS[PRESET_NAMES[1]], self.editor.describe_preset())
-        self.editor.key(curses.KEY_LEFT)
-        self.assertEqual(self.editor.draft, DEFAULT_THEME)
-        self.editor.key(curses.KEY_LEFT)
-        self.assertEqual(self.editor.draft, preset_theme(PRESET_NAMES[-1]))
-        self.editor.key(curses.KEY_RIGHT)
-        self.assertEqual(self.editor.draft, DEFAULT_THEME)
-        self.assertTrue(self.editor.changed is False)
-        self.assertEqual(self.saved, [])
-
-    def test_custom_colors_step_to_the_first_or_last_preset(self):
-        custom = DEFAULT_THEME.with_role("muted", foreground=["red"])
-        self.editor.preview(custom)
-        self.goto_preset()
-        self.editor.key(curses.KEY_LEFT)
-        self.assertEqual(self.editor.preset(), PRESET_NAMES[-1])
-        self.editor.preview(custom)
-        self.editor.key(curses.KEY_RIGHT)
-        self.assertEqual(self.editor.preset(), PRESET_NAMES[0])
-
-    def test_arrows_on_a_role_row_do_not_change_colors(self):
-        self.editor.key(curses.KEY_RIGHT)
-        self.editor.key(curses.KEY_LEFT)
-        self.assertEqual(self.installed, [])
-        self.assertEqual(self.editor.draft, DEFAULT_THEME)
-
-    def test_a_click_on_the_preset_row_advances_it_and_apply_saves_the_name(self):
-        self.editor.edit(len(self.editor.targets) - 1)
-        self.assertEqual(self.editor.preset(), PRESET_NAMES[1])
-        self.editor.apply()
-        self.assertEqual(self.saved, [preset_theme(PRESET_NAMES[1])])
-        self.assertIn(f'preset = "{PRESET_NAMES[1]}"', self.saved[0].to_toml())
-        self.assertTrue(self.editor.closed)
-
-    def test_a_refused_preview_keeps_the_previous_preset(self):
-        refusing = ThemeEditor(
-            DEFAULT_THEME,
-            self.saved.append,
-            Mock(side_effect=OSError("no pairs")),
-            DEFAULT_THEME,
-        )
-        refusing.select(len(refusing.targets) - 1)
-        refusing.key("\n")
-        self.assertIn("no pairs", refusing.message)
-        self.assertFalse(refusing.installed)
-
-    def test_labels_and_hints_cover_the_preset_row(self):
-        rows = self.editor.rows()
-        for width in range(8, 24):
-            labels = fit_labels(rows, width)
-            self.assertEqual(len(set(labels)), len(rows), width)
-            self.assertEqual(labels[-1], "Preset")
-        self.assertIn("preset", hint(40, preset=True))
-        self.assertNotIn("preset", hint(40))
-        self.assertLessEqual(len(hint(10, preset=True)), len(hint(40, preset=True)))
 
 
 class PanelColorTests(unittest.TestCase):

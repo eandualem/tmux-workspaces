@@ -766,7 +766,7 @@ class InstallTests(unittest.TestCase):
 
 
 class EditorContractTests(unittest.TestCase):
-    """The surface tmux_workspaces/theme_editor.py is built against."""
+    """Theme value operations shared by configuration validation and rendering."""
 
     def test_roles_expose_the_three_fields_as_tuples_in_role_order(self):
         self.assertEqual(tuple(DEFAULT_THEME.roles), ROLES)

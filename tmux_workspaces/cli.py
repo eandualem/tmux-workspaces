@@ -35,7 +35,9 @@ def parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     adapters = result.add_mutually_exclusive_group()
-    result.add_argument("--config-kind", choices=["shortcuts", "colors"], help=argparse.SUPPRESS)
+    result.add_argument(
+        "--config-kind", choices=["shortcuts", "colors", "reference"], help=argparse.SUPPRESS
+    )
     result.add_argument("--config-path", type=Path, help=argparse.SUPPRESS)
     result.add_argument("--config-result", type=Path, help=argparse.SUPPRESS)
     adapters.add_argument("--demo", action="store_true", help="use disposable demo shells")
@@ -191,6 +193,10 @@ def main() -> int:
 
             if not (args.config_kind and args.config_path and args.config_result):
                 raise ValueError("Settings editor requires kind, path and result")
+            if args.config_kind == "reference":
+                from .shortcut_reference import reference_main
+
+                return reference_main(args)
             return editor_main(args)
         if args.mode == "_action":
             from .controls import send_action

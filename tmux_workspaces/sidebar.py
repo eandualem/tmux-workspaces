@@ -14,17 +14,14 @@ from .controls import Actions, mouse_action, pane_choice
 from .discovery import Snapshot
 from .display import Display
 from .events import InputEvents
-from .keymap import ACTION_LABELS, DEFAULT_KEYMAP, KeymapFile, tmux_key_label
+from .keymap import tmux_key_label
 from .menu import RULE, Entry, Selection
+from .messages import failed, failure
 from .model import LayoutConflict, Model, is_empty, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
-from .shortcut_editor import CAPTURE_HINT, CONFIRM_HINT, ShortcutEditor, fit_rows
-from .shortcut_editor import FIELD_HINT as KEY_FIELD_HINT
-from .shortcut_editor import hint as shortcut_hint
 from .source import Source
-from .theme import DEFAULT_THEME, ROLE_LABELS, ThemeError, ThemeFile, load_theme, theme_path
-from .theme_editor import FIELD_HINT, ThemeEditor, failed, failure, fit_labels, hint
+from .theme import DEFAULT_THEME, ThemeError, load_theme, theme_path
 
 
 def visible(text: str) -> str:
@@ -125,12 +122,10 @@ class Sidebar:
         # Colors are read once in run(); construction touches no user file.
         self.theme_path, self.terminal_colors = theme_path, terminal_colors
         self.colors, self.theme, self.palette = 8, None, None
-        self.theme_editor: ThemeEditor | None = None
         # The file a shortcut edit would write. Absent means the viewer
         # inherited a map rather than reading one, so Save has no implicit
         # destination and the editor says so instead of guessing a path.
         self.keymap_path = keymap_path
-        self.shortcut_editor: ShortcutEditor | None = None
         self.config_popup = None
 
         # Absent outside a launched window; refresh then reports its own limit
@@ -330,44 +325,20 @@ class Sidebar:
     def draw_inline(self, row: int, x: int, width: int) -> tuple[int, int]:
         return self.draw_field(self.inline_editor, row, x, width)
 
-    def open_theme(self) -> None:
-        """Edit the viewer's semantic colors: same route by click or by key."""
-        if not self.leave_theme():
-            return
-        self.leave_shortcuts()
-        colors = ThemeFile(theme_path(self.theme_path))
-        # Reading now records what is on disk, so an edit made while the editor
-        # is open is reported as a conflict instead of being overwritten.
-        loaded = colors.read()
-        self.open_menu("theme")
-        working = self.theme or DEFAULT_THEME
-        self.theme_editor = ThemeEditor(
-            working,
-            colors.write,
-            self.install,
-            DEFAULT_THEME,
-            labels=ROLE_LABELS,
-            writable=colors.writable(),
-        )
-        if loaded.diagnostic:
-            self.theme_editor.message = failure(visible(loaded.diagnostic))[:100]
-        elif loaded.theme != working and self.theme_editor.preview(loaded.theme):
-            # Someone saved other colors since this viewer read the file. Show
-            # them, so Apply cannot replace values the user never saw. Cancel
-            # still restores the colors the viewer is running.
-            self.theme_editor.message = "Saved colors shown"
-
     def open_config_editor(self, kind: str) -> None:
-        if self.config_popup or not self.leave_theme():
+        if self.config_popup:
             return
-        self.leave_shortcuts()
         path = self.keymap_path if kind == "shortcuts" else theme_path(self.theme_path)
         if path is None:
             self.menu_message = "No keymap file; reopen without --no-keymap to edit shortcuts."
             return
         self.open_menu("json-settings")
         try:
-            self.config_popup = ConfigPopup(self.display, kind, path)
+            self.config_popup = (
+                ConfigPopup(self.display, kind, None, keymap=self.keymap)
+                if kind == "reference"
+                else ConfigPopup(self.display, kind, path)
+            )
         except (OSError, RuntimeError) as error:
             self.close_menu()
             self.display.render(self.model.tab, self.model.state["focus"])
@@ -402,193 +373,14 @@ class Sidebar:
                 self.menu_message = "Shortcuts saved"
         return True
 
-    def open_shortcut_editor(self) -> None:
-        """Open the shortcut editor over the keymap this viewer is running."""
-        if self.shortcut_editor:
-            return
-        if self.keymap_path is None:
-            # No file stands behind this map: --no-keymap, or a snapshot handed
-            # over without its source. Writing the implicit default path would
-            # create a map the user never chose and silently freeze the keys
-            # they are using, so refuse and name the option.
-            self.menu_message = failure(
-                "this viewer has no keymap file; start it with --keymap FILE to edit shortcuts"
-            )
-            return
-        keys = KeymapFile(self.keymap_path)
-        # Reading now records what is on disk, so an edit made while the editor
-        # is open is reported as a conflict instead of being overwritten.
-        loaded = keys.read()
-        # The editor edits the file, so it opens on what the file holds. That is
-        # not always what this viewer is running: the map was snapshotted at
-        # launch and someone may have saved since. Showing the running map here
-        # would let Apply replace bindings the user never saw, so the file wins
-        # and the difference is named instead.
-        stale = loaded.diagnostic is None and loaded.keymap != self.keymap
-        self.open_menu("edit-shortcuts")
-        self.shortcut_editor = ShortcutEditor(
-            loaded.keymap,
-            keys.write,
-            DEFAULT_KEYMAP,
-            self.keymap_path,
-            writable=keys.writable(),
-            lossy=not keys.saves_cleanly(loaded.keymap),
-        )
-        if loaded.diagnostic:
-            self.shortcut_editor.message = failure(visible(loaded.diagnostic))[:100]
-        elif stale:
-            self.shortcut_editor.message = "Showing the saved file; it differs from the keys here"
-        elif self.shortcut_editor.lossy:
-            self.shortcut_editor.message = "Saving rewrites the file; comments are not kept"
-
-    def shortcut_action(self, action: Callable, *args) -> None:
-        action(*args)
-        editor = self.shortcut_editor
-        if editor and editor.closed:
-            self.shortcut_editor = None
-            self.show()
-            self.message = editor.effect() if editor.saved else ""
-
-    def draw_shortcuts(self, height: int, width: int) -> tuple[int, int] | None:
-        editor = self.shortcut_editor
-        rows = editor.rows()
-        if editor.pending is not None:
-            guide = CONFIRM_HINT
-        elif editor.capturing:
-            guide = CAPTURE_HINT
-        elif editor.field:
-            guide = KEY_FIELD_HINT
-        else:
-            guide = shortcut_hint(width - 2)
-        self.put(3, 1, guide, self.style("accent"))
-        start, cursor = 4, None
-        available = max(1, height - start - 6)
-        offset = max(0, min(editor.index, len(rows) - available))
-        if editor.index >= offset + available:
-            offset = editor.index - available + 1
-        value_width = max(6, (width - 6) // 2)
-        column = width - value_width - 1
-        # Two marker columns and one of air, so a shortened label never touches
-        # the keys beside it and the two markers keep every row aligned.
-        labels = fit_rows(rows, max(1, column - 3))
-        for index in range(offset, min(len(rows), offset + available)):
-            row = start + index - offset
-            _label, _section, value, active, changed = rows[index]
-            if len(value) > value_width:
-                value = value[: max(0, value_width - 1)] + "…"
-            name = f"{'▶' if active else ' '}{'*' if changed else ' '}{labels[index]}"
-            self.button(
-                row,
-                name.ljust(column) + value,
-                lambda index=index: self.shortcut_action(editor.edit, index),
-                x=0,
-                width=width - 1,
-                active=active,
-            )
-            if active and editor.field:
-                cursor = self.draw_field(editor.field, row, column, value_width)
-        half = (width - 3) // 2
-        self.button(height - 4, "Apply", lambda: self.shortcut_action(editor.apply), width=half)
-        self.button(height - 4, "Cancel", lambda: self.shortcut_action(editor.cancel), x=1 + half)
-        self.button(height - 3, "Restore default", lambda: self.shortcut_action(editor.restore))
-        message = editor.message or str(editor.destination)
-        self.put(height - 2, 1, message, self.message_style(message, bool(editor.message)))
-        return cursor
-
-    def leave_shortcuts(self) -> None:
-        """Close the shortcut editor if one is open, discarding staged changes.
-
-        This cannot refuse, and deliberately differs from the colour editor for
-        that reason. Leaving colours can fail because the terminal refuses to
-        reinstall the ones it opened with, which is a real failure outside the
-        editor and has to stop the caller. Leaving shortcuts restores nothing
-        outside the editor, so a caller closing the menu always succeeds --
-        including while a field, a capture or a question is open, which
-        ``cancel`` would otherwise take a second Escape to leave. A socket
-        action must not be refused because a text field happens to be open.
-        """
-        if self.shortcut_editor:
-            self.shortcut_editor.dismiss()
-            self.shortcut_editor = None
-            if self.menu == "edit-shortcuts":
-                self.menu = None
-
-    def theme_action(self, action: Callable, *args) -> None:
-        action(*args)
-        editor = self.theme_editor
-        if editor and editor.closed:
-            # The editor closed, so its colors are installed: Apply saved them
-            # and Cancel put back the ones it opened with.
-            self.theme_editor = None
-            self.show()
-            self.message = "Colors saved" if editor.saved else ""
-
     def draw_field(self, editor, row: int, x: int, width: int) -> tuple[int, int]:
         text, column = editor.viewport(width)
         style = self.style("active") | (curses.A_REVERSE if editor.selected else curses.A_UNDERLINE)
         self.put(row, x, text + " " * (width - cells(text)), style, width)
         return row, x + column
 
-    def draw_theme(self, height: int, width: int) -> tuple[int, int] | None:
-        editor = self.theme_editor
-        rows = editor.rows()
-        guide = FIELD_HINT if editor.field else hint(width - 2, editor.on_preset)
-        self.put(3, 1, guide, self.style("accent"))
-        start, cursor = 4, None
-        available = max(1, height - start - 6)
-        offset = max(0, min(editor.index, len(rows) - available))
-        if editor.index >= offset + available:
-            offset = editor.index - available + 1
-        value_width = max(6, (width - 6) // 2)
-        column = width - value_width - 1
-        # One column of air between a truncated label and its value.
-        label_width = max(1, column - 1)
-        labels = fit_labels(rows, max(1, label_width - 2))
-        for index in range(offset, min(len(rows), offset + available)):
-            row = start + index - offset
-            value, active = rows[index][2], rows[index][3]
-            if len(value) > value_width:
-                value = value[: max(0, value_width - 1)] + "…"
-            # One styled run per row, so a selected row highlights as a whole.
-            name = f"{'▶' if active else ' '} {labels[index]}".ljust(column)
-            self.button(
-                row,
-                name + value,
-                lambda index=index: self.theme_action(editor.edit, index),
-                x=0,
-                width=width - 1,
-                active=active,
-            )
-            if active and editor.field:
-                cursor = self.draw_field(editor.field, row, column, value_width)
-        half = (width - 3) // 2
-        self.button(height - 4, "Apply", lambda: self.theme_action(editor.apply), width=half)
-        self.button(height - 4, "Cancel", lambda: self.theme_action(editor.cancel), x=1 + half)
-        self.button(height - 3, "Restore defaults", lambda: self.theme_action(editor.defaults))
-        message = editor.message or editor.status() or self.describe(editor.target[0])
-        self.put(height - 2, 1, message, self.message_style(message, bool(editor.message)))
-        return cursor
-
-    def leave_theme(self) -> bool:
-        """Close the color editor if one is open, restoring the colors it opened
-        with. False means the terminal refused that restore, so the editor and
-        its reason stay on screen and the caller must not proceed."""
-        if self.theme_editor:
-            self.theme_editor.cancel()
-            if not self.theme_editor.closed:
-                return False
-            self.theme_editor = None
-            if self.menu == "theme":
-                # The screen belongs to the editor, so it goes when the editor
-                # does, whether or not the caller opens something else.
-                self.menu = None
-        return True
-
     def close_menu(self) -> None:
         """Drop an open menu without moving the keyboard away from its pane."""
-        if not self.leave_theme():
-            return
-        self.leave_shortcuts()
         self.menu, self.query = None, ""
         self.selection.reset()
         self.menu_message = ""
@@ -596,9 +388,6 @@ class Sidebar:
         self.attach_target = None
 
     def show(self) -> None:
-        if not self.leave_theme():
-            return
-        self.leave_shortcuts()
         self.clear_inline()
         self.close_menu()
         self.save()
@@ -643,9 +432,6 @@ class Sidebar:
             self.open_menu("workspace")
 
     def open_menu(self, name: str, pending: str = "") -> None:
-        if not self.leave_theme():
-            return
-        self.leave_shortcuts()
         self.clear_inline()
         self.remember()
         self.menu, self.pending, self.query = name, pending, ""
@@ -792,9 +578,6 @@ class Sidebar:
         if name == "quit":
             self.quit()
             return
-        if not self.leave_theme():
-            return
-        self.leave_shortcuts()
         if name.startswith("attach-pane:"):
             _, tab_id, leaf_id = name.split(":")
             self.attach_pane(tab_id, leaf_id)
@@ -840,12 +623,6 @@ class Sidebar:
         actions[name]()
 
     def refresh_viewer(self) -> None:
-        if self.theme_editor:
-            self.theme_editor.message = "Apply or cancel the color edit first"
-            return
-        if self.shortcut_editor:
-            self.shortcut_editor.message = "Apply or cancel the shortcut edit first"
-            return
         if self.inline_editor or self.menu == "name":
             # A pending name is unsaved work; never discard it on the way to
             # replacing the window it is being typed in.
@@ -1067,38 +844,8 @@ class Sidebar:
         if context:
             self.context_hits.append((y, x, x + width, context))
 
-    def shortcut_options(self, *, command: bool) -> list[tuple[str, Callable]]:
-        mapping = self.keymap.direct if command else self.keymap.bindings
-        options = []
-        for action, keys in mapping.items():
-            if not keys:
-                continue
-            text = f"{self.keymap.label(action, command=command)} {ACTION_LABELS[action]}"
-            # Custom combinations and aliases may exceed navigation width. Wrap
-            # them into scrollable rows instead of hiding the action or a key.
-            for line in textwrap.wrap(text, width=max(1, self.size()[1] - 2)):
-                options.append((line, lambda action=action: self.action(action)))
-        return options
-
     def _options(self, agents: dict) -> list[tuple[str, Callable]]:
         """Rows of the open menu as labels and callbacks. The menu content lives here."""
-        command_shortcuts = self.menu == "command-shortcuts" or (
-            self.menu == "shortcuts" and self.shortcut_hints == "command"
-        )
-        if command_shortcuts:
-            return [
-                *self.shortcut_options(command=True),
-                ("Edit shortcuts…", self.open_shortcut_editor),
-                ("Refresh viewer…", self.refresh_viewer),
-                ("Prefix shortcuts…", lambda: self.open_menu("prefix-shortcuts")),
-            ]
-        if self.menu in {"shortcuts", "prefix-shortcuts"}:
-            return [
-                *self.shortcut_options(command=False),
-                ("Edit shortcuts…", self.open_shortcut_editor),
-                ("Refresh viewer…", self.refresh_viewer),
-                ("Terminal profile keys…", lambda: self.open_menu("command-shortcuts")),
-            ]
         if self.menu == "refresh":
             if not self.refresh_problem:
                 return [("Refresh viewer now", self.confirm_refresh)]
@@ -1164,11 +911,10 @@ class Sidebar:
             # Everything infrequent in one place; leaving last, after a rule,
             # and named for what it does: shells and attached sessions keep running.
             rows: list[tuple[str, Callable]] = [
-                ("Edit colors JSON…", lambda: self.open_config_editor("colors")),
-                ("Edit shortcuts JSON…", lambda: self.open_config_editor("shortcuts")),
+                ("Edit theme…", lambda: self.open_config_editor("colors")),
+                ("Edit shortcuts…", lambda: self.open_config_editor("shortcuts")),
+                ("View shortcuts…", lambda: self.open_config_editor("reference")),
                 ("Refresh viewer…", self.refresh_viewer),
-                ("Colors…", self.open_theme),
-                ("Shortcuts", lambda: self.open_menu("shortcuts")),
             ]
             if self.roster(agents) is not None:
                 mark = "x" if self.show_agents else " "
@@ -1277,11 +1023,7 @@ class Sidebar:
 
     def activate(self) -> None:
         """Run the active menu row. Nothing is activated by guesswork."""
-        if (
-            not self.menu
-            or self.menu in {"name", "inline-name", "theme", "edit-shortcuts"}
-            or not self.roomy()
-        ):
+        if not self.menu or self.menu in {"name", "inline-name"} or not self.roomy():
             return
         self.menu_rows(drawn=False)
         entry = self.selection.entry()
@@ -1314,7 +1056,7 @@ class Sidebar:
             hint = keys or "No direct key"
         else:
             hint = f"{tmux_key_label(self.keymap.prefix)}, then {keys}" if keys else "No prefix key"
-        return hint if cells(hint) <= width - 2 else "See Shortcuts"
+        return hint if cells(hint) <= width - 2 else "View shortcuts"
 
     def command_rows(self, start: int) -> list[str]:
         lines = self.command_lines()
@@ -1324,10 +1066,6 @@ class Sidebar:
 
     def notes(self, width: int) -> tuple[str, ...]:
         """Menu limits shown above the options; description only, never clickable."""
-        if self.menu == "command-shortcuts" or (
-            self.menu == "shortcuts" and self.shortcut_hints == "command"
-        ):
-            return ("Requires terminal profile",)
         if self.menu != "refresh":
             return ()
         manual = bool(self.relaunch and getattr(self.relaunch, "manual_reopen", False))
@@ -1515,7 +1253,7 @@ class Sidebar:
         # A frame too small for the menu paints a warning instead, so it displays
         # no row and must not leave one armed for Enter.
         rows, start = ([], 0)
-        if self.menu and self.menu not in {"inline-name", "theme", "edit-shortcuts"}:
+        if self.menu and self.menu not in {"inline-name"}:
             if self.roomy():
                 rows, start = self.menu_rows(agents)
             else:
@@ -1545,8 +1283,6 @@ class Sidebar:
             self.menu_message,
             command_rows,
             self.display.small,
-            repr(self.theme_editor),
-            repr(self.shortcut_editor),
         )
         if frame == self.last_frame:
             return
@@ -1576,27 +1312,10 @@ class Sidebar:
                 "workspace": "Workspace options",
                 "icon": "Workspace icon",
                 "configure": "Configure",
-                "json-settings": "Opening settings editor…",
+                "json-settings": "Opening window…",
                 "status": "Agent status",
                 "name": "Type a name",
-                "theme": (
-                    "Viewer colors · preview"
-                    if self.theme_editor and self.theme_editor.changed
-                    else "Viewer colors"
-                ),
                 "refresh": "Refresh viewer",
-                "shortcuts": (
-                    "Terminal profile keys"
-                    if self.shortcut_hints == "command"
-                    else f"{tmux_key_label(self.keymap.prefix)}, then…"
-                ),
-                "prefix-shortcuts": f"{tmux_key_label(self.keymap.prefix)}, then…",
-                "command-shortcuts": "Terminal profile keys",
-                "edit-shortcuts": (
-                    "Edit shortcuts · unsaved"
-                    if self.shortcut_editor and self.shortcut_editor.changed
-                    else "Edit shortcuts"
-                ),
             }
             self.put(2, 1, titles[self.menu], self.style("normal") | curses.A_BOLD)
             notes = self.notes(width)
@@ -1608,10 +1327,6 @@ class Sidebar:
                 self.put(3, 3, self.query[-(width - 5) :], style)
             if self.menu == "name":
                 self.button(5, "Save name", self.accept_name)
-            elif self.menu == "theme":
-                cursor = self.draw_theme(height, width)
-            elif self.menu == "edit-shortcuts":
-                cursor = self.draw_shortcuts(height, width)
             else:
                 for row, line in enumerate(command_rows, start):
                     self.put(row, 1, line, self.style("normal"))
@@ -1776,11 +1491,7 @@ class Sidebar:
 
     def scroll(self, amount: int) -> None:
         self.clear_inline()
-        if self.theme_editor:
-            self.theme_action(self.theme_editor.move, amount)
-        elif self.shortcut_editor:
-            self.shortcut_action(self.shortcut_editor.move, amount)
-        elif self.command_lines():
+        if self.command_lines():
             self.command_offset = max(0, self.command_offset + amount)
         elif self.menu:
             self.selection.scroll(amount)
@@ -1847,19 +1558,12 @@ class Sidebar:
                 self.last_name_click = None
             else:
                 self.inline_editor.key(key)
-        elif self.menu == "theme":
-            self.theme_action(self.theme_editor.key, key)
-        elif self.menu == "edit-shortcuts":
-            # Every key belongs to the editor while it is open, including the
-            # ones that would otherwise run an action: capture must be able to
-            # bind them without triggering them.
-            self.shortcut_action(self.shortcut_editor.key, key)
         elif key == "\x1b":
             self.show()
         elif self.menu:
             self.menu_input(key)
         elif key == "t":
-            self.open_theme()
+            self.open_config_editor("colors")
         elif key == curses.KEY_UP:
             self.scroll(-1)
         elif key == curses.KEY_DOWN:

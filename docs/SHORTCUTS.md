@@ -179,47 +179,25 @@ and transfer. Workspace options provide **Delete empty workspace**; a workspace
 with tabs cannot be deleted. These commands need no individual shortcut.
 Menu input belongs to the navigation panel while the menu has focus.
 
-## Editing shortcuts in the viewer
+## Viewing and editing shortcuts
 
-For a roomy text view, choose **Configure… → Edit shortcuts JSON…**. The
-[built-in JSON editor](JSON_SETTINGS.md) supports multiline editing, paste,
-undo/redo and validated Save. Saving offers the refresh flow described above.
-The per-row editor remains available as described below.
+**Configure… → View shortcuts…** opens a roomy, read-only reference to the keys
+active in this viewer, grouped by tabs, panes, workspaces and viewer actions.
+It includes custom aliases and distinguishes prefix keys from keys that require
+a terminal profile. Scroll with arrows, PageUp/PageDown or the wheel; Escape,
+F10 or Close returns to the workspace. The listed actions cannot be executed
+from the reference, and unsaved or not-yet-refreshed keymap changes do not alter it.
 
-Open **Shortcuts** from the sidebar and choose **Edit shortcuts…**. Each action
-appears twice, once for its prefix key and once for its terminal shortcut, with
-the keys it currently holds. **Enter** types a key, **c** captures one, **d**
-restores the shipped keys for that row, **u** unbinds it, **a** applies and
-**Escape** leaves without changing anything. A row a save would write is marked.
+**Configure… → Edit shortcuts…** opens the [built-in editor](JSON_SETTINGS.md)
+with multiline JSON editing, paste, undo/redo and validated Save. It edits the
+selected keymap file and confirms before rewriting comments or hand formatting.
+Invalid JSON, conflicting keys, unsafe targets and concurrent edits keep the
+draft open without replacing working settings. `--no-keymap` disables file
+editing, while the shortcut reference remains available.
 
-**Capture works for prefix keys only.** Those reach the viewer as ordinary keys,
-so pressing one names it. A terminal shortcut never arrives as a key: the
-terminal converts it to a private sequence first, so pressing the combination
-could only report the mapping already in force. The editor says so and asks you
-to type the trigger instead, using the `direct` grammar below.
-
-Taking a key that is already in use is always asked first, naming the action
-that holds it. Answering yes removes it from that action; answering no keeps
-both as they were. The key is released wherever it actually lives, which is not
-always the row you are editing: `ctrl+t` and `C-t` are the same physical key
-spelled two ways, and only one of those spellings is in your file. The prefix key
-itself and Escape are reserved and cannot be reassigned.
-
-Saving requires a file to save to. That is the file the launch selected: the one
-named by `--keymap PATH` or `TMUX_WORKSPACES_KEYMAP`, or otherwise
-`~/.config/tmux-workspaces/keymap.toml`, which the first save creates. A window
-opened through `./ghostty` runs a snapshot of that file's keys and still edits
-the file itself. Only a viewer started with `--no-keymap` has nowhere to save,
-and it says so rather than inventing a path. Saving rewrites the file from the
-effective map, so comments and hand formatting are not preserved — the editor
-warns before you save when the file has any. Concurrent edits, read-only files,
-symbolic links and unwritable directories are all refused with the reason, and
-your shortcuts stay as they are.
-
-**Nothing reloads.** A save changes the file. Prefix keys apply to viewers
-opened afterwards, and terminal shortcuts apply to a fresh `./ghostty` instance,
-for the reasons in the last paragraph of the next section. The editor states
-this when it saves rather than implying the new keys are already live.
+Save offers **Refresh viewer** to apply the new bindings while preserving shells.
+Dedicated Ghostty profiles need a fresh instance for native terminal keys; the
+refresh screen provides the command. The per-row shortcut editor is retired.
 
 ## User keymaps
 
@@ -326,10 +304,12 @@ Shortcuts and CLI help are generated from it, including aliases and numbered
 selection; long help rows wrap and scroll. `--print-keymap toml` emits the complete
 effective map, and `--print-keymap ghostty` emits exact triggers and CSI codes.
 Diagnostic printing requires no terminal or tmux server and creates no library.
-After editing configuration, launch a fresh viewer. New surfaces in an existing
-Ghostty instance retain that instance's map so their help matches its terminal
-profile; start a fresh `./ghostty` instance to apply a new map. No hot reload is
-performed. Existing shells and saved arrangements remain independent of keymaps.
+After editing configuration, use **Configure… → Refresh viewer…** or launch a
+fresh viewer. The built-in editor offers that refresh flow after Save; changes
+made in an external editor can use the same Configure entry. A dedicated Ghostty
+instance freezes its native profile, so start a fresh `./ghostty` instance to
+apply native-key changes. Automatic hot reload is not performed. Existing shells
+and saved arrangements remain independent of keymaps.
 
 User keymaps and keyboard menu navigation are separate features. The keymap
 feature landed first; menu navigation supplies the previously missing keyboard

@@ -88,8 +88,9 @@ right-click for options.
 - **Yours to configure.** Pick a color preset or tune each role, and rebind
   shortcuts, from inside the viewer or from a TOML file. The panel sits beside
   your terminals in a color of its own, and the new-tab chooser matches it.
-  **Configure… → Edit colors JSON… / Edit shortcuts JSON…** opens the
+  **Configure… → Edit theme… / Edit shortcuts…** opens the
   [built-in text editor](docs/JSON_SETTINGS.md) with Save, Cancel and undo.
+  **View shortcuts…** opens a read-only reference to the keys active in this viewer.
 
 ## Install
 
