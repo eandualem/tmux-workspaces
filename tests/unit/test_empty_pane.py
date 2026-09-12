@@ -3,6 +3,7 @@
 import contextlib
 import shlex
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -12,7 +13,7 @@ from tmux_workspaces.controls import pane_choice, valid_action
 from tmux_workspaces.display import Display
 from tmux_workspaces.keymap import DEFAULT_KEYMAP, Keymap
 from tmux_workspaces.layout_validation import InvalidLayout, validate_state
-from tmux_workspaces.model import LayoutConflict, Model, is_empty, new_tab
+from tmux_workspaces.model import LayoutConflict, Model, is_empty, leaves, new_tab
 from tmux_workspaces.sidebar import Sidebar
 
 
@@ -41,12 +42,14 @@ class ModelTests(unittest.TestCase):
                 self.assertFalse(is_empty(model.pane))
                 self.assertEqual(model.pane["agent"], "work" if choice == "session" else None)
 
-    def test_a_split_from_an_empty_pane_is_an_ordinary_shell(self):
+    def test_a_split_can_open_empty_and_keeps_the_directory_for_its_terminal(self):
         model = Model.initial()
-        model.add_tab(empty=True)
-        model.split("right", "/tmp")
-        self.assertFalse(is_empty(model.pane))
+        model.split("right", "/tmp", empty=True)
+        self.assertTrue(is_empty(model.pane))
         self.assertEqual(model.pane["cwd"], "/tmp")
+        # Fixtures that build libraries directly still get shells by default.
+        model.split("below", "/var")
+        self.assertFalse(is_empty(model.pane))
 
     def test_saved_layouts_accept_only_a_true_empty_flag_without_an_attachment(self):
         model = Model.initial()
@@ -117,6 +120,19 @@ class DisplayTests(unittest.TestCase):
         model.open_terminal()
         self.assertNotEqual(before, Display._layout_key(model.tab["tree"]))
 
+    def test_chooser_command_transports_installed_theme_as_one_argument(self):
+        from tmux_workspaces.theme import parse_theme_state, preset_theme
+
+        display = self.display("--theme", "/shared/theme.toml")
+        model = Model.initial()
+        model.add_tab(empty=True)
+        display._tab_id = model.tab["id"]
+        theme = preset_theme("paper")
+        display.chooser_theme_state = theme.to_toml()
+        args = parser().parse_args(shlex.split(display._leaf_command(model.pane))[2:])
+        self.assertEqual(parse_theme_state(args.chooser_theme), theme)
+        self.assertEqual(args.theme, Path("/shared/theme.toml"))
+
     def test_roster_options_follow_the_sidebar_selection(self):
         base = {
             "demo": False,
@@ -142,6 +158,8 @@ class SidebarTests(unittest.TestCase):
         self.model.add_tab(empty=True)
         self.tab_id, self.leaf_id = self.model.tab["id"], self.model.pane["id"]
         screen = Mock()
+        # The panel draws its interior into a subwindow; the tests read one mock.
+        screen.derwin.return_value = screen
         screen.getmaxyx.return_value = (38, 28)
         self.source = Mock(socket="/tmp/source.sock", persistent_socket=True)
         self.source.snapshot.return_value = ({}, "")
@@ -157,6 +175,14 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.new_tab()
         self.assertTrue(is_empty(self.model.pane))
         self.assertEqual(len(self.model.space["tabs"]), 3)
+
+    def test_a_split_opens_an_empty_pane_beside_the_original_directory(self):
+        self.model.open_terminal()
+        self.model.pane["cwd"] = "/tmp/work"
+        self.sidebar.split("right")
+        self.assertTrue(is_empty(self.model.pane))
+        self.assertEqual(self.model.pane["cwd"], "/tmp/work")
+        self.assertEqual(len(leaves(self.model.tab["tree"])), 2)
 
     def test_choosing_a_terminal_fills_the_pane_and_redraws(self):
         self.sidebar.action(f"choose-terminal:{self.tab_id}:{self.leaf_id}")

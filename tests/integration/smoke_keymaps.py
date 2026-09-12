@@ -5,16 +5,14 @@ from __future__ import annotations
 import json
 import os
 import shlex
-import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 from tests.integration.support import (
     Client,
     FixtureResources,
-    click_button,
+    content_panes,
     open_terminal,
     saved,
     sidebar,
@@ -120,8 +118,18 @@ def raw_prefix(directory: Path, library: Path, client: Client, viewer: Tmux, she
     wait(client, lambda: ready(library, viewer, shells), "prefix probe shell not focused")
     client.type(shlex.join([sys.executable, str(program)]) + "\r")
     wait(client, started.exists, "raw prefix reader did not start")
-    client.type("\x01\x1b")
-    client.pump(0.3)
+    client.type("\x01")
+    wait(
+        client,
+        lambda: viewer.run("list-clients", "-F", "#{client_prefix}") == "1",
+        "prefix probe did not enter prefix mode",
+    )
+    client.type("\x1b")
+    wait(
+        client,
+        lambda: viewer.run("list-clients", "-F", "#{client_prefix}") == "0",
+        "Escape did not cancel prefix mode",
+    )
     assert not recording.exists(), "prefix Escape leaked bytes into the ordinary terminal"
     client.type("\x01\x01")
     wait(client, recording.exists, "double prefix did not deliver the literal prefix")
@@ -139,115 +147,6 @@ def raw_prefix(directory: Path, library: Path, client: Client, viewer: Tmux, she
     assert "Type a name" not in sidebar(viewer), "disabled direct rename still runs"
     assert viewer.run("display-message", "-p", "#{pane_id}") != "%0"
     client.type("\x03")
-
-
-def editor(directory: Path) -> None:
-    """Editing shortcuts in a real viewer: capture, cancel, save, and the next viewer."""
-    # The file outlives the first fixture: a later viewer has to read what was
-    # saved, which is the whole point of the scenario.
-    config = directory / "editor-keys.toml"
-    config.write_text(CONFIG)
-    with FixtureResources(parent=directory) as resources:
-        library = resources.library("editor")
-        client, viewer, _shells = launch(resources, library, ["--keymap", str(config)])
-        original = config.read_text()
-
-        def open_editor():
-            # Opening the menu is a click, and a click can miss: the sidebar
-            # redraws underneath it on a loaded host, and a button one row from
-            # where it was measured is a different button. Rather than trust the
-            # first one, check the menu it should have opened and click again if
-            # it did not. Every later step verifies its own effect already.
-            for attempt in range(4):
-                if attempt:
-                    # A missed click opens whatever sits a row away, so leave
-                    # that before trying again; Escape on the plain sidebar is
-                    # harmless.
-                    client.type("\x1b")
-                    client.pump(0.2)
-                click_button(client, viewer, "Shortcuts")
-                if opened("Edit shortcuts…"):
-                    break
-                assert attempt < 3, "the shortcuts menu never opened after four clicks"
-            click_button(client, viewer, "Edit shortcuts…")
-            wait(client, lambda: "Edit shortcuts" in sidebar(viewer), "editor did not open")
-
-        def opened(label: str, timeout: float = 4.0) -> bool:
-            """Whether `label` appears within `timeout`, without failing if not."""
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
-                if label in sidebar(viewer):
-                    return True
-                client.pump(0.1)
-            return False
-
-        # Cancel must write nothing, even after a change is staged.
-        open_editor()
-        client.type("c")
-        wait(client, lambda: "Press the key" in sidebar(viewer), "capture did not start")
-        client.type("\x06")
-        wait(client, lambda: "C-f" in sidebar(viewer), "captured key was not staged")
-        # The captured key reached the editor, not an action and not a shell:
-        # the editor is still open, and no tab was created by C-f.
-        assert "Edit shortcuts" in sidebar(viewer), "a captured key ran an action"
-        assert len(saved(library).space["tabs"]) == 1, "a captured key created a tab"
-        client.type("\x1b")
-        wait(client, lambda: "Edit shortcuts" not in sidebar(viewer), "cancel did not close")
-        assert config.read_text() == original, "cancel wrote to the keymap file"
-
-        # A save replaces the file and says the change is not yet live.
-        open_editor()
-        client.type("c")
-        wait(client, lambda: "Press the key" in sidebar(viewer), "capture did not restart")
-        client.type("\x06")
-        wait(client, lambda: "C-f" in sidebar(viewer), "captured key was not staged")
-        client.type("a")
-        wait(client, lambda: "Edit shortcuts" not in sidebar(viewer), "apply did not close")
-        wait(client, lambda: "C-f" in config.read_text(), "apply did not write the keymap")
-        assert 'new-tab = ["C-f"]' in config.read_text(), "the saved file lost the binding"
-
-        # The running viewer keeps the keys it started with: nothing hot-reloads.
-        client.type("\x01\x06")
-        client.pump(0.4)
-        assert len(saved(library).space["tabs"]) == 1, "the running viewer adopted the saved key"
-        client.type("\x01u")
-        wait(
-            client,
-            lambda: len(saved(library).space["tabs"]) == 2,
-            "the running viewer lost its own key",
-        )
-        client.type("\x01q")
-        wait(client, lambda: client.process.poll() is not None, "custom quit did not exit")
-
-    with FixtureResources(parent=directory) as resources:
-        # A viewer started afterwards reads the saved file and uses the new key.
-        library = resources.library("editor-reopened")
-        client, viewer, _shells = launch(resources, library, ["--keymap", str(config)])
-        client.type("\x01\x06")
-        wait(
-            client,
-            lambda: len(saved(library).space["tabs"]) == 2,
-            "the saved key did not reach a new viewer",
-        )
-        client.type("\x01q")
-        wait(client, lambda: client.process.poll() is not None, "custom quit did not exit")
-
-    printed = subprocess.run(
-        [sys.executable, str(ROOT / "run"), "--keymap", str(config), "--print-keymap", "help"],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert printed.returncode == 0, printed.stderr
-    # Help renders keys for people, so it names the label rather than the
-    # stored spelling: `C-f` is written `Ctrl-f` there.
-    assert "Ctrl-f" in printed.stdout, "generated help does not match the saved map"
-    print(
-        "PASS: captured keys reach the editor rather than an action or a shell, cancel writes "
-        "nothing, a save replaces the file and applies to the next viewer while the running one "
-        "keeps its own keys, and generated help matches what was saved",
-        flush=True,
-    )
 
 
 def standalone(directory: Path) -> None:
@@ -308,19 +207,10 @@ def _standalone(resources: FixtureResources) -> None:
     client.pump(0.3)
     assert len(saved(library).space["tabs"]) == 2
     assert len(viewer.run("list-windows").splitlines()) == 1
-    assert len(viewer.run("list-panes").splitlines()) == 2
+    assert len(content_panes(viewer)) == 2
     raw_prefix(directory, library, client, viewer, shells)
 
-    click_button(client, viewer, "Shortcuts")
-    original_help = sidebar(viewer)
-    new_tab_help = next(line.strip() for line in original_help.splitlines() if "New tab" in line)
-    assert new_tab_help == "u New tab", new_tab_help
-    assert "Close pane" not in original_help, "disabled prefix action remains in shortcut help"
-    client.type("\x1b")
     config.write_text(CONFIG.replace("['u']", "['y']"))
-    click_button(client, viewer, "Shortcuts")
-    assert sidebar(viewer) == original_help, "editing config drifted the running viewer's help"
-    client.type("\x1b")
     client.type("\x01u")
     wait(client, lambda: len(saved(library).space["tabs"]) == 3, "running keymap was not frozen")
     # A later relaunch of this library waits for the focused pane's shell.
@@ -470,5 +360,4 @@ def _nested(resources: FixtureResources) -> None:
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="tw-keymaps-smoke-", dir="/tmp") as directory:
         standalone(Path(directory))
-        editor(Path(directory))
         nested(Path(directory))

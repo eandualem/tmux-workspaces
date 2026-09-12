@@ -48,14 +48,28 @@ def make_source(
     return Source(socket, TmuxProvider(socket), overlays)
 
 
+def emit_escape(text: str) -> None:
+    """Send raw control text to the sidebar's own terminal, past curses."""
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
 def roster_args(args) -> tuple[str, ...]:
-    """The options a chooser pane needs to build the sidebar's own roster."""
+    """The options a chooser pane needs to build the sidebar's own roster, and
+    to draw itself in the sidebar's colors."""
+    result: tuple[str, ...] = ()
     if args.demo:
-        return ("--demo", "--instance-dir", str(args.instance_dir))
-    if args.backbone:
+        result = ("--demo", "--instance-dir", str(args.instance_dir))
+    elif args.backbone:
         result = ("--backbone", "--backbone-data-dir", str(args.backbone_data_dir))
-        return result + (("--url", args.url) if args.url else ())
-    return ()
+        result += ("--url", args.url) if args.url else ()
+    theme = getattr(args, "theme", None)
+    if theme:
+        result += ("--theme", str(theme))
+    colors = getattr(args, "terminal_colors", None)
+    if colors:
+        result += ("--terminal-colors", str(colors))
+    return result
 
 
 @contextlib.contextmanager
@@ -134,6 +148,7 @@ def sidebar_main(args) -> int:
                         actions,
                         args.shortcut_hints,
                         theme_path=args.theme,
+                        emit=emit_escape,
                         terminal_colors=args.terminal_colors,
                         relaunch=request,
                         keymap_path=args.keymap or args.keymap_source,
@@ -179,6 +194,10 @@ def socket_path(data_dir: Path, suffix: str = "view") -> str:
     return str(directory / f"{digest}-{suffix}.sock")
 
 
+# One demo agent per reported state, so the roster's symbols can be seen.
+DEMO_STATES = ("busy", "idle", "waiting_for_human", "idle", "unknown")
+
+
 def start_demo(socket: str, data_dir: Path) -> None:
     tmux = Tmux(socket)
     items = []
@@ -210,7 +229,7 @@ def start_demo(socket: str, data_dir: Path) -> None:
         items.append(
             {
                 "name": name,
-                "state": "unknown",
+                "state": DEMO_STATES[index],
                 "configured": True,
                 "online": True,
                 "tags": ["swarm:demo-build" if index < 4 else "research"],

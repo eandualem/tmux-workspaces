@@ -9,7 +9,12 @@ import shlex
 import sys
 from pathlib import Path
 
-from tests.integration.support import Client, FixtureResources, wait
+from tests.integration.support import (
+    OUTLINE,
+    Client,
+    FixtureResources,
+    wait,
+)
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.model import leaves
@@ -45,7 +50,7 @@ def bracketed_paste(client: Client, shells: Tmux, target: str) -> None:
 
 
 def native_mouse(directory: Path, client: Client, viewer: Tmux) -> None:
-    """Check nested application forwarding and tmux's plain-pane selection."""
+    """Check nested right-click/wheel forwarding and explicit plain-pane copy."""
     recording, ready = directory / "mouse.bytes", directory / "mouse.ready"
     program = directory / "mouse_app.py"
     program.write_text(
@@ -77,15 +82,6 @@ def native_mouse(directory: Path, client: Client, viewer: Tmux) -> None:
         data = recording.read_bytes() if recording.exists() else b""
         return re.findall(rb"\x1b\[<([0-9]+);[0-9]+;[0-9]+M", data)
 
-    for count in (2, 3):
-        client.pump(0.5)
-        before = len(downs())
-        os.write(client.master, (click() * count).encode())
-        wait(
-            client,
-            lambda before=before, count=count: len(downs()) >= before + count,
-            "content multi-click was not forwarded",
-        )
     os.write(client.master, (click(2) + click(64)).encode())
     wait(client, lambda: b"2" in downs() and b"64" in downs(), "content right-click or wheel lost")
     client.type("\x03")
@@ -110,9 +106,17 @@ def native_mouse(directory: Path, client: Client, viewer: Tmux) -> None:
         os.write(client.master, (click() * count).encode())
         wait(
             client,
+            lambda: viewer.run("display-message", "-p", "-t", pane, "#{selection_present}") == "1",
+            "native multi-click did not retain selection",
+        )
+        assert viewer.run("show-buffer", check=False) == "", "multi-click copied on release"
+        client.type(direct_sequence("copy-selection"))
+        wait(
+            client,
             lambda text=text: viewer.run("show-buffer", check=False).strip() == text,
             "native double/triple selection changed",
         )
+        client.type("\x1b")
 
 
 def exercise(directory: Path, pane_count: int) -> None:
@@ -152,7 +156,7 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
     viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
     wait(
         client,
-        lambda: "Layouts saved" in viewer.run("capture-pane", "-p", "-t", "%0"),
+        lambda: "Configure…" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
         "routing viewer did not initialize",
     )
     targets = [
@@ -209,14 +213,52 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
         observed = contents()
         return all(
             [target for target, text in observed.items() if marker in text] == [destination]
+            and observed[destination].count(marker) == 1
             for marker, destination in expected
         )
 
+    def wait_routed(description):
+        try:
+            wait(client, routed, description)
+        except AssertionError as error:
+            observed = contents()
+            mismatches = [
+                {
+                    "marker": marker,
+                    "expected": destination,
+                    "actual_counts": {
+                        target: text.count(marker)
+                        for target, text in observed.items()
+                        if marker in text
+                    },
+                }
+                for marker, destination in expected
+                if [target for target, text in observed.items() if marker in text] != [destination]
+                or observed[destination].count(marker) != 1
+            ]
+            raise AssertionError(f"{description}: {json.dumps(mismatches)}\n{error}") from error
+
     for method in ("click", "shortcut"):
         for kind in ("tab", "workspace"):
+            if method == "click" and kind == "workspace":
+                # Workspaces are switched from the heading's chooser menu, two
+                # clicks apart; there is no single click to route in a burst.
+                continue
             for burst in (False, True):
-                client.type(direct_sequence("select-workspace-1") + direct_sequence("select-tab-1"))
-                lines = viewer.run("capture-pane", "-p", "-t", "%0").splitlines()
+                command, marker = packet()
+                client.type(
+                    direct_sequence("select-workspace-1")
+                    + direct_sequence("select-tab-1")
+                    + command
+                )
+                destination = terminal(spaces[0]["tabs"][0])
+                wait(
+                    client,
+                    lambda marker=marker, destination=destination: (
+                        marker in shells.run("capture-pane", "-p", "-t", destination)
+                    ),
+                    f"{method}/{kind} routing setup did not finish",
+                )
                 packets = []
                 for index in (1, 0, 1, 0):
                     tab = spaces[index if kind == "workspace" else 0]["tabs"][
@@ -225,24 +267,22 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
                     if method == "shortcut":
                         navigation = direct_sequence(f"select-{kind}-{index + 1}")
                     else:
-                        if kind == "tab":
-                            row, column = (4 if index else 2), 3
-                        else:
-                            label = f"[ {index + 1} ]"
-                            row = next(i for i, line in enumerate(lines) if label in line)
-                            column = lines[row].index(label) + 2
+                        # Tab rows start under the outline, the heading, its
+                        # blank row and the label, one row per tab; the
+                        # sequence is 1-based, so the first tab is row 5.
+                        row, column = (5 if index else 4), 4
                         navigation = f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m"
                     command, marker = packet()
                     expected.append((marker, terminal(tab)))
                     packets.append(navigation + command)
                     if not burst:
                         os.write(client.master, packets[-1].encode())
-                        wait(client, routed, f"immediate {method}/{kind} input misrouted")
+                        wait_routed(f"immediate {method}/{kind} input misrouted")
                 if burst:
                     # Multiple navigation events and commands in one write:
                     # no readiness wait between physical inputs.
                     os.write(client.master, "".join(packets).encode())
-                    wait(client, routed, f"burst {method}/{kind} input misrouted")
+                    wait_routed(f"burst {method}/{kind} input misrouted")
     client.pump(0.3)
     assert routed(), "delayed or duplicate delivery reached an unintended shell"
     assert identities() == original, "navigation changed a shell process"
@@ -252,6 +292,7 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
         assert identities() == original, "native mouse checks changed a shell process"
     print(
         f"PASS: {pane_count}-pane tab/workspace immediate and burst click/shortcut routing; "
-        "all 32 commands executed only in their intended shell; original PIDs retained",
+        f"all {len(expected)} commands executed only in their intended shell; "
+        "original PIDs retained",
         flush=True,
     )

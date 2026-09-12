@@ -13,6 +13,15 @@ test:
 	$(PYTHON) -m unittest discover -s scripts/tests -v
 
 smoke:
+	$(PYTHON) -m tests.integration.smoke_attachment_policy
+	$(PYTHON) -m tests.integration.smoke_split_drag
+	$(PYTHON) -m tests.integration.smoke_attachment_windows
+	$(PYTHON) -m tests.integration.smoke_attachment_palette
+	$(PYTHON) -m tests.integration.smoke_attachment_readiness
+	$(PYTHON) -m tests.integration.smoke_attachment_identity
+	$(PYTHON) -m tests.integration.smoke_theme_refresh
+	$(PYTHON) -m tests.integration.smoke_selection
+	$(PYTHON) -m tests.integration.smoke_json_settings
 	$(PYTHON) -m tests.integration.smoke_themes
 	$(PYTHON) -m tests.integration.smoke_refresh
 	$(PYTHON) -m tests.integration.smoke_preflight
@@ -23,6 +32,7 @@ smoke:
 	$(PYTHON) -m tests.integration.smoke_shortcuts
 	$(PYTHON) -m tests.integration.smoke_menus
 	$(PYTHON) -m tests.integration.smoke_new_tab
+	$(PYTHON) -m tests.integration.smoke_gutters
 	$(PYTHON) -m tests.integration.smoke_standalone
 	$(PYTHON) -m tests.integration.smoke_environment
 	$(PYTHON) -m tests.integration.smoke

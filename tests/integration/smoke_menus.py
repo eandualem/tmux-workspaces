@@ -12,8 +12,9 @@ import re
 import tempfile
 from pathlib import Path
 
-from tests.integration.support import FixtureResources, saved, sidebar, wait
+from tests.integration.support import FixtureResources, open_terminal, saved, sidebar, wait
 from tmux_workspaces.application import socket_path
+from tmux_workspaces.model import leaves
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
 
@@ -51,7 +52,8 @@ def _exercise(resources: FixtureResources) -> None:
         """
         rows = []
         for line in styled():
-            if "48;5;238" not in line:
+            # The selection background is the exact color in palette slot 18.
+            if "48;5;18" not in line:
                 continue
             text = ESCAPE_SEQUENCE.sub("", line).strip()
             if text and not text.startswith(">"):
@@ -63,6 +65,9 @@ def _exercise(resources: FixtureResources) -> None:
 
     def focused() -> str:
         return viewer.run("display-message", "-p", "-t", "viewer:", "#{pane_id}")
+
+    def focused_leaf() -> str:
+        return viewer.run("display-message", "-p", "-t", "viewer:", "#{@viewer_leaf_id}")
 
     def key(name: str) -> None:
         client.type("\x07" + name)
@@ -99,7 +104,7 @@ def _exercise(resources: FixtureResources) -> None:
         select(label)
         press(ENTER)
 
-    wait(client, lambda: "Layouts saved" in panel(), "sidebar did not initialize")
+    wait(client, lambda: "Configure…" in panel(), "sidebar did not initialize")
     start = saved(library)
     tab_id, tab_name, pane_id = start.tab["id"], start.tab["name"], start.pane["id"]
     terminal = "=" + Shells.name(start.pane) + ":"
@@ -190,12 +195,75 @@ def _exercise(resources: FixtureResources) -> None:
     open_menu("m", "Tab options")
     activate("Return pane to shell")
     wait(client, lambda: saved(library).pane["agent"] is None, "return to shell failed")
-    wait(client, lambda: "Layouts saved" in panel(), "sidebar did not settle after resize")
+    wait(client, lambda: "Configure…" in panel(), "sidebar did not settle after resize")
 
     # Tab reordering and transfer are menu-only commands; both by keyboard here.
     key("t")
     wait(client, lambda: len(saved(library).space["tabs"]) == 2, "new tab shortcut failed")
     second = saved(library).tab["id"]
+    open_terminal(client, viewer, library)
+
+    # Tab navigation changes complete layouts, while pane navigation changes
+    # the input destination within one layout. Both close the menu on activation.
+    for label, target in (("Previous tab", tab_id), ("Next tab", second)):
+        open_menu("m", "Tab options")
+        activate(label)
+        wait(
+            client,
+            lambda target=target: saved(library).tab["id"] == target,
+            label + " changed the wrong tab",
+        )
+        wait(
+            client,
+            lambda: focused_leaf() == saved(library).tab["focus"],
+            label + " did not focus the selected tab's pane",
+        )
+    for label in ("Split right", "Split below", "Split right"):
+        open_menu("m", "Tab options")
+        activate(label)
+        open_terminal(client, viewer, library)
+    original_focus = saved(library).tab["focus"]
+    pane_ids = [pane["id"] for pane in leaves(saved(library).tab["tree"])]
+    assert len(pane_ids) == 4
+    # Exercise the complete layout first, then the scrolling menu and temporary
+    # focus layout used by a short/narrow terminal, with explicit focus on/off.
+    for columns, rows in ((160, 38), (72, 16)):
+        client.resize(columns, rows)
+        wait(client, lambda: "Configure…" in panel(), "resized panel did not settle")
+        for focus_mode in (False, True):
+            if focus_mode:
+                open_menu("m", "Tab options")
+                activate("Focus one pane")
+                wait(client, lambda: saved(library).state["focus"], "focus-one-pane did not apply")
+            for label, target in (
+                ("Previous pane", pane_ids[(pane_ids.index(original_focus) - 1) % 4]),
+                ("Next pane", original_focus),
+            ):
+                open_menu("m", "Tab options")
+                activate(label)
+                wait(
+                    client,
+                    lambda target=target: saved(library).tab["focus"] == target,
+                    label + " missed its pane",
+                )
+                wait(
+                    client,
+                    lambda target=target: focused_leaf() == target,
+                    label + " did not focus its destination pane",
+                )
+                assert saved(library).tab["id"] == second
+                assert saved(library).state["focus"] == focus_mode
+        open_menu("m", "Tab options")
+        activate("Restore layout")
+        wait(client, lambda: not saved(library).state["focus"], "restore-layout did not apply")
+    client.resize(160, 38)
+    wait(client, lambda: len(viewer.run("list-panes").splitlines()) >= 5, "layout did not return")
+    assert [pane["id"] for pane in leaves(saved(library).tab["tree"])] == pane_ids
+    assert shell_pid == shells.run("display-message", "-p", "-t", terminal, "#{pane_pid}")
+    print(
+        "PASS: separate tab/pane menu navigation in four-pane, focus and narrow views", flush=True
+    )
+
     open_menu("m", "Tab options")
     activate("Move tab up")
     wait(
@@ -251,7 +319,7 @@ def _exercise(resources: FixtureResources) -> None:
             "workspace creation failed",
         )
     client.resize(160, 16)
-    wait(client, lambda: "Space 10" in panel() or "Layouts saved" in panel(), "resize failed")
+    wait(client, lambda: "Space 10" in panel() or "Configure…" in panel(), "resize failed")
     open_menu("w", "Workspaces")
     assert "Space 10" not in panel(), "the overflowing list already showed its last row"
     activate("Space 10")

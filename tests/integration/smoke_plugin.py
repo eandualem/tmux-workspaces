@@ -7,7 +7,15 @@ import shlex
 import tempfile
 from pathlib import Path
 
-from tests.integration.support import FixtureResources, OuterClient, click_button, saved, wait
+from tests.integration.support import (
+    OUTLINE,
+    FixtureResources,
+    OuterClient,
+    click_button,
+    content_panes,
+    saved,
+    wait,
+)
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
@@ -73,7 +81,7 @@ def exercise(resources: FixtureResources) -> None:
         viewer = Tmux(runtime["viewer_socket"])
         wait(
             client,
-            lambda: "Layouts saved" in viewer.run("capture-pane", "-p", "-t", "%0"),
+            lambda: "Configure…" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
             "plugin viewer sidebar failed to initialize",
         )
         assert "workspaces" in source.run("list-windows", "-t", "=host:", "-F", "#{window_name}")
@@ -122,7 +130,8 @@ def exercise(resources: FixtureResources) -> None:
     wait(
         client,
         lambda: (
-            "This session hosts the viewer." in viewer.run("capture-pane", "-p", "-t", "viewer:.1")
+            "This session hosts the viewer."
+            in viewer.run("capture-pane", "-p", "-t", content_panes(viewer)[1])
         ),
         "plugin allowed a recursive attachment to its hosting session",
     )

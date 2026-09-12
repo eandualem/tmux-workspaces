@@ -7,19 +7,23 @@ a split layout in each one, and come back to the same arrangement tomorrow.
 
 ```text
 ┌────────────────────────────┬───────────────────────────────────┐
-│ Workspace 1          [ + ] │ $ pytest -q                       │
-│ ────────────────────────── │ ......................            │
-│   1 api              2     │                                   │
-│ ▶ 2 web              1     ├───────────────────────────────────┤
-│    Shell                   │ $ npm run dev                     │
-│                            │ ready on http://localhost:3000    │
-│ ────────────────────────── │                                   │
-│  Split →      Split ↓      │                                   │
-│  Attach session…           │                                   │
-│  Shortcuts            Exit │                                   │
-│ ────────────────────────── │                                   │
-│  Workspaces…  Colors…      │                                   │
-│  [ 1 ]                 [+] │                                   │
+│ ╭────────────────────────╮ │ $ pytest -q                       │
+│ │ ◆ Development        ▾ │ │ ......................            │
+│ │                        │ │                                   │
+│ │ tabs                 + │ ├───────────────────────────────────┤
+│ │   1 api              2 │ │ $ npm run dev                     │
+│ │ ▶ 2 web            1 ⋯ │ │ ready on http://localhost:3000    │
+│ │                        │ │                                   │
+│ │ Agents                 │ │                                   │
+│ │ ▶ builder              │ │                                   │
+│ │ ! reviewer             │ │                                   │
+│ │ ○ tester               │ │                                   │
+│ │                        │ │                                   │
+│ │ Configure…             │ │                                   │
+│ │                        │ │                                   │
+│ │  ◆   2                 │ │                                   │
+│ │                        │ │                                   │
+│ ╰────────────────────────╯ │                                   │
 └────────────────────────────┴───────────────────────────────────┘
 ```
 
@@ -73,16 +77,20 @@ right-click for options.
 ## What you get
 
 - **Workspaces group tabs by purpose** — development, review, operations — not by
-  screen size. A new tab asks what it should run: an ordinary shell, or one of
-  your tmux sessions, right there in the pane. Splits are shells.
+  screen size. A new tab or split asks what it should run: an ordinary shell,
+  or one of your tmux sessions, right there in the pane.
 - **Attach sessions you already have.** Any tmux session, whoever created it. Closing
   a tab ends its own shells and never stops a session you attached.
 - **It persists.** Names, grouping, splits and attachment references survive exit
   and reopen, and your shells keep running as long as tmux does.
 - **Built for remote hosts.** Run it on the tmux host through SSH. It needs no
   desktop, and your shells keep the SSH agent and XDG paths you started with.
-- **Yours to configure.** Change shortcuts and colors from inside the viewer, or
-  from a TOML file.
+- **Yours to configure.** Pick a color preset or tune each role, and rebind
+  shortcuts, from inside the viewer or from a TOML file. The panel sits beside
+  your terminals in a color of its own, and the new-tab chooser matches it.
+  **Configure… → Edit theme… / Edit shortcuts…** opens the
+  [built-in text editor](docs/JSON_SETTINGS.md) with Save, Cancel and undo.
+  **View shortcuts…** opens a read-only reference to the keys active in this viewer.
 
 ## Install
 

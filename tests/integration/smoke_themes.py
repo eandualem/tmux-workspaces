@@ -17,9 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from tests.integration.support import FixtureResources, click_button, saved, wait
-from tmux_workspaces.application import socket_path
-from tmux_workspaces.shells import Shells
+from tests.integration.support import FixtureResources, wait
 from tmux_workspaces.tmux import Tmux
 
 SGR = re.compile(r"\x1b\[([0-9;]*)m")
@@ -30,9 +28,10 @@ DEFAULT = -1
 # row reordering and width changes.
 ANCHORS = {
     "title": "Workspace",
-    "muted": "─────",
+    "muted": "tabs",
     "active": "▶",
-    "accent": "Shell",
+    # The add button on the tabs label row; the detail row is secondary text now.
+    "accent": "+",
 }
 # The workspace header occupies the top row, and the "Workspaces…" button
 # repeats its word further down the sidebar. Searching the whole screen for the
@@ -44,19 +43,24 @@ FIRST_ROW_ROLES = frozenset({"title"})
 _ATTRIBUTES = {1: "bold", 2: "dim", 4: "underline", 7: "reverse"}
 _CLEAR = {22: ("bold", "dim"), 24: ("underline",), 27: ("reverse",)}
 
-# The appearance shipped before any theme configuration existed: pair 1 is the
-# terminal default, 2 active, 3 accent and 4 muted.
+# The shipped appearance: pair 1 (normal) is the terminal default, so the
+# panel tmux paints behind the pane shows through; 2 active, 3 accent and 4
+# muted sit on that same default. The panel itself is a pane style, which a
+# capture of the pane's cells does not carry.
+# On 256 colors the shipped roles are exact RGB values in the pane's own
+# palette slots, defined through OSC 4: 16 text, 17 panel, 18 selection,
+# 19 accent, 20 secondary text, 21 outline, 22 surface.
 SHIPPED_256 = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
-    "muted": (245, DEFAULT, ()),
-    "active": (231, 238, ()),
-    "accent": (108, DEFAULT, ()),
+    "title": (16, 17, ("bold",)),
+    "muted": (20, 17, ()),
+    "active": (16, 18, ()),
+    "accent": (19, 17, ("bold",)),
 }
 SHIPPED_BASIC = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
-    "muted": (7, DEFAULT, ()),
+    "title": (7, 0, ("bold",)),
+    "muted": (7, 0, ()),
     "active": (7, 4, ()),
-    "accent": (6, DEFAULT, ()),
+    "accent": (6, 0, ("bold",)),
 }
 
 
@@ -127,10 +131,10 @@ class Screen:
     def at(self, anchor: str, *, first_row: bool = False):
         """The style in force where `anchor` starts, or None when it is not drawn.
 
-        `first_row` searches only the top row, for an anchor whose word also
-        appears elsewhere in the sidebar.
+        `first_row` searches only the heading row, the first inside the panel's
+        outline, for an anchor whose word also appears elsewhere in the sidebar.
         """
-        for text, states in self.lines[:1] if first_row else self.lines:
+        for text, states in self.lines[1:2] if first_row else self.lines:
             position = text.find(anchor)
             if position >= 0:
                 return states[position]
@@ -278,7 +282,7 @@ def default_appearance(directory: Path) -> None:
         assert_styles(viewer, SHIPPED_256, "restored 256-color viewer")
     print(
         "PASS: an unconfigured viewer draws the shipped 256-color roles "
-        "(muted 245, accent 108, active 231 on 238) and marks its selection without color",
+        "(exact RGB roles in slots 16-20) and marks its selection without color",
         flush=True,
     )
 
@@ -295,11 +299,12 @@ foreground = ["bright-magenta", "magenta"]
 foreground = 244
 """
 
+# Roles the file leaves alone keep the panel as their ground, slot 17.
 CUSTOM_256 = {
-    "title": (DEFAULT, DEFAULT, ("bold",)),
+    "title": (16, 17, ("bold",)),
     "active": (3, 27, ("bold",)),
-    "accent": (13, DEFAULT, ()),
-    "muted": (244, DEFAULT, ()),
+    "accent": (13, 17, ("bold",)),
+    "muted": (244, 17, ()),
 }
 
 
@@ -314,7 +319,8 @@ def write_config(path: Path, text: str) -> Path:
 
 
 def status(viewer: Tmux) -> str:
-    return screen(viewer).plain().splitlines()[-1].strip()
+    """The message row: above the four-row footer, inside the outline."""
+    return screen(viewer).plain().splitlines()[-6].strip().strip("│").strip()
 
 
 def configured_colors(directory: Path) -> None:
@@ -327,7 +333,7 @@ def configured_colors(directory: Path) -> None:
         assert_colorless_cues(viewer, "configured viewer")
 
     with FixtureResources(parent=directory) as resources:
-        write_config(config_path(resources), "[active]\nforeground = '#ff0000'\n")
+        write_config(config_path(resources), "[active]\nforeground = '#ff000'\n")
         library = resources.library("broken")
         client, viewer = launch(resources, library)
         assert_styles(viewer, SHIPPED_256, "viewer with an invalid theme")
@@ -356,7 +362,12 @@ def normal_background(directory: Path) -> None:
 
         def base_is_configured():
             drawn = Screen(viewer.run("capture-pane", "-e", "-N", "-p", "-t", "%0"))
-            blanks = [states for text, states in drawn.lines if states and not text.strip()]
+            # A blank interior row: nothing between the outline's two cells.
+            blanks = [
+                states[1:-1]
+                for text, states in drawn.lines
+                if len(states) > 2 and not text.strip().strip("│").strip()
+            ]
             return (
                 drawn.at("Workspace") == (7, 4, ("bold",))
                 and bool(blanks)
@@ -364,199 +375,8 @@ def normal_background(directory: Path) -> None:
             )
 
         wait(client, base_is_configured, "configured normal background missing from blank cells")
-        # Exercise the shared keyboard menu entry after integrating menu navigation.
-        client.type("\x07M")
-        wait(client, lambda: "Workspace options" in screen(viewer).plain(), "workspace menu absent")
-        client.type("\x1b[F")
-        client.type("\r")
-        wait(
-            client,
-            lambda: "Viewer colors" in screen(viewer).plain(),
-            "keyboard Colors entry failed",
-        )
-        client.type("d")
-        client.type("\x1b")
-        wait(client, base_is_configured, "Cancel did not restore configured blank-cell background")
-        assert config.read_text() == original, "preview changed saved normal colors"
-    print(
-        "PASS: normal background covers blank cells and keyboard preview/Cancel restores it",
-        flush=True,
-    )
-
-
-def defaults_and_apply(directory: Path) -> None:
-    """Restore-defaults previews the shipped colors; only Apply writes the file."""
-    with FixtureResources(parent=directory) as resources:
-        config = write_config(config_path(resources), CUSTOM)
-        library = resources.library("defaults")
-        client, viewer = launch(resources, library)
-        assert_styles(viewer, CUSTOM_256, "configured viewer")
-
-        open_editor(client, viewer)
-        client.type("d")
-        wait(
-            client,
-            lambda: styles(viewer).get("active") == SHIPPED_256["active"],
-            "restore defaults did not preview the shipped colors",
-        )
-        assert config.read_text() == CUSTOM, "previewing defaults must not write the file"
-        client.type("\x1b")
-        wait(
-            client,
-            lambda: styles(viewer) == CUSTOM_256,
-            "cancelling restore-defaults did not bring the configured colors back",
-        )
-
-        # Apply is the only route that writes, and it changes the viewer in place.
-        open_editor(client, viewer)
-        client.type("da")
-        wait(
-            client,
-            lambda: config.read_text() != CUSTOM,
-            "Apply did not write the theme file",
-        )
-        wait(
-            client,
-            lambda: styles(viewer) == SHIPPED_256,
-            "Apply did not leave the shipped colors installed",
-        )
-        assert "[active]" in config.read_text(), config.read_text()
-
-        # The saved file is what a newly opened viewer reads.
-        second_library = resources.library("reopened")
-        _second, reopened = launch(resources, second_library)
-        assert_styles(reopened, SHIPPED_256, "viewer reopened on the saved theme")
-    print(
-        "PASS: restore-defaults previews without writing, Apply writes the file and restyles "
-        "the running viewer, and a new viewer reads what was saved",
-        flush=True,
-    )
-
-
-def in_editor(viewer: Tmux) -> bool:
-    return "Viewer colors" in screen(viewer).plain()
-
-
-def refused_save(directory: Path, name: str, prepare, verify, cleanup=None) -> None:
-    """Edit a color, save into a target that must be refused, then check the damage."""
-    with FixtureResources(parent=directory) as resources:
-        config = config_path(resources)
-        config.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            guarded = prepare(config)
-            library = resources.library(name)
-            client, viewer = launch(resources, library)
-            open_editor(client, viewer)
-            click_button(client, viewer, "Selected fg")
-            client.type("magenta\n")
-            wait(
-                client,
-                lambda: pair_colors(styles(viewer).get("active", SHIPPED_256["active"]))[0] == 5,
-                f"{name}: the edit was not previewed",
-            )
-            previewed = styles(viewer)
-            client.type("a")
-            client.pump(0.6)
-            assert in_editor(viewer), f"{name}: a refused save closed the editor"
-            assert styles(viewer) == previewed, f"{name}: a refused save changed the colors"
-            verify(config, guarded)
-        finally:
-            if cleanup:
-                cleanup(config)
-
-
-def unsafe_targets(directory: Path) -> None:
-    """A theme file the viewer must not write through or replace."""
-
-    def symlink(config: Path) -> str:
-        real = config.parent / "real.toml"
-        real.write_text(CUSTOM)
-        config.symlink_to(real)
-        return real.read_text()
-
-    def check_symlink(config: Path, before: str) -> None:
-        assert config.is_symlink(), "the viewer replaced a symbolic link"
-        real = config.parent / "real.toml"
-        assert real.read_text() == before, "the viewer wrote through a symbolic link"
-
-    refused_save(directory, "symlinked", symlink, check_symlink)
-    if os.geteuid() == 0:
-        print(
-            "PASS: symlinked theme is preserved; SKIP: mode-based permission checks as root",
-            flush=True,
-        )
-        return
-
-    def read_only(config: Path) -> str:
-        config.write_text(CUSTOM)
-        config.chmod(0o400)
-        return config.read_text()
-
-    def check_read_only(config: Path, before: str) -> None:
-        assert config.read_text() == before, "the viewer wrote a read-only theme"
-
-    refused_save(directory, "read-only", read_only, check_read_only)
-
-    def locked_directory(config: Path) -> str:
-        # A writable file inside a directory nobody may write: the replacement
-        # and the lock beside it both need a directory entry.
-        config.write_text(CUSTOM)
-        config.parent.chmod(0o500)
-        return config.read_text()
-
-    def check_locked_directory(config: Path, before: str) -> None:
-        assert config.read_text() == before, "the viewer wrote into a read-only directory"
-        assert not list(config.parent.glob(".theme-*")), "a temporary theme file was left behind"
-
-    refused_save(
-        directory,
-        "locked-directory",
-        locked_directory,
-        check_locked_directory,
-        cleanup=lambda config: config.parent.chmod(0o700),
-    )
-
-    print(
-        "PASS: a symlinked file, a read-only file and a read-only directory are all left "
-        "untouched, the edit stays on screen and the editor stays open to retry",
-        flush=True,
-    )
-
-
-def concurrent_edits(directory: Path) -> None:
-    """Another writer must not cost the user the colors they are working on."""
-    for name, existing in (("conflict", CUSTOM), ("first-save", None)):
-        with FixtureResources(parent=directory) as resources:
-            config = config_path(resources)
-            config.parent.mkdir(parents=True, exist_ok=True)
-            if existing is not None:
-                config.write_text(existing)
-            library = resources.library(name)
-            client, viewer = launch(resources, library)
-            open_editor(client, viewer)
-            click_button(client, viewer, "Selected fg")
-            client.type("magenta\n")
-            wait(
-                client,
-                lambda view=viewer: (
-                    pair_colors(styles(view).get("active", SHIPPED_256["active"]))[0] == 5
-                ),
-                f"{name}: the edit was not previewed",
-            )
-            previewed = styles(viewer)
-            # A second writer lands between the read and the save.
-            other = '[muted]\nforeground = "green"\n'
-            config.write_text(other)
-            client.type("a")
-            client.pump(0.6)
-            assert config.read_text() == other, f"{name}: the other writer's file was overwritten"
-            assert styles(viewer) == previewed, f"{name}: the refused save changed the colors"
-            assert in_editor(viewer), f"{name}: the refused save closed the editor"
-    print(
-        "PASS: a concurrent write is refused for both an existing and a newly created theme "
-        "file, keeping the other writer's file and the user's unsaved colors",
-        flush=True,
-    )
+        assert config.read_text() == original
+    print("PASS: configured normal background covers blank cells", flush=True)
 
 
 def unreadable_targets(directory: Path) -> None:
@@ -575,164 +395,6 @@ def unreadable_targets(directory: Path) -> None:
     print(
         "PASS: a theme path that is a FIFO or a directory leaves the viewer running on the "
         "shipped colors instead of blocking or failing",
-        flush=True,
-    )
-
-
-def unreadable_file_is_never_replaced(directory: Path) -> None:
-    """Contents the viewer never saw must survive, even once they become writable."""
-    if os.geteuid() == 0:
-        print("SKIP: replacing an unreadable theme file needs a non-root user", flush=True)
-        return
-    with FixtureResources(parent=directory) as resources:
-        config = config_path(resources)
-        config.parent.mkdir(parents=True, exist_ok=True)
-        config.write_text(CUSTOM)
-        config.chmod(0o200)
-        library = resources.library("unreadable-file")
-        client, viewer = launch(resources, library)
-        assert_styles(viewer, SHIPPED_256, "viewer with an unreadable theme")
-
-        open_editor(client, viewer)
-        click_button(client, viewer, "Selected fg")
-        client.type("magenta\n")
-        wait(
-            client,
-            lambda: pair_colors(styles(viewer).get("active", SHIPPED_256["active"]))[0] == 5,
-            "the edit was not previewed",
-        )
-        previewed = styles(viewer)
-        # The permissions are repaired only after the editor opened. The viewer
-        # still has not seen what is in the file, so saving would destroy colors
-        # nobody read; the digest it would compare against was never taken.
-        config.chmod(0o600)
-        client.type("a")
-        client.pump(0.6)
-        assert config.read_text() == CUSTOM, "the viewer replaced a file it could not read"
-        assert in_editor(viewer), "the refused save closed the editor"
-        assert styles(viewer) == previewed, "the refused save changed the colors"
-    print(
-        "PASS: a theme file the viewer could not read is never replaced, even after it "
-        "becomes writable, and the unsaved edit stays on screen",
-        flush=True,
-    )
-
-
-def isolation_and_idle(directory: Path) -> None:
-    """Editing colors must not reach the shells, and idling must not re-read the file."""
-    with FixtureResources(parent=directory) as resources:
-        config = config_path(resources)
-        library = resources.library("isolated")
-        client, viewer = launch(resources, library)
-        shells = Tmux(socket_path(library, "terminals"))
-        target = "=" + Shells.name(saved(library).pane) + ":"
-        wait(
-            client,
-            lambda: shells.run("display-message", "-p", "-t", target, "#{pane_pid}") != "",
-            "the tab's ordinary shell did not start",
-        )
-        pid = shells.run("display-message", "-p", "-t", target, "#{pane_pid}")
-        before = styles(viewer)
-
-        # An external edit under a running viewer must not drift it. The poll
-        # runs every 0.6s, so wait out several cycles before concluding.
-        write_config(config, CUSTOM)
-        client.pump(2.5)
-        assert styles(viewer) == before, "the running viewer re-read the theme file while idle"
-
-        # Opening the editor does show the file as it now stands, which restyles
-        # the viewer even though the user changed nothing. Pin that, so it stays
-        # a deliberate choice rather than drifting into a surprise.
-        open_editor(client, viewer)
-        wait(
-            client,
-            lambda: pair_colors(styles(viewer)["active"]) == pair_colors(CUSTOM_256["active"]),
-            "opening the editor did not show the theme file as it now stands",
-        )
-        opened = styles(viewer)["active"]
-
-        token = "ZZTHEMEZZ"
-        click_button(client, viewer, "Selected fg")
-        client.type(token)
-        client.pump(0.3)
-        client.type("\n")
-        client.pump(0.4)
-        # The value is rejected, so the colors stay as the editor opened them.
-        # The open field adds its own underline, so compare the colors only.
-        assert pair_colors(styles(viewer)["active"]) == pair_colors(opened), (
-            f"an invalid value was previewed: {styles(viewer)!r}"
-        )
-        # Escape closes the rejected field; a second Escape leaves the editor.
-        client.type("\x1b")
-        client.pump(0.3)
-        client.type("\x1b")
-        wait(client, lambda: not in_editor(viewer), "Escape did not leave the colors editor")
-        assert config.read_text() == CUSTOM, "leaving the editor wrote the theme file"
-
-        text = shells.run("capture-pane", "-S", "-", "-p", "-t", target)
-        assert token not in text, "editor typing reached an ordinary shell"
-        assert "magenta" not in text and "Colors" not in text, (
-            "editor input or labels reached an ordinary shell"
-        )
-        assert pid == shells.run("display-message", "-p", "-t", target, "#{pane_pid}"), (
-            "editing colors restarted the tab's shell"
-        )
-        assert styles(viewer) == before, (
-            "cancelling did not restore the colors the viewer had before the editor opened"
-        )
-    print(
-        "PASS: an external edit does not drift a running viewer while idle, opening the "
-        "editor shows the file and cancelling restores what was on screen, rejected input "
-        "is not previewed, and nothing typed in the editor reaches the ordinary shells",
-        flush=True,
-    )
-
-
-def open_editor(client, viewer: Tmux):
-    click_button(client, viewer, "Colors…")
-    wait(client, lambda: in_editor(viewer), "colors editor did not open")
-
-
-def editing_preview_and_cancel(directory: Path) -> None:
-    """Preview shows at once, and every exit route restores what it opened with."""
-    with FixtureResources(parent=directory) as resources:
-        config = config_path(resources)
-        library = resources.library("editing")
-        client, viewer = launch(resources, library)
-        before = styles(viewer)
-        assert not config.exists(), "opening the viewer must not create a theme file"
-
-        # The mouse route: click the field, replace its value, accept it.
-        open_editor(client, viewer)
-        click_button(client, viewer, "Selected fg")
-        client.type("yellow\n")
-        wait(
-            client,
-            lambda: pair_colors(styles(viewer).get("active", SHIPPED_256["active"]))[0] == 3,
-            "previewing a color did not change the running viewer",
-        )
-        assert not config.exists(), "preview must not write the theme file"
-
-        client.type("\x1b")
-        wait(client, lambda: styles(viewer) == before, "cancel did not restore the opened colors")
-        assert not config.exists(), "cancel must not write the theme file"
-
-        # The keyboard route reaches the same field and previews the same way.
-        open_editor(client, viewer)
-        client.type("\x1b[B\x1b[B\x1b[B\nmagenta\n")
-        wait(
-            client,
-            lambda: pair_colors(styles(viewer).get("active", SHIPPED_256["active"]))[0] == 5,
-            "the keyboard route did not preview a color",
-        )
-        # Escape closes the value field first, then leaves the editor.
-        client.type("\x1b\x1b")
-        wait(client, lambda: styles(viewer) == before, "Escape did not restore the opened colors")
-
-        assert not config.exists(), "no route through the editor may write without Apply"
-    print(
-        "PASS: mouse and keyboard edits preview immediately without touching the file, "
-        "and cancel restores the colors the editor opened with",
         flush=True,
     )
 
@@ -832,10 +494,4 @@ if __name__ == "__main__":
         reduced_pane_only(Path(directory), required=require)
         configured_colors(Path(directory))
         normal_background(Path(directory))
-        editing_preview_and_cancel(Path(directory))
-        defaults_and_apply(Path(directory))
-        unsafe_targets(Path(directory))
-        concurrent_edits(Path(directory))
         unreadable_targets(Path(directory))
-        unreadable_file_is_never_replaced(Path(directory))
-        isolation_and_idle(Path(directory))

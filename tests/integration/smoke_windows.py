@@ -11,7 +11,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.integration.support import FixtureResources, click_button, saved, wait
+from tests.integration.support import (
+    OUTLINE,
+    FixtureResources,
+    click_button,
+    saved,
+    user_sessions,
+    wait,
+)
 from tmux_workspaces.application import start_demo
 from tmux_workspaces.tmux import Tmux
 
@@ -71,13 +78,13 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
         viewer = Tmux(runtime["viewer_socket"])
         wait(
             client,
-            lambda: "Layouts saved" in viewer.run("capture-pane", "-p", "-t", "%0"),
+            lambda: "Configure…" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
             "sidebar failed to start",
         )
         return client, viewer, manifest
 
     def sidebar(viewer):
-        return viewer.run("capture-pane", "-p", "-t", "%0")
+        return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
 
     click = click_button
 
@@ -89,9 +96,7 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     assert first_view.socket != second_view.socket
     if terminfo:
         assert first_view.run("list-clients", "-F", "#{client_termname}") == "xterm-ghostty"
-    identities = source.run(
-        "list-sessions", "-F", "#{session_id}:#{session_created}:#{session_name}"
-    )
+    identities = user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     shell_socket = json.loads(first_manifest.read_text())["shell_socket"]
     assert json.loads(second_manifest.read_text())["shell_socket"] == shell_socket
     shells = Tmux(shell_socket)
@@ -103,8 +108,15 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     assert len(saved(library).space["tabs"]) == 1
     click(first, first_view, "Attach session…")
     click(first, first_view, "manager")
-    wait(second, lambda: "manager" in sidebar(second_view), "attachment not synchronized")
-    assert "1 Workspaces" in selected(second_view), "peer attachment redirected keyboard input"
+    # The roster names every demo agent, so the peer's own panes are what show
+    # the attachment arriving; the peer then keeps the keyboard on its panel
+    # rather than redirecting typing into the changed tab.
+    wait(second, lambda: " manager" in selected(second_view), "attachment not synchronized")
+    wait(
+        second,
+        lambda: "1 Workspaces" in selected(second_view),
+        "peer attachment redirected keyboard input",
+    )
     click(second, second_view, "+ Tab")
     click(second, second_view, "Attach session…")
     click(second, second_view, "researcher")
@@ -115,13 +127,20 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     assert "FIRST_WINDOW_MANAGER" in source.run("capture-pane", "-p", "-t", "=manager:")
     assert "SECOND_WINDOW_RESEARCHER" not in source.run("capture-pane", "-p", "-t", "=manager:")
     assert "SECOND_WINDOW_RESEARCHER" in source.run("capture-pane", "-p", "-t", "=researcher:")
-    click(first, first_view, "Workspaces…")
+    click(first, first_view, "▾")
     click(first, first_view, "New workspace")
     first.type("Shared research")
     click(first, first_view, "Save name")
-    wait(second, lambda: "[ 2 ]" in sidebar(second_view), "new workspace did not synchronize")
+    wait(
+        second,
+        # The shared database is written before the peer has polled it. Menus
+        # deliberately retain their opening snapshot, so wait for the peer's
+        # two workspace buttons before opening its workspace chooser.
+        lambda: any(line.split() == ["1", "2"] for line in sidebar(second_view).splitlines()),
+        "new workspace did not reach the second viewer",
+    )
     assert "1 researcher" in selected(second_view)
-    click(second, second_view, "Workspaces…")
+    click(second, second_view, "▾")
     click(second, second_view, "Switch workspace")
     click(second, second_view, "Shared research")
     wait(second, lambda: "No tabs yet" in sidebar(second_view), "shared workspace missing")
@@ -137,9 +156,7 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     first.close_terminal()
     assert not first_manifest.exists()
     assert "reviewer" in sidebar(second_view)
-    assert identities == source.run(
-        "list-sessions", "-F", "#{session_id}:#{session_created}:#{session_name}"
-    )
+    assert identities == user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     third, third_view, third_manifest = open_window(env)
     click(second, second_view, "Exit")
     wait(second, lambda: second.process.poll() is not None, "second window did not exit")
@@ -148,9 +165,7 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     click(third, third_view, "Exit")
     wait(third, lambda: third.process.poll() is not None, "third window did not exit")
     assert not third_manifest.exists()
-    assert identities == source.run(
-        "list-sessions", "-F", "#{session_id}:#{session_created}:#{session_name}"
-    )
+    assert identities == user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     assert not list((library / "windows").glob("*/runtime.json"))
     print("PASS: concurrent windows, independent selection and input, shared workspace/tab edits,")
     print(

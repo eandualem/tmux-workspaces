@@ -16,8 +16,10 @@ from tests.integration.support import (
     Client,
     FixtureResources,
     click_button,
+    grouped_sessions,
     saved,
     sidebar,
+    user_sessions,
     wait,
 )
 from tmux_workspaces.application import socket_path
@@ -72,7 +74,7 @@ def ready(client: Client, library: Path) -> bool:
     manifest = client.manifest(library)
     if manifest is None:
         return False
-    return "Layouts saved" in sidebar(Tmux(json.loads(manifest.read_text())["viewer_socket"]))
+    return "Configure…" in sidebar(Tmux(json.loads(manifest.read_text())["viewer_socket"]))
 
 
 def title_pair(client: Client):
@@ -213,9 +215,11 @@ def attach(client: Client, library: Path, source: Tmux, name: str) -> None:
 
 def selected(client: Client, library: Path) -> str:
     viewer = Tmux(runtime(client, library)["viewer_socket"])
-    line = next(line for line in sidebar(viewer).splitlines() if line.startswith("▶"))
-    # "▶ 2 Beta            1": drop the marker, the index and the pane count.
-    return line.strip("▶ ").split(" ", 1)[1].rsplit(" ", 1)[0].strip()
+    line = next(line for line in sidebar(viewer).splitlines() if line.lstrip().startswith("▶"))
+    # "▶ 2 Beta          1 ⋯": drop the marker, the index, the pane count and
+    # the menu glyph the selected row ends with.
+    rest = line.strip().strip("▶ ").split(" ", 1)[1].rstrip(" ⋯").strip()
+    return rest.rsplit(" ", 1)[0].strip()
 
 
 def sidebar_of(client: Client) -> str:
@@ -241,9 +245,7 @@ def exercise(resources: FixtureResources) -> None:
         "/bin/sh -i",
     )
     source.run("set-option", "-t", "=external:", "status", "off")
-    identities = source.run(
-        "list-sessions", "-F", "#{session_id}:#{session_created}:#{session_name}"
-    )
+    identities = user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     external_pid = source.run("display-message", "-p", "-t", "=external:", "#{pane_pid}")
 
     theme = directory / "custom colors.toml"
@@ -262,7 +264,7 @@ def exercise(resources: FixtureResources) -> None:
         client,
         lambda: (
             "REFRESH_MARKER_" + token
-            in shells.run("capture-pane", "-S", "-", "-p", "-t", first_terminal)
+            in shells.run("capture-pane", "-J", "-S", "-", "-p", "-t", first_terminal)
         ),
         "ordinary shell did not run its command",
     )
@@ -273,6 +275,17 @@ def exercise(resources: FixtureResources) -> None:
     client.type("\x07rBeta\r")
     wait(client, lambda: saved(library).tab["name"] == "Beta", "second tab rename failed")
     attach(client, library, source, "external")
+    # The pane attaches through a grouped session of the viewer's own, whose
+    # status line is off; the external session keeps its own options and is
+    # never renamed or reconfigured.
+    wait(client, lambda: len(grouped_sessions(source)) == 1, "no grouped attach session")
+    grouped = grouped_sessions(source)[0]
+    assert source.run("show-option", "-t", "=" + grouped + ":", "-v", "status") == "off"
+    assert source.run("show-option", "-t", "=" + grouped + ":", "-v", "destroy-unattached") == "on"
+    source.run("set-option", "-t", "=external:", "status", "on")
+    assert source.run("show-option", "-t", "=external:", "-v", "status") == "on"
+    assert source.run("show-option", "-t", "=" + grouped + ":", "-v", "status") == "off"
+    assert identities == user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     client.type(direct_sequence("select-tab-1"))
     wait(client, lambda: selected(client, library) == "Alpha", "tab selection failed")
     layout = saved(library).state["workspaces"]
@@ -344,12 +357,15 @@ def exercise(resources: FixtureResources) -> None:
 
     # The work beneath the viewer is untouched.
     assert shell_pid == shells.run("display-message", "-p", "-t", first_terminal, "#{pane_pid}")
-    assert "REFRESH_MARKER_" + token in shells.run(
-        "capture-pane", "-S", "-", "-p", "-t", first_terminal
-    )
-    assert identities == source.run(
-        "list-sessions", "-F", "#{session_id}:#{session_created}:#{session_name}"
-    )
+    # Attachment resize can wrap a logical history line across physical rows.
+    # Check retained text, not the terminal width at the moment it was printed.
+    history = shells.run("capture-pane", "-J", "-S", "-", "-p", "-t", first_terminal)
+    assert "REFRESH_MARKER_" + token in history, f"refresh lost shell history: {history!r}"
+    assert identities == user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
+    # The replacement attached through a fresh grouped session; the old one died
+    # with its client, and the external session's status line stayed as set.
+    assert len(grouped_sessions(source)) == 1 and grouped_sessions(source) != [grouped]
+    assert source.run("show-option", "-t", "=external:", "-v", "status") == "on"
     assert external_pid == source.run("display-message", "-p", "-t", "=external:", "#{pane_pid}")
     assert saved(library).state["workspaces"] == layout, "refresh changed the saved arrangement"
     assert selected(client, library) == "Alpha", "replacement adopted another window's selection"
@@ -366,6 +382,9 @@ def exercise(resources: FixtureResources) -> None:
     wait(peer, lambda: peer.process.poll() is not None, "second viewer did not exit")
     assert shell_pid == shells.run("display-message", "-p", "-t", first_terminal, "#{pane_pid}")
     assert external_pid == source.run("display-message", "-p", "-t", "=external:", "#{pane_pid}")
+    # With every viewer gone, no grouped session lingers on the user's server.
+    wait(client, lambda: not grouped_sessions(source), "a grouped attach session lingered")
+    assert identities == user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     print(
         "PASS: refresh confirmation and cancellation, invalid keymap reported without teardown, "
         "single replacement with a reloaded keymap and theme, preserved shells, attachments, "

@@ -111,7 +111,7 @@ class TerminalTests(unittest.TestCase):
             self.curses.setupterm.side_effect = None
             for colors, pairs in ((0, 0), (7, 64), (8, 4)):
                 self.curses.tigetnum.side_effect = {"colors": colors, "pairs": pairs}.__getitem__
-                with self.assertRaisesRegex(RuntimeError, "at least 8 colors and 5 pairs"):
+                with self.assertRaisesRegex(RuntimeError, "at least 8 colors and 6 pairs"):
                     preflight.check_terminal()
             self.curses.tigetnum.side_effect = lambda name: {"colors": 8, "pairs": 64}[name]
             preflight.check_terminal()  # Existing eight-color fallback remains supported.

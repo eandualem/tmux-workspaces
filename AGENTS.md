@@ -12,8 +12,8 @@ untracked. Development orchestration is optional; it is not a product dependency
 ## Product contract
 
 - Workspaces group terminals by purpose. User-named tabs own complete split layouts.
-- New tabs have neutral random names and open empty, offering a normal interactive
-  shell or an existing session in the pane itself; splits are shells.
+- New tabs have neutral random names. New tabs and splits open empty, offering a
+  normal interactive shell or an existing session in the pane itself.
 - Existing tmux sessions attach optionally. Attachment never renames a tab.
 - Persist grouping, names, split arrangements and offline attachment references.
 - Support keyboard and mouse operation. Describe implemented capabilities accurately.

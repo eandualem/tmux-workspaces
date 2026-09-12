@@ -28,6 +28,67 @@ compatibility entry points. Each scenario can also run as its module under
 `tests.integration`. Failures include the predicate that timed out; waits use a
 monotonic deadline rather than assuming a fixed startup time.
 
+Synthetic mouse gestures queue their press/release reports together; double-clicks
+do not pause to drain output between taps. Menu targets must repeat at the same
+row, column and pane offset before a click. Existing bounded menu-opening retries
+print `RETRY:` with the control and attempt number, remeasure their target and fail
+when exhausted; a successful run with retries is not evidence of a retry-free run.
+Prefix cancellation waits for the tmux client's key table, and routing scenarios
+prove their setup reached the starting shell before sending the measured input.
+Multi-viewer scenarios wait for the receiving viewer to display shared edits,
+not just for the database write; an open menu retains its opening snapshot.
+Immediate and burst navigation still send the gesture and command in one write,
+without waits or retries between them, and require each marker exactly once in
+only its intended shell. These checks reduce fixture timing assumptions; they do
+not guarantee success under arbitrary host starvation or prove native GUI paint.
+
+`smoke_attachment_readiness` deliberately delays ordinary attachment startup by
+half a second in a disposable runtime copy. It sends workspace switches and
+commands as one burst across two four-pane layouts, checks each command arrives
+exactly once in its intended shell, and verifies shell process identities survive.
+The viewer acknowledges an ordinary-shell shortcut only after its own pane TTY
+has attached to that shell; another viewer's client cannot satisfy readiness.
+An additional gated probe clicks a different pane while shell creation is being
+acknowledged, verifies the original attachment identity is unchanged, and checks
+that focus and subsequent typing follow the click without a stale warning.
+Unit checks cover the three-second deadline, stale/dead panes, failed action
+acknowledgements, and skipping offline external sessions and empty choosers.
+
+The real-tmux gutter tests shrink the window during nested layout construction,
+after a leaf has already been mapped. Recovery must retain the requested focus,
+route typing to its shell, and restore the saved proportions when the window
+grows, with every original shell process preserved.
+
+Inline rename smoke checks the terminal's visible caret coordinates after typing,
+arrow keys and mouse placement, and that the caret hides outside editing.
+Theme refresh smoke uses two viewers to verify that newly created and resized
+choosers retain their viewer's installed colors until a local theme application.
+
+`smoke_attachment_policy` verifies local and inherited auto-destroy policies
+attach directly without creating a dangerous group. Source shell PIDs, settings
+and bindings survive viewer close, and a remaining viewer keeps the source usable
+when its original client detaches. All clients and servers are disposable.
+
+`smoke_attachment_windows` starts a grouped helper on the source's current
+window, selects a different window only in that helper, then checks resize and
+tab navigation retain it without changing source selection, options, bindings,
+or shell process IDs. Window hints are local to the running viewer; reopening a
+closed viewer starts from the source's current window.
+`smoke_attachment_palette` seeds chooser RGB colors in a private tmux pane,
+respawns the real terminal startup path, and queries the pane's palette before
+its first attachment subprocess. Rendered markers in the owned outer PTY prove
+the RGB override is present before startup and cleared afterward; this also
+works with older tmux versions whose OSC 4 query cannot report extended slots.
+Individual queries followed by device-status replies accept both indexed and
+indexless color replies and verify an unowned color slot remains unchanged.
+
+The keyboard-menu suite distinguishes tab switching from pane focus and explicit
+focus/restore layout. It checks the exact active leaf in four-pane layouts at
+160×38 and 72×16, including scrolling menus. Unit checks cover effective custom
+and disabled shortcut hints and mouse hit targets after short/narrow scrolling.
+These are navigation and targeting checks; owner visual acceptance and the
+separate performance-budget procedure are not inferred from them.
+
 On Debian/Ubuntu, install terminal test prerequisites with:
 
 ```sh

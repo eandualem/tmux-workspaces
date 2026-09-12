@@ -25,7 +25,7 @@ an exact reopen command. Refresh uses a fresh viewer interpreter and picks up
 already-installed Python dependency changes; it does not install them. Changes to
 the interpreter or launcher installation still need reopening with the intended
 launcher. See [refresh scope and recovery](REFRESH.md).
-Do not close its tabs to upgrade: **Exit viewer** preserves shells and programs;
+Do not close its tabs to upgrade: **Configure… → Detach** preserves shells and programs;
 closing a pane or tab ends that pane/tab's ordinary shells. Existing views can also
 remain open alongside the new window; they share arrangements and shells.
 
@@ -34,8 +34,8 @@ remain open alongside the new window; they share arrangements and shells.
 The shipped map follows Ghostty's usual keys, with the actions applied to saved workspaces:
 
 - **Command-T**: new tab, opening as a chooser for an ordinary shell or a session.
-- **Command-D**: split right, with a vertical divider.
-- **Command-Shift-D**: split below, with a horizontal divider.
+- **Command-D**: split right, with a vertical divider; the new pane opens as a chooser.
+- **Command-Shift-D**: split below, with a horizontal divider; the new pane opens as a chooser.
 - **Command-[ / Command-]**: previous / next pane.
 - **Command-Shift-[ / Command-Shift-]**: previous / next tab.
 - **Command-1 … Command-9**: select tab 1 … 9 in the current workspace.
@@ -56,9 +56,32 @@ The shipped map follows Ghostty's usual keys, with the actions applied to saved 
 
 Out-of-range numbered shortcuts do nothing. New workspaces start empty; use
 Command-T for their first tab. Attachment never renames the tab or stops its
-parked ordinary shell. **Tab actions… → Return pane to shell** brings that shell back.
-Command-C/V, font-size, app preferences and normal shell Control shortcuts retain
-their usual behavior. Click **Shortcuts…** for the active profile's controls.
+parked ordinary shell. **Return pane to shell** in the tab menu brings that shell back.
+Command-C copies the viewer selection; Command-V, font-size, app preferences and
+normal shell Control shortcuts retain their usual behavior. Choose
+**Configure… → View shortcuts…** for the active profile's controls.
+
+## Selecting and copying terminal text
+
+Drag within a content pane to select text. Releasing the mouse keeps the
+highlight without copying. Double-click selects a word; triple-click selects a
+line. This works independently of whether the attached application requests
+mouse events or uses an alternate screen. A selection stays within its pane,
+and background output does not clear it.
+
+Press **Command-C** in a newly opened dedicated `./ghostty` window, or press the
+viewer prefix (default **Ctrl-g**), release it, then **y** to copy. The highlight
+remains after copying. **Escape** or a click outside the selection clears it;
+clicking elsewhere in the same pane also returns to the live terminal. Copy with
+no viewer selection does nothing. A resize or layout change may clear the
+selection; select again after the pane has settled.
+
+The portable shortcut uses tmux's clipboard output (OSC52), so the terminal must
+allow clipboard writes. Ordinary `./run` windows keep their terminal's existing
+Command-C binding; use Ctrl-g, y there. Customize **Copy selection** through
+**Configure… → Edit shortcuts…**. Dedicated terminal bindings are loaded when
+that window opens, so reopen `./ghostty` to pick up the new Command-C mapping.
+Your normal Command-V paste binding remains available.
 
 ## Right-click
 
@@ -70,7 +93,7 @@ in place. Enter saves and Escape cancels; the existing rename shortcuts still
 open their usual form. The + beside the workspace name still creates a tab.
 See the [inline rename guide](INLINE_RENAME.md).
 
-Right-click the workspace header or a numbered workspace button for that workspace's options.
+Right-click the workspace heading, or click its ▾, for that workspace's options.
 The rename field starts selected: typing replaces it, Enter keeps it, and Ctrl-U
 clears it. Use a secondary/two-finger click; holding Shift may make Ghostty handle
 the click itself instead of forwarding it to the viewer.
@@ -78,10 +101,10 @@ the click itself instead of forwarding it to the viewer.
 The **+** beside the workspace name creates a tab. The wider numbered buttons at
 the bottom switch workspaces; arrows reveal additional workspaces when needed.
 The workspace name is a label, with its options available by right-click or the
-**Workspaces…** button. To attach a session, select its destination pane and click
-the navigation panel's **Attach session…** button, separate from **Focus**. Pane borders stay
-plain. The navigation panel button,
-**Tab actions… → Attach session** and the attachment shortcut work on all supported versions.
+**▾** beside its name. To attach a session, select its destination pane and open
+the tab menu's **Attach session** (the ⋯ on the selected tab, or a right-click);
+splits, focus and pane cycling live in the same menu. Panes are set apart by a gap in the panel's color, not by ruled borders.
+The tab menu's **Attach session** and the attachment shortcut work on all supported versions.
 
 ## Other terminals and the existing launcher
 
@@ -97,7 +120,7 @@ remain available in every profile unless overridden by a user keymap:
 
 If an existing keymap uses **f** for another action or as its prefix, that setting
 takes precedence over the new refresh default. **Refresh viewer** remains available
-in **Shortcuts…**, even without a key binding.
+in **Configure… → Refresh viewer…**, even without a key binding.
 
 The Command keys require the Ghostty profile; opening `./run` inside a normal
 Ghostty window keeps Ghostty's native Command bindings. Installing the TPM plugin
@@ -116,8 +139,8 @@ explains config files and per-launch overrides.
 
 Navigation-panel clicks also wait for the selected tab or workspace to take focus
 before following text is released. Rapid clicks and double-click renaming use the
-same ordering; content clicks, selection, scrolling and right-clicks retain their
-tmux behavior. The PTY suites check immediate typing and burst navigation in
+same ordering. Content clicks, scrolling and right-clicks reach the nested terminal;
+drag and double/triple-click selection belong to the viewer. The PTY suites check immediate typing and burst navigation in
 one- and four-pane arrangements, including unique delivery to the intended shell.
 
 ```sh
@@ -144,7 +167,7 @@ passes the quoted Python executable and arguments without that extra word.
 shows the wrapper. Configuration validation alone does not execute the command;
 the regression checks now include that execution step.
 
-The same test also caught an unsuccessful exit status on **Exit viewer**. Normal
+The same test also caught an unsuccessful exit status on **Detach** (now under **Configure…**). Normal
 exit now detaches the private tmux client before shutting its viewer server down,
 so Ghostty receives success. Unexpected server failures still return an error.
 
@@ -160,7 +183,7 @@ does not use `open -F`, which can discard native saved state.
 
 ## Keyboard coverage and customization
 
-The dedicated terminal profile has 17 core action bindings plus numbered selection
+The dedicated terminal profile has 18 core action bindings plus numbered selection
 for tabs and workspaces 1–9. Navigation, creating tabs/workspaces, splitting,
 renaming, focus and closing are available by shortcut.
 
@@ -179,42 +202,25 @@ and transfer. Workspace options provide **Delete empty workspace**; a workspace
 with tabs cannot be deleted. These commands need no individual shortcut.
 Menu input belongs to the navigation panel while the menu has focus.
 
-## Editing shortcuts in the viewer
+## Viewing and editing shortcuts
 
-Open **Shortcuts** from the sidebar and choose **Edit shortcuts…**. Each action
-appears twice, once for its prefix key and once for its terminal shortcut, with
-the keys it currently holds. **Enter** types a key, **c** captures one, **d**
-restores the shipped keys for that row, **u** unbinds it, **a** applies and
-**Escape** leaves without changing anything. A row a save would write is marked.
+**Configure… → View shortcuts…** opens a roomy, read-only reference to the keys
+active in this viewer, grouped by tabs, panes, workspaces and viewer actions.
+It includes custom aliases and distinguishes prefix keys from keys that require
+a terminal profile. Scroll with arrows, PageUp/PageDown or the wheel; Escape,
+F10 or Close returns to the workspace. The listed actions cannot be executed
+from the reference, and unsaved or not-yet-refreshed keymap changes do not alter it.
 
-**Capture works for prefix keys only.** Those reach the viewer as ordinary keys,
-so pressing one names it. A terminal shortcut never arrives as a key: the
-terminal converts it to a private sequence first, so pressing the combination
-could only report the mapping already in force. The editor says so and asks you
-to type the trigger instead, using the `direct` grammar below.
+**Configure… → Edit shortcuts…** opens the [built-in editor](JSON_SETTINGS.md)
+with multiline JSON editing, paste, undo/redo and validated Save. It edits the
+selected keymap file and confirms before rewriting comments or hand formatting.
+Invalid JSON, conflicting keys, unsafe targets and concurrent edits keep the
+draft open without replacing working settings. `--no-keymap` disables file
+editing, while the shortcut reference remains available.
 
-Taking a key that is already in use is always asked first, naming the action
-that holds it. Answering yes removes it from that action; answering no keeps
-both as they were. The key is released wherever it actually lives, which is not
-always the row you are editing: `ctrl+t` and `C-t` are the same physical key
-spelled two ways, and only one of those spellings is in your file. The prefix key
-itself and Escape are reserved and cannot be reassigned.
-
-Saving requires a file to save to. That is the file the launch selected: the one
-named by `--keymap PATH` or `TMUX_WORKSPACES_KEYMAP`, or otherwise
-`~/.config/tmux-workspaces/keymap.toml`, which the first save creates. A window
-opened through `./ghostty` runs a snapshot of that file's keys and still edits
-the file itself. Only a viewer started with `--no-keymap` has nowhere to save,
-and it says so rather than inventing a path. Saving rewrites the file from the
-effective map, so comments and hand formatting are not preserved — the editor
-warns before you save when the file has any. Concurrent edits, read-only files,
-symbolic links and unwritable directories are all refused with the reason, and
-your shortcuts stay as they are.
-
-**Nothing reloads.** A save changes the file. Prefix keys apply to viewers
-opened afterwards, and terminal shortcuts apply to a fresh `./ghostty` instance,
-for the reasons in the last paragraph of the next section. The editor states
-this when it saves rather than implying the new keys are already live.
+Save offers **Refresh viewer** to apply the new bindings while preserving shells.
+Dedicated Ghostty profiles need a fresh instance for native terminal keys; the
+refresh screen provides the command. The per-row shortcut editor is retired.
 
 ## User keymaps
 
@@ -321,10 +327,12 @@ Shortcuts and CLI help are generated from it, including aliases and numbered
 selection; long help rows wrap and scroll. `--print-keymap toml` emits the complete
 effective map, and `--print-keymap ghostty` emits exact triggers and CSI codes.
 Diagnostic printing requires no terminal or tmux server and creates no library.
-After editing configuration, launch a fresh viewer. New surfaces in an existing
-Ghostty instance retain that instance's map so their help matches its terminal
-profile; start a fresh `./ghostty` instance to apply a new map. No hot reload is
-performed. Existing shells and saved arrangements remain independent of keymaps.
+After editing configuration, use **Configure… → Refresh viewer…** or launch a
+fresh viewer. The built-in editor offers that refresh flow after Save; changes
+made in an external editor can use the same Configure entry. A dedicated Ghostty
+instance freezes its native profile, so start a fresh `./ghostty` instance to
+apply native-key changes. Automatic hot reload is not performed. Existing shells
+and saved arrangements remain independent of keymaps.
 
 User keymaps and keyboard menu navigation are separate features. The keymap
 feature landed first; menu navigation supplies the previously missing keyboard

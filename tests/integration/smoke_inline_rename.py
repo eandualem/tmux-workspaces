@@ -37,7 +37,7 @@ def _exercise(resources: FixtureResources) -> None:
     shells = Tmux(socket_path(library, "terminals"))
     wait(client, lambda: client.manifest(library), "inline viewer did not start")
     viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
-    wait(client, lambda: "Layouts saved" in sidebar(viewer), "sidebar did not draw")
+    wait(client, lambda: "Configure…" in sidebar(viewer), "sidebar did not draw")
     original = saved(library)
     first_id, first_name = original.tab["id"], original.tab["name"]
     terminal = "=" + Shells.name(original.pane) + ":"
@@ -50,16 +50,13 @@ def _exercise(resources: FixtureResources) -> None:
     def pane_top():
         return int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
 
-    def tap(row, column, top=None):
+    def tap(row, column, top=None, count=1):
         # The offset is sampled per gesture, never between the taps of one: a tmux
         # query there can delay the second tap past the viewer's 450ms double-click
         # window and turn a double click into two single clicks.
         if top is None:
             top = pane_top()
-        os.write(client.master, f"\x1b[<0;{column + 1};{row + top + 1}M".encode())
-        client.pump(0.035)
-        os.write(client.master, f"\x1b[<0;{column + 1};{row + top + 1}m".encode())
-        client.pump(0.035)
+        client.click(column + 1, row + top + 1, count=count)
 
     def double(name):
         row = tab_row(viewer, name)
@@ -67,11 +64,31 @@ def _exercise(resources: FixtureResources) -> None:
         # Freshly sampled for this gesture, after the row and column lookups, so
         # both taps travel with no tmux round trip between them.
         top = pane_top()
-        tap(row, column, top)
-        tap(row, column, top)
+        tap(row, column, top, count=2)
 
     def editing():
         return "Esc cancel" in sidebar(viewer)
+
+    def caret(row, column):
+        expected = f"{column},{row},1"
+        wait(
+            client,
+            lambda: (
+                viewer.run(
+                    "display-message", "-p", "-t", "%0", "#{cursor_x},#{cursor_y},#{cursor_flag}"
+                )
+                == expected
+            ),
+            f"inline caret did not follow its field to {expected}",
+            timeout=3,
+        )
+
+    def hidden_caret():
+        wait(
+            client,
+            lambda: viewer.run("display-message", "-p", "-t", "%0", "#{cursor_flag}") == "0",
+            "sidebar caret remained visible outside an editor",
+        )
 
     def begin(name):
         client.pump(0.5)
@@ -83,14 +100,24 @@ def _exercise(resources: FixtureResources) -> None:
     def begin_workspace():
         client.pump(0.5)
         top = pane_top()
-        tap(0, 6, top)
-        tap(0, 6, top)
+        # The heading is the first row inside the panel's outline.
+        tap(1, 6, top, count=2)
         wait(client, editing, "workspace header double-click did not open inline editor")
         assert "Type a name" not in sidebar(viewer)
         assert viewer.run("display-message", "-p", "-t", "viewer:", "#{pane_id}") == "%0"
 
+    hidden_caret()
     begin_workspace()
     client.type("Development")
+    workspace_column = sidebar(viewer).splitlines()[1].index("Development")
+    caret(1, workspace_column + len("Development"))
+    client.type("\x1bOD")
+    caret(1, workspace_column + len("Development") - 1)
+    client.pump(0.5)
+    tap(1, workspace_column + 3)
+    caret(1, workspace_column + 3)
+    client.type("\x1bOC" * (len("Development") - 3))
+    caret(1, workspace_column + len("Development"))
     assert saved(library).space["name"] == original.space["name"]
     client.type("\r")
     wait(
@@ -100,16 +127,18 @@ def _exercise(resources: FixtureResources) -> None:
     )
     wait(
         client,
-        lambda: "Development" in sidebar(viewer).splitlines()[0],
+        lambda: "Development" in sidebar(viewer).splitlines()[1],
         "workspace header did not redraw",
     )
     assert saved(library).tab["name"] == first_name
     assert saved(library).tab["id"] == first_id
+    hidden_caret()
     begin_workspace()
     client.type("discard-workspace")
     client.type("\x1b")
     wait(client, lambda: not editing(), "workspace Escape did not cancel")
     assert saved(library).space["name"] == "Development"
+    hidden_caret()
 
     # The first click on an inactive tab selects it, with no accidental editor.
     key("new-tab")
@@ -120,8 +149,13 @@ def _exercise(resources: FixtureResources) -> None:
     assert not editing(), "double-clicking an inactive tab started editing"
     begin(first_name)
     client.type("inline-name")
+    row = tab_row(viewer, "inline-name")
+    column = sidebar(viewer).splitlines()[row].index("inline-name")
+    caret(row, column + len("inline-name"))
     assert saved(library).tab["name"] == first_name, "draft saved before Enter"
-    client.type("\x1bOD\x1b[3~X\r")  # Left, Delete, X, Enter in application keypad mode.
+    client.type("\x1bOD")
+    caret(row, column + len("inline-name") - 1)
+    client.type("\x1b[3~X\r")  # Delete, X, Enter in application keypad mode.
     wait(
         client,
         lambda: saved(library).tab["name"] == "inline-namX",
@@ -212,7 +246,7 @@ def _exercise(resources: FixtureResources) -> None:
     for workspace in (True, False):
         client.pump(0.5)
         name = "Immediate workspace" if workspace else "Immediate tab"
-        row = 0 if workspace else tab_row(viewer, "after-resize-ok")
+        row = 1 if workspace else tab_row(viewer, "after-resize-ok")
         column = 7 if workspace else sidebar(viewer).splitlines()[row].index("after-resize-ok") + 2
         top = pane_top()
         click = f"\x1b[<0;{column};{row + top + 1}M\x1b[<0;{column};{row + top + 1}m"

@@ -31,10 +31,15 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "mode",
         nargs="?",
-        choices=["_window", "_sidebar", "_leaf", "_action"],
+        choices=["_window", "_sidebar", "_leaf", "_action", "_config-editor"],
         help=argparse.SUPPRESS,
     )
     adapters = result.add_mutually_exclusive_group()
+    result.add_argument(
+        "--config-kind", choices=["shortcuts", "colors", "reference"], help=argparse.SUPPRESS
+    )
+    result.add_argument("--config-path", type=Path, help=argparse.SUPPRESS)
+    result.add_argument("--config-result", type=Path, help=argparse.SUPPRESS)
     adapters.add_argument("--demo", action="store_true", help="use disposable demo shells")
     adapters.add_argument(
         "--backbone", action="store_true", help="enable the read-only local Backbone adapter"
@@ -79,6 +84,10 @@ def parser() -> argparse.ArgumentParser:
         "--theme", type=Path, help="viewer color TOML (overrides environment/default path)"
     )
     result.add_argument("--terminal-colors", type=int, help=argparse.SUPPRESS)
+    # A separator pane between stacked panes: one thin rule in this color.
+    result.add_argument("--rule", action="store_true", help=argparse.SUPPRESS)
+    result.add_argument("--vertical", action="store_true", help=argparse.SUPPRESS)
+    result.add_argument("--color", default="default", help=argparse.SUPPRESS)
     # A refresh re-reads the selected file before it replaces the viewer, so the
     # running instance validates exactly what the launcher will load next.
     result.add_argument("--keymap-source", type=Path, help=argparse.SUPPRESS)
@@ -99,9 +108,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--instance-dir", type=Path, help=argparse.SUPPRESS)
     result.add_argument("--agent", default="", help=argparse.SUPPRESS)
     result.add_argument("--terminal", default="", help=argparse.SUPPRESS)
+    result.add_argument("--attachment-window", default="", help=argparse.SUPPRESS)
     # An empty pane: a chooser for that exact tab and leaf, offering a shell or
     # the same session roster the sidebar shows.
     result.add_argument("--chooser", action="store_true", help=argparse.SUPPRESS)
+    result.add_argument("--chooser-theme", help=argparse.SUPPRESS)
     result.add_argument("--tab", default="", help=argparse.SUPPRESS)
     result.add_argument("--leaf", default="", help=argparse.SUPPRESS)
     result.add_argument("--shell-socket", help=argparse.SUPPRESS)
@@ -179,6 +190,16 @@ def keymap_help(keymap) -> str:
 def main() -> int:
     args = parser().parse_args()
     try:
+        if args.mode == "_config-editor":
+            from .config_editor import editor_main
+
+            if not (args.config_kind and args.config_path and args.config_result):
+                raise ValueError("Settings editor requires kind, path and result")
+            if args.config_kind == "reference":
+                from .shortcut_reference import reference_main
+
+                return reference_main(args)
+            return editor_main(args)
         if args.mode == "_action":
             from .controls import send_action
 
@@ -189,6 +210,10 @@ def main() -> int:
                 from .chooser import chooser_main
 
                 return chooser_main(args)
+            if args.rule:
+                from .attachments import rule_main
+
+                return rule_main(args)
             from .attachments import leaf_main
 
             return leaf_main(args)

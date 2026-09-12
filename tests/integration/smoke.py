@@ -11,7 +11,16 @@ from tmux_workspaces.model import leaves
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
 
-from .support import FixtureResources, click_attach, click_button, open_terminal, saved, wait
+from .support import (
+    OUTLINE,
+    FixtureResources,
+    click_attach,
+    click_button,
+    content_panes,
+    open_terminal,
+    saved,
+    wait,
+)
 
 
 def exercise(directory: Path):
@@ -29,10 +38,17 @@ def _exercise(resources: FixtureResources):
     viewer, source = Tmux(runtime["viewer_socket"]), Tmux(runtime["source_socket"])
 
     def sidebar():
-        return viewer.run("capture-pane", "-p", "-t", "%0")
+        return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
 
     def panes():
-        return viewer.run("list-panes", "-F", "#{pane_id} #{@viewer_agent}").splitlines()
+        # The sidebar and the content panes; the gutters padding them are not counted.
+        return [
+            line
+            for line in viewer.run(
+                "list-panes", "-F", "#{pane_id} #{?@viewer_gutter,1,0} #{@viewer_agent}"
+            ).splitlines()
+            if line.split()[1] == "0"
+        ]
 
     def button(text):
         click_button(client, viewer, text)
@@ -45,13 +61,36 @@ def _exercise(resources: FixtureResources):
             int(shells.run("display-message", "-p", "-t", target, "#{session_attached}") or "0") > 0
         )
 
-    wait(client, lambda: "Layouts saved" in sidebar(), "sidebar failed to initialize")
+    wait(client, lambda: "Configure…" in sidebar(), "sidebar failed to initialize")
     initial = saved(library)
     assert len(initial.space["tabs"]) == 1
     assert initial.pane["agent"] is None
-    assert "manager" not in sidebar() and "builder" not in sidebar()
     terminal = "=" + Shells.name(initial.pane) + ":"
     wait(client, lambda: attached(terminal), "ordinary shell not attached")
+    # No attachment yet: the tab list names no agent. The roster below it does,
+    # one row per active demo agent with its state's symbol; the offline one
+    # takes no row.
+    panel = sidebar()
+    tabs_part = panel.split("Agents", 1)[0]
+    assert "manager" not in tabs_part and "builder" not in tabs_part, panel
+    # Rows are alphabetical; a short terminal shows the first few and counts
+    # the rest on the label row.
+    expected = ["○ builder", "▶ manager", "? researcher", "! reviewer", "○ tester"]
+    shown = [line for line in expected if line in panel]
+    assert shown == expected[: len(shown)] and len(shown) >= 2, panel
+    if len(shown) < len(expected):
+        label = next(line for line in panel.splitlines() if "Agents" in line)
+        assert str(len(expected)) in label and "↓" in label, panel
+    assert "notes" not in panel, "an offline agent took a roster row\n" + panel
+    # The roster hides on request, the choice is saved, and it comes back.
+    button("[x] Show agent status")
+    wait(client, lambda: saved(library).state.get("show_agents") is False, "toggle not saved")
+    button("‹ Back")
+    wait(client, lambda: "Agents" not in sidebar() and "manager" not in sidebar(), "roster shown")
+    button("[ ] Show agent status")
+    wait(client, lambda: saved(library).state.get("show_agents") is True, "toggle not saved")
+    button("‹ Back")
+    wait(client, lambda: "▶ manager" in sidebar(), "roster did not return")
     client.type(
         "export WSV_CHECK=still_here; cd /tmp; "
         'printf \'STATE:%s:%s:%s\\n\' "$WSV_CHECK" "${TMUX-unset}" "${TMUX_PANE-unset}"\r'
@@ -97,16 +136,21 @@ def _exercise(resources: FixtureResources):
     button("Return pane to shell")
     wait(client, lambda: attached(terminal), "return to original shell failed")
     assert shell_pid == shells.run("display-message", "-p", "-t", terminal, "#{pane_pid}")
-    # Click and keyboard splits create terminals inside the same tab.
+    # Click and keyboard splits open choosers inside the same tab; each is
+    # given a terminal here, which starts in the neighbour's directory.
     button("Split →")
     wait(client, lambda: len(panes()) == 3, "split-right failed")
     assert saved(library).pane["agent"] is None
+    assert saved(library).pane.get("empty") is True, "a split opened a shell unasked"
     assert Path(saved(library).pane["cwd"]).resolve() == Path("/tmp").resolve()
+    open_terminal(client, viewer, library)
     key('"')
     wait(client, lambda: len(panes()) == 4, "split-below shortcut failed")
+    open_terminal(client, viewer, library)
     key("o")
     key("h")
     wait(client, lambda: len(panes()) == 5, "four-pane layout failed")
+    open_terminal(client, viewer, library)
     assert len(saved(library).space["tabs"]) == 2
     assert [p["agent"] for p in leaves(saved(library).tab["tree"])] == [None] * 4
     target_leaf = leaves(saved(library).tab["tree"])[0]["id"]
@@ -146,7 +190,7 @@ def _exercise(resources: FixtureResources):
         "mouse/shortcuts, resize and scrollback",
         flush=True,
     )
-    button("Workspaces…")
+    button("▾")
     button("New workspace")
     client.type("Research")
     button("Save name")
@@ -197,7 +241,10 @@ def _exercise(resources: FixtureResources):
     button("notes")
     wait(
         client,
-        lambda: "session offline" in viewer.run("capture-pane", "-p", "-t", "viewer:.1"),
+        # The first content pane after the sidebar; gutters are skipped.
+        lambda: (
+            "session offline" in viewer.run("capture-pane", "-p", "-t", content_panes(viewer)[1])
+        ),
         "offline view missing",
     )
     assert saved(library).tab["name"] == "Notebook"

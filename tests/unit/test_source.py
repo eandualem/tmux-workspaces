@@ -55,6 +55,57 @@ class SourceTests(unittest.TestCase):
             self.assertEqual(agents["worker"]["state"], "busy")
             self.assertIn("stale", error)
 
+    def test_the_roster_comes_from_state_reporting_providers_and_says_when_stale(self):
+        """The sidebar's agent roster: names and states from the provider that
+        reports states, offline ones included for the count, never the plain
+        tmux discovery; a failed read marks it stale rather than pretending."""
+        process = subprocess.CompletedProcess([], 0, stdout="ordinary shell\nworker\n", stderr="")
+        items = [
+            {"name": "worker", "state": "busy"},
+            {"name": "parked", "state": "offline"},
+            {"name": "ignored", "configured": False},
+        ]
+        opener = Mock()
+        opener.open.side_effect = [
+            io.BytesIO(json.dumps({"items": items}).encode()),
+            urllib.error.URLError("unavailable"),
+        ]
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("tmux_workspaces.adapters.tmux.subprocess.run", return_value=process),
+            patch(
+                "tmux_workspaces.adapters.backbone.urllib.request.build_opener", return_value=opener
+            ),
+            patch.dict(os.environ, {"BACKBONE_API_KEY": "test-only-key"}),
+        ):
+            plain = make_source("/private.sock")
+            plain.refresh()
+            self.assertIsNone(plain.roster())
+            source = make_source("/private.sock", backbone_data_dir=Path(directory))
+            self.assertEqual(source.roster().sessions, {})
+            source.refresh()
+            roster = source.roster()
+            self.assertEqual(
+                {name: item["state"] for name, item in roster.sessions.items()},
+                {"worker": "busy", "parked": "offline"},
+            )
+            self.assertFalse(roster.stale)
+            self.assertEqual(roster.error, "")
+            self.assertIsNotNone(roster.observed_at)
+            source.refresh()
+            roster = source.roster()
+            self.assertTrue(roster.stale)
+            self.assertIn("Backbone unavailable", roster.error)
+            # The discovery list still answers for attachment; the roster does not.
+            self.assertIn("ordinary shell", source.snapshot()[0])
+            self.assertNotIn("ordinary shell", roster.sessions)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "agents.json"
+            path.write_text(json.dumps([{"name": "worker", "state": "idle"}]))
+            demo = make_source("/unused/demo.sock", demo=path)
+            demo.refresh()
+            self.assertEqual(demo.roster().sessions["worker"]["state"], "idle")
+
     def test_default_reads_only_the_explicit_tmux_socket(self):
         process = subprocess.CompletedProcess(
             [], 0, stdout="ordinary shell\n=leading\ncafé\nunsafe:window\n", stderr=""
@@ -86,7 +137,16 @@ class SourceTests(unittest.TestCase):
         self.assertTrue(all(item["origin"] == "tmux" for item in sessions.values()))
         self.assertEqual(
             run.call_args.args[0],
-            ["tmux", "-S", source.socket, "list-sessions", "-F", "#{session_name}"],
+            [
+                "tmux",
+                "-S",
+                source.socket,
+                "list-sessions",
+                "-f",
+                "#{!=:#{@tmux_workspaces_attachment},1}",
+                "-F",
+                "#{session_name}",
+            ],
         )
         self.assertNotIn("BACKBONE_API_KEY", run.call_args.kwargs["env"])
 

@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from tests.integration.support import (
+    OUTLINE,
     Client,
     FixtureResources,
     click_button,
@@ -76,7 +77,7 @@ def _exercise(resources: FixtureResources) -> None:
         viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
         wait(
             client,
-            lambda: "Layouts saved" in viewer.run("capture-pane", "-p", "-t", "%0"),
+            lambda: "Configure…" in viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
             "launched sidebar did not initialize",
         )
         return viewer
@@ -129,9 +130,11 @@ def _exercise(resources: FixtureResources) -> None:
     client.type(direct_sequence("split-right"))
     wait(
         client,
-        lambda: len(leaves(saved(library).tab["tree"])) == 2 and content_ready(viewer),
+        lambda: len(leaves(saved(library).tab["tree"])) == 2,
         "direct split failed after the Ghostty shell wrapper",
     )
+    open_terminal(client, viewer, library)
+    wait(client, lambda: content_ready(viewer), "the split's chosen shell did not attach")
     client.type(direct_sequence("rename-tab") + "Launch checked\r")
     wait(
         client,

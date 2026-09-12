@@ -53,6 +53,11 @@ def validate_state(state: object, *, navigation: bool = True, legacy: bool = Fal
     require(
         isinstance(spaces, list) and bool(spaces), "layout.workspaces", "expected a nonempty list"
     )
+    require(
+        type(state.get("show_agents", False)) is bool,
+        "layout.show_agents",
+        "expected a boolean",
+    )
     identities = set()
 
     def identify(item, location):
@@ -98,6 +103,12 @@ def validate_state(state: object, *, navigation: bool = True, legacy: bool = Fal
         where = f"workspaces[{i}]"
         space_ids.append(identify(space, where))
         name(space, where)
+        icon = space.get("icon")
+        require(
+            icon is None or (isinstance(icon, str) and 1 <= len(icon) <= 2 and icon.isprintable()),
+            where + ".icon",
+            "expected a printable icon of one or two characters",
+        )
         tabs = space.get("tabs")
         require(isinstance(tabs, list), where + ".tabs", "expected a list")
         tab_ids = []

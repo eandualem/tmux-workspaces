@@ -19,6 +19,11 @@ class Entry(NamedTuple):
     action: Callable
 
 
+# A separator row inside a menu: drawn as a rule, never activated, skipped
+# by keyboard movement.
+RULE = "\x00rule"
+
+
 class Selection:
     """Track the active row of an open menu across rebuilds of its options.
 
@@ -102,6 +107,16 @@ class Selection:
         elif self.index > last:
             self.offset = self.index - available + 1
         self.follow_view = False
+        if self.entries[self.index].label == RULE:
+            selectable = [
+                i
+                for i in range(self.offset, min(self.offset + available, len(self.entries)))
+                if self.entries[i].label != RULE
+            ]
+            if not selectable:
+                self.active = self.displayed = None
+                return self.entries[self.offset : self.offset + available]
+            self.index = min(selectable, key=lambda i: abs(i - self.index))
         if not self.stale:
             self.active = self.entries[self.index].key
         if drawn and not self.stale:
@@ -113,6 +128,14 @@ class Selection:
             self.index, self.active, self.stale = 0, None, False
             return
         self.index = min(max(0, self.index + step), len(self.entries) - 1)
+        if self.entries[self.index].label == RULE:
+            # A rule is not a row to land on: continue in the same direction,
+            # or back the way we came at either end.
+            nudge = 1 if step >= 0 else -1
+            candidate = self.index + nudge
+            if not 0 <= candidate < len(self.entries):
+                candidate = self.index - nudge
+            self.index = max(0, min(candidate, len(self.entries) - 1))
         # Moving is a deliberate choice among the rows currently loaded, and the
         # frame drawn next shows it before any Enter can be read.
         self.active = self.displayed = self.entries[self.index].key

@@ -11,7 +11,17 @@ import subprocess
 import sys
 
 from tests.integration.ssh_support import SshHost
-from tests.integration.support import FixtureResources, click_button, saved, sidebar, tab_row, wait
+from tests.integration.support import (
+    FixtureResources,
+    click_button,
+    content_panes,
+    open_terminal,
+    saved,
+    session_in_use,
+    sidebar,
+    tab_row,
+    wait,
+)
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.model import leaves
@@ -54,9 +64,7 @@ def exercise() -> None:
                     raise AssertionError(str(error) + "\n" + host.diagnostics()) from error
                 path = manifest()
                 viewer = Tmux(json.loads(path.read_text())["viewer_socket"])
-                wait(
-                    client, lambda: "Layouts saved" in sidebar(viewer), "SSH UI did not initialize"
-                )
+                wait(client, lambda: "Configure…" in sidebar(viewer), "SSH UI did not initialize")
                 connection = host.connection()
                 assert connection["connection"].split()[::2] == ["127.0.0.1", "127.0.0.1"]
                 assert connection["tty"].startswith("/dev/"), "SSH did not allocate a remote PTY"
@@ -109,8 +117,9 @@ def exercise() -> None:
                 wait(
                     client,
                     lambda count=count: len(leaves(saved(library).tab["tree"])) == count,
-                    "SSH split did not create the expected ordinary pane",
+                    "SSH split did not create the expected pane",
                 )
+                open_terminal(client, viewer, library)
             four_target = "=" + Shells.name(saved(library).pane) + ":"
             command(four_target, "SSH_FOUR_READY")
 
@@ -151,9 +160,7 @@ def exercise() -> None:
                 )
                 wait(
                     client,
-                    lambda pane_count=pane_count: (
-                        len(viewer.run("list-panes").splitlines()) == pane_count
-                    ),
+                    lambda pane_count=pane_count: len(content_panes(viewer)) == pane_count,
                     "SSH resize lost focus fallback or the saved four-pane arrangement",
                 )
 
@@ -209,8 +216,7 @@ def exercise() -> None:
                 client,
                 lambda: (
                     saved(library).pane.get("agent") == "sample"
-                    and source.run("display-message", "-p", "-t", "=sample:", "#{session_attached}")
-                    == "1"
+                    and session_in_use(source, "=sample:")
                 ),
                 "SSH mouse attachment failed",
             )
@@ -247,10 +253,7 @@ def exercise() -> None:
             )
             wait(
                 client,
-                lambda: (
-                    source.run("display-message", "-p", "-t", "=sample:", "#{session_attached}")
-                    == "1"
-                ),
+                lambda: session_in_use(source, "=sample:"),
                 "SSH reconnect did not restore the saved external association",
             )
             assert shells.run(
@@ -277,13 +280,25 @@ def exercise() -> None:
             )
             untouched_pid = source.run("display-message", "-p", "-t", "=untouched:", "#{pane_pid}")
             attached_leaf = saved(library).pane["id"]
-            attached_pane = next(
-                line.split()[0]
-                for line in viewer.run(
-                    "list-panes", "-F", "#{pane_id} #{@viewer_leaf_id}"
-                ).splitlines()
-                if line.split()[-1] == attached_leaf
-            )
+            attached_pane = None
+
+            def attachment_is_drawn():
+                nonlocal attached_pane
+                attached_pane = next(
+                    (
+                        line.split()[0]
+                        for line in viewer.run(
+                            "list-panes", "-F", "#{pane_id} #{@viewer_leaf_id}"
+                        ).splitlines()
+                        if line.split()[-1] == attached_leaf
+                    ),
+                    None,
+                )
+                return attached_pane is not None
+
+            # Saved selection precedes display construction. Keep the exact leaf
+            # target, but wait for its actual pane before testing source loss.
+            wait(client, attachment_is_drawn, "SSH attachment pane was not drawn")
             source.run("kill-session", "-t", "=sample:")
             wait(
                 client,
@@ -302,10 +317,7 @@ def exercise() -> None:
             )
             wait(
                 client,
-                lambda: (
-                    source.run("display-message", "-p", "-t", "=sample:", "#{session_attached}")
-                    == "1"
-                ),
+                lambda: session_in_use(source, "=sample:"),
                 "SSH attachment did not reconnect after the disposable source returned",
             )
             assert (
