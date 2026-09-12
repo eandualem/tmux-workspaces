@@ -48,8 +48,21 @@ commands as one burst across two four-pane layouts, checks each command arrives
 exactly once in its intended shell, and verifies shell process identities survive.
 The viewer acknowledges an ordinary-shell shortcut only after its own pane TTY
 has attached to that shell; another viewer's client cannot satisfy readiness.
+An additional gated probe clicks a different pane while shell creation is being
+acknowledged, verifies the original attachment identity is unchanged, and checks
+that focus and subsequent typing follow the click without a stale warning.
 Unit checks cover the three-second deadline, stale/dead panes, failed action
 acknowledgements, and skipping offline external sessions and empty choosers.
+
+The real-tmux gutter tests shrink the window during nested layout construction,
+after a leaf has already been mapped. Recovery must retain the requested focus,
+route typing to its shell, and restore the saved proportions when the window
+grows, with every original shell process preserved.
+
+`smoke_attachment_policy` verifies local and inherited auto-destroy policies
+attach directly without creating a dangerous group. Source shell PIDs, settings
+and bindings survive viewer close, and a remaining viewer keeps the source usable
+when its original client detaches. All clients and servers are disposable.
 
 `smoke_attachment_windows` starts a grouped helper on the source's current
 window, selects a different window only in that helper, then checks resize and

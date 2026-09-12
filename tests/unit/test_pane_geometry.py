@@ -3,10 +3,11 @@
 import copy
 import os
 import shutil
+import sys
 import tempfile
 import time
 import unittest
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,6 +22,41 @@ def four_panes():
     for direction in ("right", "below", "right"):
         model.split(direction)
     return model.tab
+
+
+def failure_diagnostics(viewer, source):
+    """Report only these disposable servers; never replace the test failure."""
+
+    def report(tmux, *command):
+        try:
+            output = tmux.run(*command, timeout=1)
+        except Exception as error:
+            output = f"{type(error).__name__}: {error}"
+        print(f"geometry diagnostic {tmux.socket} {command!r}:\n{output}", file=sys.stderr)
+        return output
+
+    report(source, "display-message", "-p", "server_pid=#{pid}")
+    report(
+        source,
+        "list-sessions",
+        "-F",
+        "#{session_id} #{session_name} attached=#{session_attached} "
+        "destroy-unattached=#{destroy-unattached}",
+    )
+    report(source, "show-options", "-g")
+    report(source, "list-panes", "-a", "-F", "#{pane_id} pid=#{pane_pid} dead=#{pane_dead}")
+    panes = report(
+        viewer,
+        "list-panes",
+        "-a",
+        "-F",
+        "#{pane_id} pid=#{pane_pid} dead=#{pane_dead} exit=#{pane_dead_status} "
+        "command=#{pane_start_command}",
+    )
+    for line in panes.splitlines():
+        pane = line.split(maxsplit=1)[0] if line else ""
+        if pane.startswith("%") and pane[1:].isdigit():
+            report(viewer, "capture-pane", "-p", "-t", pane, "-S", "-50")
 
 
 @contextmanager
@@ -51,6 +87,11 @@ def fixture():
                     viewer.socket, source.socket, sidebar, shells.socket, str(root / "actions.sock")
                 )
                 yield display, viewer, source, shells
+            except BaseException:
+                # Reporting must not obscure the original assertion or error.
+                with suppress(Exception):
+                    failure_diagnostics(viewer, source)
+                raise
             finally:
                 for tmux in (viewer, source, shells):
                     tmux.run("kill-server", check=False)

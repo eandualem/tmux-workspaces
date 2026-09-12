@@ -3,6 +3,7 @@ query that makes them possible."""
 
 from __future__ import annotations
 
+import copy
 import os
 import shutil
 import subprocess
@@ -217,6 +218,96 @@ class GutterLayoutTests(unittest.TestCase):
         self.assertEqual(second["tree"]["ratio"], first["tree"]["ratio"])
         gutters = {p for p, i in self.panes().items() if i["gutter"]}
         self.assertEqual(len(gutters), 4)
+
+    def test_extreme_saved_ratios_reserve_each_nested_subtree_minimum(self):
+        display = self.display("#1f1f1f")
+        for direction, width in (("below", 80), ("right", 141)):
+            for child, ratio in (("first", 0.15), ("second", 0.85)):
+                with self.subTest(direction=direction, child=child):
+                    model = Model.initial()
+                    model.split(direction, str(self.root))
+                    model.tab["focus"] = model.tab["tree"][child]["id"]
+                    model.split(direction, str(self.root))
+                    model.tab["tree"]["ratio"] = ratio
+                    for leaf in leaves(model.tab["tree"]):
+                        leaf["cwd"] = str(self.root)
+                    self.viewer.run("resize-window", "-x", str(width), "-y", "24")
+                    display.invalidate_snapshot()
+                    with patch.dict(os.environ, {"SHELL": "/bin/sh"}):
+                        display.render(model.tab, False)
+                    self.assertFalse(display.small)
+                    self.assertEqual(len(display.panes), 3)
+                    panes = self.panes()
+                    for pane in display.panes.values():
+                        self.assertGreaterEqual(panes[pane]["width"], 34)
+                        self.assertGreaterEqual(panes[pane]["height"], 6)
+                    self.assertEqual(len(display._band_gutters), 2)
+                    self.assertEqual(model.tab["tree"]["ratio"], ratio)
+
+    def test_resize_during_nested_render_preserves_requested_focus_and_shells(self):
+        display = self.display("#1f1f1f")
+        model = Model.initial()
+        for direction in ("right", "below", "right"):
+            model.split(direction, str(self.root))
+        for leaf in leaves(model.tab["tree"]):
+            leaf["cwd"] = str(self.root)
+        requested = model.tab["focus"]
+        saved_tree = copy.deepcopy(model.tab["tree"])
+        with patch.dict(os.environ, {"SHELL": "/bin/sh", "HOME": str(self.root)}):
+            display.render(model.tab, False)
+            original_shells = self.shells.run("list-panes", "-a", "-F", "#{pane_id}|#{pane_pid}")
+            display.render(model.tab, True)
+            original_tree = display._tree
+            resized = False
+
+            def resize_after_first_leaf(node, pane):
+                nonlocal resized
+                result = original_tree(node, pane)
+                if "agent" in node and not resized:
+                    resized = True
+                    # Real tmux changes size after construction has already
+                    # mapped a leaf, before the remaining nested split fits.
+                    self.viewer.run("resize-window", "-x", "72", "-y", "16")
+                return result
+
+            with patch.object(display, "_tree", resize_after_first_leaf):
+                display.render(model.tab, False)
+            self.assertTrue(resized)
+            self.assertTrue(display.small)
+            self.assertEqual(set(display.panes), {requested})
+            self.assertEqual(display.focused_leaf(), requested)
+            self.assertEqual(model.tab["focus"], requested)
+            self.assertEqual(model.tab["tree"], saved_tree)
+
+            for width, height in ((72, 16), (170, 40)):
+                self.viewer.run("resize-window", "-x", str(width), "-y", str(height))
+                display.invalidate_snapshot()
+                display.render(model.tab, False)
+                display.wait_for_input(model.tab)
+                self.assertEqual(display.focused_leaf(), requested)
+                self.assertEqual(len(display.panes), 1 if width == 72 else 4)
+                token = os.urandom(6).hex()
+                marker = "RESIZE_" + token
+                self.viewer.run(
+                    "send-keys",
+                    "-t",
+                    display.panes[requested],
+                    "-l",
+                    "printf 'RESIZE_%s\\n' " + token,
+                )
+                self.viewer.run("send-keys", "-t", display.panes[requested], "Enter")
+                target = "=" + display.shells.name({"id": requested}) + ":"
+                self.until(
+                    lambda marker=marker, target=target: (
+                        marker in self.shells.run("capture-pane", "-p", "-t", target)
+                    ),
+                    "typing after render recovery missed the requested shell",
+                )
+                self.assertEqual(
+                    self.shells.run("list-panes", "-a", "-F", "#{pane_id}|#{pane_pid}"),
+                    original_shells,
+                )
+                self.assertEqual(model.tab["tree"], saved_tree)
 
     def test_the_same_tab_is_not_rebuilt_and_a_click_on_a_gutter_bounces(self):
         display = self.display("#1f1f1f")

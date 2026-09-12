@@ -63,6 +63,10 @@ class DisplayState:
     panes: dict[str, PaneState]
 
 
+class _LayoutTooSmall(ValueError):
+    """The live pane no longer has room for the planned padded subtree."""
+
+
 class Display:
     def __init__(
         self,
@@ -539,6 +543,7 @@ class Display:
         if not tab:
             return
         deadline = time.monotonic() + timeout
+        identities: dict[str, list[str]] = {}
 
         def query(tmux: Tmux, *args: str) -> str:
             remaining = deadline - time.monotonic()
@@ -556,41 +561,48 @@ class Display:
                 "#{pane_id}|#{@viewer_leaf_id}|#{@viewer_tab_id}|#{pane_active}|"
                 "#{pane_dead}|#{pane_tty}|#{pane_pid}",
             )
-            return next(
-                (
-                    parts
-                    for row in rows.splitlines()
-                    if len(parts := row.split("|")) == 7 and parts[3] == "1"
-                ),
-                None,
-            )
+            panes = {
+                parts[0]: parts for row in rows.splitlines() if len(parts := row.split("|")) == 7
+            }
+            for pane, identity in identities.items():
+                current = panes.get(pane)
+                if not current or current[:3] + current[4:] != identity:
+                    raise RuntimeError("Terminal attachment changed; try selecting it again")
+            return next((parts for parts in panes.values() if parts[3] == "1"), None)
 
         try:
             initial = focused()
-            if initial and initial[0] == self.sidebar:
-                return
-            leaf = next(
-                (
-                    item
-                    for item in leaves(tab["tree"])
-                    if initial and self.panes.get(item["id"]) == initial[0]
-                ),
-                None,
-            )
-            if not leaf:
-                raise RuntimeError("Terminal attachment disappeared; try selecting it again")
-            if leaf["agent"] or is_empty(leaf):
-                return
-            if initial[1:3] != [leaf["id"], tab["id"]] or initial[4] != "0" or not initial[5]:
-                raise RuntimeError("Terminal attachment changed; try selecting it again")
-            expected = f"{Shells.name(leaf)}|{initial[5]}"
             while True:
+                if initial and initial[0] == self.sidebar:
+                    return
+                leaf = next(
+                    (
+                        item
+                        for item in leaves(tab["tree"])
+                        if initial and self.panes.get(item["id"]) == initial[0]
+                    ),
+                    None,
+                )
+                if not leaf:
+                    raise RuntimeError("Terminal attachment disappeared; try selecting it again")
+                if initial[1:3] != [leaf["id"], tab["id"]]:
+                    raise RuntimeError("Terminal attachment changed; try selecting it again")
+                if leaf["agent"] or is_empty(leaf):
+                    return
+                if initial[4] != "0" or not initial[5]:
+                    raise RuntimeError("Terminal attachment changed; try selecting it again")
+                identities[initial[0]] = initial[:3] + initial[4:]
+                expected = f"{Shells.name(leaf)}|{initial[5]}"
                 clients = query(
                     self.shells.tmux, "list-clients", "-F", "#{session_name}|#{client_tty}"
                 )
-                # Recheck after probing the source: pane IDs can survive respawn.
-                if focused() != initial:
-                    raise RuntimeError("Terminal attachment changed; try selecting it again")
+                # A click can supersede this selection while its client starts.
+                # Validate the original identities, then follow the new target
+                # without restarting the deadline or releasing input early.
+                current = focused()
+                if current != initial:
+                    initial = current
+                    continue
                 if expected in clients.splitlines():
                     return
                 time.sleep(min(0.01, max(0, deadline - time.monotonic())))
@@ -809,8 +821,35 @@ class Display:
         )
 
     def render(self, tab: dict | None, focus: bool) -> None:
-        # Only pane IDs on this dedicated server may be destroyed or rearranged.
         state = self.state()
+        for attempt in range(2):
+            try:
+                self._render_once(tab, focus, state)
+                return
+            except (RuntimeError, OSError, ValueError) as error:
+                # Partial mappings must never become the user's saved focus.
+                # A failed render remains dirty so the next poll can recover.
+                self.panes.clear()
+                self.last_size = (0, 0)
+                self._rendered_key = self._rendered_shape = self._rendered_geometry = None
+                self.invalidate_snapshot()
+                with contextlib.suppress(RuntimeError, OSError, ValueError):
+                    self.select_sidebar()
+                geometry_error = isinstance(error, _LayoutTooSmall) or (
+                    isinstance(error, RuntimeError) and "no space for a new pane" in str(error)
+                )
+                if attempt == 0 and geometry_error:
+                    current = None
+                    with contextlib.suppress(RuntimeError, OSError, ValueError):
+                        current = self.state()
+                    self.invalidate_snapshot()
+                    if current and current.size != state.size:
+                        state = current
+                        continue
+                raise
+
+    def _render_once(self, tab: dict | None, focus: bool, state: DisplayState) -> None:
+        # Only pane IDs on this dedicated server may be destroyed or rearranged.
         owned = state.panes
         # Gutters are the display's own furniture; only content panes are
         # matched against the tab's leaves.
@@ -856,7 +895,6 @@ class Display:
         self._capture_attachment_windows()
         self.invalidate_snapshot()
         self._rendered_key = self._rendered_shape = self._rendered_geometry = None
-        self.last_size = (cols, rows)
         self.panes.clear()
         self._tab_id = tab["id"] if tab else ""
         self._shell_names = self.shells.ensure_many(
@@ -912,6 +950,7 @@ class Display:
         if tree:
             self._rendered_shape = self._shape_key(tree)
             self._rendered_geometry = self._geometry(self.state())
+        self.last_size = (cols, rows)
 
     def _tree(self, tree: dict, pane: str) -> None:
         if "agent" in tree:
@@ -937,9 +976,14 @@ class Display:
                     "#{pane_width}" if right else "#{pane_height}",
                 )
             )
-            content = max(2, size - 3)
-            first = min(max(round(ratio * content), 1), content - 1)
-            length = str(max(1, size - 1 - first))
+            content = size - 3
+            axis = 0 if right else 1
+            lower = padded_layout.minimum(tree["first"])[axis]
+            upper = padded_layout.minimum(tree["second"])[axis]
+            if content < lower + upper:
+                raise _LayoutTooSmall("Window is too small to render this split")
+            first = min(max(round(ratio * content), lower), content - upper)
+            length = str(size - 1 - first)
         else:
             length = str(round(100 * (1 - ratio))) + "%"
         sibling = self.tmux.run(

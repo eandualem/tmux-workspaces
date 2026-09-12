@@ -7,7 +7,7 @@ import sys
 from contextlib import closing
 from pathlib import Path
 
-from tests.integration.support import FixtureResources, sidebar, wait
+from tests.integration.support import FixtureResources, open_terminal, sidebar, wait
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.model import leaves
@@ -148,9 +148,117 @@ def exercise(resources):
     print("Attachment readiness: normal and delayed bursts routed exactly once; shells preserved")
 
 
+def exercise_click_during_readiness(resources):
+    launcher, _, _ = delayed_launcher(resources)
+    display = Path(launcher[-1]).parent / "tmux_workspaces" / "display.py"
+    flag, entered, release, finished = (
+        resources.root / name
+        for name in ("probe-delay", "probe-entered", "probe-release", "probe-done")
+    )
+    source = display.read_text()
+    anchor = "            return tmux.run(*args, timeout=remaining)\n"
+    assert source.count(anchor) == 1, "readiness query injection point changed"
+    source = source.replace(
+        anchor,
+        "            from pathlib import Path\n"
+        f"            if tmux is self.shells.tmux and Path({str(flag)!r}).exists():\n"
+        f"                Path({str(flag)!r}).unlink()\n"
+        f"                Path({str(entered)!r}).touch()\n"
+        "                until = time.monotonic() + 2\n"
+        f"                while not Path({str(release)!r}).exists() and time.monotonic() < until:\n"
+        "                    time.sleep(0.005)\n" + anchor,
+    )
+    anchor = "    def wait_for_input(self, tab: dict | None, *, timeout: float = 3) -> None:\n"
+    assert source.count(anchor) == 1, "readiness completion injection point changed"
+    source = source.replace(
+        anchor,
+        anchor + "        from pathlib import Path\n"
+        "        try:\n"
+        "            self._original_wait_for_input(tab, timeout=timeout)\n"
+        "        finally:\n"
+        f"            if Path({str(entered)!r}).exists(): Path({str(finished)!r}).touch()\n\n"
+        "    def _original_wait_for_input(self, tab: dict | None, "
+        "*, timeout: float = 3) -> None:\n",
+    )
+    display.write_text(source)
+    library = resources.library()
+    with closing(Store(library)) as store:
+        model = store.load()
+        for direction in ("right", "below", "right"):
+            model.split(direction, str(resources.root))
+        items = leaves(model.tab["tree"])
+        for leaf in items:
+            leaf["cwd"] = str(resources.root)
+        model.pane["empty"] = True
+        selected = model.pane["id"]
+        store.save(model)
+    client = resources.client(
+        ["--data-dir", str(library), "--source-socket", str(resources.root / "absent.sock")],
+        launcher=launcher,
+        terminal_env={"HOME": str(resources.root)},
+        cwd=resources.root,
+    )
+    wait(client, lambda: client.manifest(library), "click readiness viewer missing")
+    viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
+    shells = Tmux(socket_path(library, "terminals"))
+    wait(client, lambda: "Configure…" in sidebar(viewer), "click readiness sidebar missing")
+
+    def source_processes():
+        return set(shells.run("list-panes", "-a", "-F", "#{session_name}|#{pane_pid}").splitlines())
+
+    original = source_processes()
+    flag.touch()
+    open_terminal(client, viewer, library)
+    wait(client, entered.exists, "ordinary readiness probe was not delayed")
+    assert not finished.exists(), "readiness gate expired before the test could click"
+    created = source_processes()
+    assert len(created) == 4 and original <= created, "opening a shell replaced existing processes"
+
+    def rows():
+        return {
+            row.split("|")[1]: row.split("|")
+            for row in viewer.run(
+                "list-panes",
+                "-F",
+                "#{pane_id}|#{@viewer_leaf_id}|#{@viewer_tab_id}|#{pane_active}|"
+                "#{pane_dead}|#{pane_tty}|#{pane_pid}|#{pane_left}|#{pane_top}",
+            ).splitlines()
+        }
+
+    before = rows()[selected]
+    target = rows()[items[0]["id"]]
+    client.click(int(target[7]) + 2, int(target[8]) + 1)
+    after = rows()[selected]
+    assert before[:3] + before[4:] == after[:3] + after[4:], (before, after)
+    assert before[3] == "1" and after[3] == "0", (before, after)
+    release.touch()
+    wait(client, finished.exists, "readiness did not finish after the content click")
+    assert rows()[items[0]["id"]][3] == "1", "readiness stole focus from the clicked terminal"
+    token = os.urandom(8).hex()
+    marker = "CLICK_READY_" + token
+    client.type("printf 'CLICK_READY_%s\\n' " + token + "\r")
+    target_session = "=" + Shells.name(items[0]) + ":"
+    wait(
+        client,
+        lambda: marker in shells.run("capture-pane", "-p", "-t", target_session),
+        "typing after readiness interruption missed the clicked terminal",
+    )
+    for leaf in items:
+        text = shells.run("capture-pane", "-p", "-t", "=" + Shells.name(leaf) + ":")
+        assert text.count(marker) == (1 if leaf == items[0] else 0), "click input misrouted"
+    assert "Terminal attachment" not in sidebar(viewer), "legitimate click left a readiness error"
+    assert created == source_processes(), "readiness interruption replaced an existing shell"
+    print(
+        "Attachment readiness: pending shell creation yields to a content click; "
+        "input and shells preserved"
+    )
+
+
 def main():
     with FixtureResources(prefix="tw-attachment-ready-") as resources:
         exercise(resources)
+    with FixtureResources(prefix="tw-attachment-click-") as resources:
+        exercise_click_during_readiness(resources)
 
 
 if __name__ == "__main__":
