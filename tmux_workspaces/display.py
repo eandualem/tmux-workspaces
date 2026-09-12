@@ -937,9 +937,14 @@ class Display:
                     "#{pane_width}" if right else "#{pane_height}",
                 )
             )
-            content = max(2, size - 3)
-            first = min(max(round(ratio * content), 1), content - 1)
-            length = str(max(1, size - 1 - first))
+            content = size - 3
+            axis = 0 if right else 1
+            lower = padded_layout.minimum(tree["first"])[axis]
+            upper = padded_layout.minimum(tree["second"])[axis]
+            if content < lower + upper:
+                raise ValueError("Window is too small to render this split")
+            first = min(max(round(ratio * content), lower), content - upper)
+            length = str(size - 1 - first)
         else:
             length = str(round(100 * (1 - ratio))) + "%"
         sibling = self.tmux.run(

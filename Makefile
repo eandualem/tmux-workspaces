@@ -13,6 +13,7 @@ test:
 	$(PYTHON) -m unittest discover -s scripts/tests -v
 
 smoke:
+	$(PYTHON) -m tests.integration.smoke_attachment_policy
 	$(PYTHON) -m tests.integration.smoke_split_drag
 	$(PYTHON) -m tests.integration.smoke_attachment_windows
 	$(PYTHON) -m tests.integration.smoke_attachment_palette

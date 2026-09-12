@@ -51,6 +51,11 @@ has attached to that shell; another viewer's client cannot satisfy readiness.
 Unit checks cover the three-second deadline, stale/dead panes, failed action
 acknowledgements, and skipping offline external sessions and empty choosers.
 
+`smoke_attachment_policy` verifies local and inherited auto-destroy policies
+attach directly without creating a dangerous group. Source shell PIDs, settings
+and bindings survive viewer close, and a remaining viewer keeps the source usable
+when its original client detaches. All clients and servers are disposable.
+
 `smoke_attachment_windows` starts a grouped helper on the source's current
 window, selects a different window only in that helper, then checks resize and
 tab navigation retain it without changing source selection, options, bindings,

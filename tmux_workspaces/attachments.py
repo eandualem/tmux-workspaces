@@ -154,7 +154,7 @@ def session_exists(source_socket: str, target: str) -> bool:
 
 
 def run_grouped_attachment(source_socket: str, target: str, window: str = "") -> None:
-    """Run one grouped attach client until it detaches or the target ends.
+    """Attach through a group when safe, otherwise directly to the source.
 
     Sessions in a group keep each other's windows alive, so a grouped session
     left standing after the target was killed would keep the target's shells
@@ -173,7 +173,7 @@ def run_grouped_attachment(source_socket: str, target: str, window: str = "") ->
             "-p",
             "-t",
             target,
-            "#{session_id}|#{window_id}|#{pid}",
+            "#{session_id}|#{window_id}|#{pid}|#{destroy-unattached}",
         ],
         env=clean_env(),
         capture_output=True,
@@ -182,10 +182,22 @@ def run_grouped_attachment(source_socket: str, target: str, window: str = "") ->
         timeout=5,
     )
     identity = resolved.stdout.strip().split("|")
-    if len(identity) != 3:
+    if len(identity) != 4:
         return
-    session_id, current_window, server_pid = identity
+    session_id, current_window, server_pid, destroy_policy = identity
     if resolved.returncode or not session_id.startswith("$") or not session_id[1:].isdigit():
+        return
+    # Group creation can itself destroy a detached keep-last source. Other
+    # auto-destroy policies can remove it when its original client detaches.
+    # Keep those sessions alive through a direct client, without changing their
+    # options or adding another session to the group. Unknown policies also use
+    # this conservative path. The source's own status/window selection remains.
+    if destroy_policy != "off":
+        subprocess.run(
+            ["tmux", "-S", source_socket, "attach-session", "-E", "-t", session_id],
+            env=clean_env(),
+            check=False,
+        )
         return
     # Window IDs may be reused by a restarted server or a replacement session.
     # Only a hint captured from this exact source incarnation is meaningful.

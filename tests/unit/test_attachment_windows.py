@@ -11,6 +11,27 @@ from tmux_workspaces.display import Display
 
 
 class AttachmentWindowTests(unittest.TestCase):
+    def test_auto_destroy_or_unknown_policy_attaches_directly_to_immutable_source(self):
+        for policy in ("on", "keep-last", "keep-group", "", "future-policy"):
+            with self.subTest(policy=policy):
+                seen = []
+
+                def run(command, seen=seen, policy=policy, **kwargs):
+                    seen.append(command)
+                    return SimpleNamespace(returncode=0, stdout=f"$8|@12|123|{policy}\n")
+
+                with (
+                    patch("tmux_workspaces.attachments.subprocess.run", side_effect=run),
+                    patch("tmux_workspaces.attachments.subprocess.Popen") as grouped,
+                ):
+                    run_grouped_attachment("/unused/source", "=sample:", "123:$8:@17")
+                grouped.assert_not_called()
+                self.assertEqual(len(seen), 2)
+                self.assertEqual(
+                    seen[1], ["tmux", "-S", "/unused/source", "attach-session", "-E", "-t", "$8"]
+                )
+                self.assertIn("#{destroy-unattached}", seen[0][-1])
+
     def test_saved_window_must_still_belong_to_the_immutable_source_session(self):
         for saved, listed, expected in (
             ("", "", "@12"),
@@ -24,7 +45,7 @@ class AttachmentWindowTests(unittest.TestCase):
 
                 def run(command, listed=listed, **kwargs):
                     if command[3] == "display-message":
-                        return SimpleNamespace(returncode=0, stdout="$8|@12|123\n")
+                        return SimpleNamespace(returncode=0, stdout="$8|@12|123|off\n")
                     if command[3] == "list-windows":
                         self.assertEqual(command[5], "$8")
                         return SimpleNamespace(returncode=0, stdout=listed)

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.model import leaves
+from tmux_workspaces.persistence import Store
 from tmux_workspaces.shells import Shells
 from tmux_workspaces.tmux import Tmux
 
@@ -145,6 +146,83 @@ def exercise(directory: Path) -> None:
     )
 
 
+def exercise_saved_minimum(directory: Path) -> None:
+    """Saved extreme proportions must still leave room for nested separators."""
+    with FixtureResources(parent=directory) as resources:
+        library = resources.library()
+        store = Store(library)
+        model = store.load()
+        model.split("below", str(resources.root))
+        model.split("below", str(resources.root))
+        model.tab["tree"]["ratio"] = 0.85
+        for leaf in leaves(model.tab["tree"]):
+            leaf["cwd"] = str(resources.root)
+        store.save(model)
+        store.close()
+        client = resources.client(
+            ["--data-dir", str(library), "--source-socket", str(resources.root / "absent.sock")],
+            cols=80,
+            rows=24,
+            terminal_env={"HOME": str(resources.root)},
+        )
+        wait(client, lambda: client.manifest(library), "minimum-size saved viewer did not start")
+        viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
+        shells = Tmux(socket_path(library, "terminals"))
+
+        def ready(cols, rows, count):
+            current = panes(viewer)
+            content = [pane for pane in current if not pane["gutter"] and pane["left"] != 0]
+            return (
+                len(content) == count
+                and sum(pane["band"] for pane in current) == count - 1
+                and max(pane["left"] + pane["width"] for pane in current) == cols
+                and max(pane["top"] + pane["height"] for pane in current) == rows
+                and all(pane["width"] >= 34 and pane["height"] >= 6 for pane in content)
+            )
+
+        wait(client, lambda: ready(80, 24, 3), "saved nested layout failed at its minimum size")
+        wait(
+            client,
+            lambda: len(shells.run("list-clients").splitlines()) == 3,
+            "minimum-size layout did not attach all ordinary shells",
+        )
+        original = shells.run("list-panes", "-a", "-F", "#{pane_id}|#{pane_pid}")
+        terminal = "=" + Shells.name(model.pane) + ":"
+        for step, (cols, rows, count) in enumerate(
+            ((80, 60, 3), (80, 23, 1), (80, 24, 3), (160, 120, 3), (80, 24, 3))
+        ):
+            client.resize(cols, rows)
+            wait(
+                client,
+                lambda cols=cols, rows=rows, count=count: ready(cols, rows, count),
+                "nested layout did not recover on resize",
+            )
+            assert shells.run("list-panes", "-a", "-F", "#{pane_id}|#{pane_pid}") == original
+            assert saved(library).tab["tree"]["ratio"] == 0.85
+            if rows == 120:
+                first = next(
+                    pane
+                    for pane in panes(viewer)
+                    if not pane["gutter"] and pane["left"] != 0 and pane["top"] == 0
+                )
+                assert first["height"] == round((rows - 3) * 0.85), first
+            token = f"{step}-{cols}x{rows}"
+            client.type(f"printf 'LIMIT:%s\\n' {token}\r")
+            wait(
+                client,
+                lambda token=token: (
+                    f"LIMIT:{token}" in shells.run("capture-pane", "-p", "-t", terminal)
+                ),
+                "typing after minimum-size resize did not reach the preserved shell",
+            )
+        assert client.process.poll() is None
+    print(
+        "PASS: saved nested proportions open at 80x24, resize and restore without losing shells",
+        flush=True,
+    )
+
+
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="tw-gutters-", dir="/tmp") as directory:
         exercise(Path(directory))
+        exercise_saved_minimum(Path(directory))

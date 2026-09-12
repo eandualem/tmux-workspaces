@@ -91,7 +91,11 @@ a session that ends shows as offline instead of living on inside the viewer.
 The attachment starts on the source session's current window. A window you select
 inside it stays selected through resizing and tab navigation, independently of
 the source session. Reopening a closed viewer starts from the source's current
-window again. The roster is only an attachment chooser, never a source of tabs.
+window again. A source with an automatic `destroy-unattached` policy attaches
+directly instead: adding a group could delete it. Direct attachments retain the
+source's status line and share its current window. The source's own cleanup policy
+still applies when its last client detaches. The roster is only an attachment
+chooser, never a source of tabs.
 
 The navigation panel is a rounded, outlined panel inset in the window, and
 the terminals sit on a slightly lighter surface beside it. Split panes are
@@ -103,7 +107,9 @@ so they can be matched to your terminal's theme. The padding is made of thin
 panes tmux cannot tell apart from the rest. Drag the visible separator line
 to resize a split; the surrounding blank columns and sidebar keep their widths.
 The hidden borders beside the line stay inert. The plain theme uses tmux's
-normal border dragging. The tab menu's **Attach session** and the
+normal border dragging. Saved split proportions are limited by the space each
+nested layout needs; a smaller window temporarily shows the focused pane when
+the complete layout cannot fit. The tab menu's **Attach session** and the
 attachment shortcut work on all supported tmux versions.
 Once open, the chooser keeps its selected destination even if focus moves to
 another pane. If another viewer removes or changes that destination, attach again

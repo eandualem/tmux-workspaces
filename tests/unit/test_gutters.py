@@ -218,6 +218,31 @@ class GutterLayoutTests(unittest.TestCase):
         gutters = {p for p, i in self.panes().items() if i["gutter"]}
         self.assertEqual(len(gutters), 4)
 
+    def test_extreme_saved_ratios_reserve_each_nested_subtree_minimum(self):
+        display = self.display("#1f1f1f")
+        for direction, width in (("below", 80), ("right", 141)):
+            for child, ratio in (("first", 0.15), ("second", 0.85)):
+                with self.subTest(direction=direction, child=child):
+                    model = Model.initial()
+                    model.split(direction, str(self.root))
+                    model.tab["focus"] = model.tab["tree"][child]["id"]
+                    model.split(direction, str(self.root))
+                    model.tab["tree"]["ratio"] = ratio
+                    for leaf in leaves(model.tab["tree"]):
+                        leaf["cwd"] = str(self.root)
+                    self.viewer.run("resize-window", "-x", str(width), "-y", "24")
+                    display.invalidate_snapshot()
+                    with patch.dict(os.environ, {"SHELL": "/bin/sh"}):
+                        display.render(model.tab, False)
+                    self.assertFalse(display.small)
+                    self.assertEqual(len(display.panes), 3)
+                    panes = self.panes()
+                    for pane in display.panes.values():
+                        self.assertGreaterEqual(panes[pane]["width"], 34)
+                        self.assertGreaterEqual(panes[pane]["height"], 6)
+                    self.assertEqual(len(display._band_gutters), 2)
+                    self.assertEqual(model.tab["tree"]["ratio"], ratio)
+
     def test_the_same_tab_is_not_rebuilt_and_a_click_on_a_gutter_bounces(self):
         display = self.display("#1f1f1f")
         model = Model.initial()

@@ -159,7 +159,7 @@ class GroupedAttachTests(unittest.TestCase):
                 # The preflight before an attach: the session exists.
                 return SimpleNamespace(returncode=0)
             if command[3] == "display-message":
-                return SimpleNamespace(returncode=0, stdout="$8|@12|123\n")
+                return SimpleNamespace(returncode=0, stdout="$8|@12|123|off\n")
             if command[3] == "show-options":
                 # The target's own settings, in tmux's quoting.
                 return SimpleNamespace(returncode=0, stdout='mouse on\nstatus-left "a \\"b\\""\n')
@@ -238,7 +238,7 @@ class GroupedAttachTests(unittest.TestCase):
         def run(command, **kwargs):
             seen.append(command)
             if command[3] == "display-message":
-                return SimpleNamespace(returncode=0, stdout="$8|@12|123\n")
+                return SimpleNamespace(returncode=0, stdout="$8|@12|123|off\n")
             if command[3] == "has-session":
                 # The original ID is gone, but a replacement already uses its name.
                 return SimpleNamespace(returncode=0 if command[-1] == "=manager:" else 1)
