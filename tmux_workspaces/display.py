@@ -196,7 +196,10 @@ class Display:
             self.tmux.run("bind-key", "-T", table, "Escape", "send-keys", "-X", "cancel")
         for key, native in (
             ("MouseDown1Pane", native_click),
-            ("SecondClick1Pane", "send-keys -M"),
+            # Keep the second down here: forwarding it lets nested tmux
+            # schedule its default delayed double-click clipboard copy,
+            # which can overwrite this viewer's explicit selection copy.
+            ("SecondClick1Pane", "select-pane -t ="),
             ("TripleClick1Pane", native_double.replace("select-word", "select-line")),
         ):
             command = script_command(

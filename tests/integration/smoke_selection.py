@@ -164,10 +164,17 @@ def exercise(resources, alternate):
         before = len(clipboard())
         client.click(left + 3, top + 1, count=count)
         wait(client, selected, "multi-click did not retain selection")
+        # Nested tmux's default double-click waits 0.3s for a third click,
+        # then another 0.3s before copying. Observe that whole interval so
+        # a forwarded second click cannot silently schedule a later OSC52.
+        client.pump(0.8)
         assert len(clipboard()) == before, "multi-click automatically copied"
+        assert shells.run("display-message", "-p", "-t", targets[0], "#{pane_in_mode}") == "0"
         client.type(direct_sequence("copy-selection"))
         wait(client, lambda before=before: len(clipboard()) > before, "multi-click copy failed")
-        assert clipboard()[-1].strip() == text, clipboard()[-1]
+        client.pump(0.8)
+        copied = [value.strip() for value in clipboard()[before:]]
+        assert copied == [text], (count, copied)
         client.type("\x1b")
     # Returning to the live terminal restores normal application input.
     client.type("POST_SELECTION_INPUT")
