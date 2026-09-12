@@ -1,5 +1,9 @@
 # Viewer colors
 
+Use **Configure… → Edit colors JSON…** for the [built-in JSON editor](JSON_SETTINGS.md).
+Save validates the draft and applies its colors to this viewer. The older
+per-row editor remains under **Colors…**.
+
 The viewer draws its own layer — the sidebar, the selected row, dividers, hints
 and messages — and nothing else. This document describes how to change those
 colors, what the viewer can and cannot control, and exactly which of its claims

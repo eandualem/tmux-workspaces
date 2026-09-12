@@ -181,6 +181,11 @@ Menu input belongs to the navigation panel while the menu has focus.
 
 ## Editing shortcuts in the viewer
 
+For a roomy text view, choose **Configure… → Edit shortcuts JSON…**. The
+[built-in JSON editor](JSON_SETTINGS.md) supports multiline editing, paste,
+undo/redo and validated Save. Saving offers the refresh flow described above.
+The per-row editor remains available as described below.
+
 Open **Shortcuts** from the sidebar and choose **Edit shortcuts…**. Each action
 appears twice, once for its prefix key and once for its terminal shortcut, with
 the keys it currently holds. **Enter** types a key, **c** captures one, **d**

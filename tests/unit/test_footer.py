@@ -244,8 +244,10 @@ class FooterTests(unittest.TestCase):
         self.assertIn("builder", self.labels())
         self.sidebar.open_menu("configure")
         options = self.options()
-        self.assertEqual(options[:3], ["Colors…", "Shortcuts", "Refresh viewer…"])
-        self.assertEqual(options[3:5], ["[x] Show agent status", "Agent status…"])
+        self.assertEqual(
+            options[:3], ["Edit colors JSON…", "Edit shortcuts JSON…", "Refresh viewer…"]
+        )
+        self.assertEqual(options[5:7], ["[x] Show agent status", "Agent status…"])
         self.assertEqual(options[-2:], [RULE, "Detach"])
         dict(self.sidebar._options({}))["[x] Show agent status"]()
         self.assertIs(self.model.state["show_agents"], False)
@@ -284,7 +286,16 @@ class FooterTests(unittest.TestCase):
         self.assertEqual(self.sidebar.tab_capacity(), 36 - 3 - 5)
         self.sidebar.open_menu("configure")
         self.assertEqual(
-            self.options(), ["Colors…", "Shortcuts", "Refresh viewer…", RULE, "Detach"]
+            self.options(),
+            [
+                "Edit colors JSON…",
+                "Edit shortcuts JSON…",
+                "Refresh viewer…",
+                "Colors…",
+                "Shortcuts",
+                RULE,
+                "Detach",
+            ],
         )
 
     def test_detach_is_last_and_reached_by_the_keyboard_past_the_rule(self):

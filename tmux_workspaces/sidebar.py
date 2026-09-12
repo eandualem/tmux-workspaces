@@ -9,6 +9,7 @@ import textwrap
 import time
 from collections.abc import Callable
 
+from .config_popup import ConfigPopup
 from .controls import Actions, mouse_action, pane_choice
 from .discovery import Snapshot
 from .display import Display
@@ -130,6 +131,7 @@ class Sidebar:
         # destination and the editor says so instead of guessing a path.
         self.keymap_path = keymap_path
         self.shortcut_editor: ShortcutEditor | None = None
+        self.config_popup = None
 
         # Absent outside a launched window; refresh then reports its own limit
         # instead of closing a viewer that nothing would reopen.
@@ -354,6 +356,51 @@ class Sidebar:
             # them, so Apply cannot replace values the user never saw. Cancel
             # still restores the colors the viewer is running.
             self.theme_editor.message = "Saved colors shown"
+
+    def open_config_editor(self, kind: str) -> None:
+        if self.config_popup or not self.leave_theme():
+            return
+        self.leave_shortcuts()
+        path = self.keymap_path if kind == "shortcuts" else theme_path(self.theme_path)
+        if path is None:
+            self.menu_message = "No keymap file; reopen without --no-keymap to edit shortcuts."
+            return
+        self.open_menu("json-settings")
+        try:
+            self.config_popup = ConfigPopup(self.display, kind, path)
+        except (OSError, RuntimeError) as error:
+            self.close_menu()
+            self.display.render(self.model.tab, self.model.state["focus"])
+            self.message = "Could not open settings editor: " + visible(str(error))
+
+    def finish_config_editor(self) -> bool:
+        result = self.config_popup.poll()
+        if result is None:
+            return False
+        # Discard viewer actions queued while the editor owned input before
+        # allowing any command to act on panes again.
+        for _action in self.actions.pending():
+            pass
+        kind = self.config_popup.kind
+        self.config_popup.close()
+        self.config_popup = None
+        self.close_menu()
+        self.display.render(self.model.tab, self.model.state["focus"])
+        if result.get("error"):
+            self.message = visible(result["error"])
+        elif result.get("saved"):
+            if kind == "colors":
+                loaded = load_theme(self.theme_path, working=self.theme)
+                if loaded.diagnostic:
+                    self.message = visible(loaded.diagnostic)
+                else:
+                    self.install(loaded.theme)
+                    self.display.render(self.model.tab, self.model.state["focus"])
+                    self.message = "Colors saved and applied"
+            else:
+                self.refresh_viewer()
+                self.menu_message = "Shortcuts saved"
+        return True
 
     def open_shortcut_editor(self) -> None:
         """Open the shortcut editor over the keymap this viewer is running."""
@@ -727,6 +774,8 @@ class Sidebar:
         self.display.select_sidebar()
 
     def action(self, name: str) -> None:
+        if self.config_popup:
+            return
         mouse = mouse_action(name)
         if mouse:
             x, y = mouse
@@ -1115,9 +1164,11 @@ class Sidebar:
             # Everything infrequent in one place; leaving last, after a rule,
             # and named for what it does: shells and attached sessions keep running.
             rows: list[tuple[str, Callable]] = [
+                ("Edit colors JSON…", lambda: self.open_config_editor("colors")),
+                ("Edit shortcuts JSON…", lambda: self.open_config_editor("shortcuts")),
+                ("Refresh viewer…", self.refresh_viewer),
                 ("Colors…", self.open_theme),
                 ("Shortcuts", lambda: self.open_menu("shortcuts")),
-                ("Refresh viewer…", self.refresh_viewer),
             ]
             if self.roster(agents) is not None:
                 mark = "x" if self.show_agents else " "
@@ -1525,6 +1576,7 @@ class Sidebar:
                 "workspace": "Workspace options",
                 "icon": "Workspace icon",
                 "configure": "Configure",
+                "json-settings": "Opening settings editor…",
                 "status": "Agent status",
                 "name": "Type a name",
                 "theme": (
@@ -1779,6 +1831,8 @@ class Sidebar:
                     break
 
     def input(self, key) -> None:
+        if self.config_popup:
+            return
         if key == curses.KEY_MOUSE:
             with contextlib.suppress(curses.error):
                 _, x, y, _, buttons = curses.getmouse()
@@ -1903,9 +1957,20 @@ class Sidebar:
         self.source.start()
         self.display.setup()
         self.show()
+        try:
+            self.run_loop(events)
+        finally:
+            if self.config_popup:
+                self.config_popup.close()
+            self.source.close()
+
+    def run_loop(self, events) -> None:
         next_poll = 0.0
         while self.running:
             try:
+                if self.config_popup and self.finish_config_editor():
+                    events.keys.clear()
+                    curses.flushinp()
                 if not self.apply_pending():
                     break
                 now = time.monotonic()
@@ -1967,4 +2032,3 @@ class Sidebar:
                 self.message = visible(str(exc))[:100]
                 self.last_frame = None
                 time.sleep(0.1)
-        self.source.close()

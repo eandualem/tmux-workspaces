@@ -270,7 +270,9 @@ class SidebarTests(unittest.TestCase):
             self.assertNotIn(hidden, labels)
         self.sidebar.open_menu("configure")
         options = [label for label, _ in self.sidebar._options({})]
-        self.assertEqual(options[:3], ["Colors…", "Shortcuts", "Refresh viewer…"])
+        self.assertEqual(
+            options[:3], ["Edit colors JSON…", "Edit shortcuts JSON…", "Refresh viewer…"]
+        )
         self.assertEqual(options[-1], "Detach")
         self.sidebar.close_menu()
         self.sidebar.draw()
@@ -279,6 +281,74 @@ class SidebarTests(unittest.TestCase):
             previous_count = len(self.model.space["tabs"])
             self.mouse(x, 2, curses.BUTTON1_PRESSED)
             self.assertEqual(len(self.model.space["tabs"]), previous_count + 1)
+
+    def test_json_popup_guards_input_and_drains_queued_actions_on_cancel(self):
+        self.sidebar.actions = FakeActions(["close-tab", "new-tab"])
+        popup = Mock(kind="colors")
+        popup.poll.return_value = {"saved": False}
+        before = copy.deepcopy(self.model.state)
+        with patch("tmux_workspaces.sidebar.ConfigPopup", return_value=popup):
+            self.sidebar.open_config_editor("colors")
+        self.assertEqual(self.sidebar.menu, "json-settings")
+        self.sidebar.action("close-tab")
+        self.sidebar.input("t")
+        self.assertEqual(self.model.state, before)
+        self.assertTrue(self.sidebar.finish_config_editor())
+        self.assertIsNone(self.sidebar.config_popup)
+        self.assertEqual(self.model.state, before)
+        self.assertEqual(self.sidebar.actions.acknowledged, ["close-tab", "new-tab"])
+        self.display.shells.close.assert_not_called()
+
+    def test_json_popup_launch_failure_returns_to_viewer_with_a_visible_error(self):
+        with (
+            patch("tmux_workspaces.sidebar.ConfigPopup", side_effect=OSError("could not spawn")),
+            patch.object(self.sidebar, "save", side_effect=LayoutConflict("concurrent edit")),
+        ):
+            self.sidebar.open_config_editor("colors")
+        self.assertIsNone(self.sidebar.config_popup)
+        self.assertIsNone(self.sidebar.menu)
+        self.assertIn("Could not open settings editor", self.sidebar.status_text())
+        self.display.shells.close.assert_not_called()
+
+    def test_json_popup_close_never_writes_layout_and_saved_colors_still_apply(self):
+        self.sidebar.actions = FakeActions()
+        for result in ({"saved": False}, {"error": "popup failed"}, {"saved": True}):
+            popup = Mock(kind="colors")
+            popup.poll.return_value = result
+            self.sidebar.config_popup = popup
+            self.sidebar.menu = "json-settings"
+            with (
+                patch.object(self.sidebar, "save", side_effect=LayoutConflict("concurrent edit")),
+                patch("tmux_workspaces.sidebar.load_theme") as load,
+                patch.object(self.sidebar, "install") as install,
+            ):
+                load.return_value = Mock(diagnostic=None, theme=DEFAULT_THEME)
+                self.assertTrue(self.sidebar.finish_config_editor())
+                if result.get("saved"):
+                    install.assert_called_once_with(DEFAULT_THEME)
+                    self.assertEqual(self.sidebar.message, "Colors saved and applied")
+                else:
+                    install.assert_not_called()
+            self.assertIsNone(self.sidebar.menu)
+            self.assertIsNone(self.sidebar.config_popup)
+            popup.close.assert_called_once()
+
+    def test_json_shortcuts_require_a_selected_file_and_offer_refresh_after_save(self):
+        with patch("tmux_workspaces.sidebar.ConfigPopup") as create:
+            self.sidebar.open_config_editor("shortcuts")
+            create.assert_not_called()
+            self.assertIn("No keymap file", self.sidebar.menu_message)
+        self.sidebar.keymap_path = Path("/unused/keymap.toml")
+        self.sidebar.actions = FakeActions()
+        popup = Mock(kind="shortcuts")
+        popup.poll.return_value = {"saved": True}
+        with patch("tmux_workspaces.sidebar.ConfigPopup", return_value=popup):
+            self.sidebar.open_config_editor("shortcuts")
+        with patch.object(self.sidebar, "save", side_effect=LayoutConflict("concurrent edit")):
+            self.sidebar.finish_config_editor()
+        self.assertEqual(self.sidebar.menu, "refresh")
+        self.assertEqual(self.sidebar.menu_message, "Shortcuts saved")
+        self.assertEqual(self.sidebar.keymap, DEFAULT_KEYMAP)
 
     def test_tab_menu_navigation_preserves_layouts_and_returns_input_focus(self):
         first = self.model.tab

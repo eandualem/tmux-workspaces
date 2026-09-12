@@ -31,10 +31,13 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "mode",
         nargs="?",
-        choices=["_window", "_sidebar", "_leaf", "_action"],
+        choices=["_window", "_sidebar", "_leaf", "_action", "_config-editor"],
         help=argparse.SUPPRESS,
     )
     adapters = result.add_mutually_exclusive_group()
+    result.add_argument("--config-kind", choices=["shortcuts", "colors"], help=argparse.SUPPRESS)
+    result.add_argument("--config-path", type=Path, help=argparse.SUPPRESS)
+    result.add_argument("--config-result", type=Path, help=argparse.SUPPRESS)
     adapters.add_argument("--demo", action="store_true", help="use disposable demo shells")
     adapters.add_argument(
         "--backbone", action="store_true", help="enable the read-only local Backbone adapter"
@@ -183,6 +186,12 @@ def keymap_help(keymap) -> str:
 def main() -> int:
     args = parser().parse_args()
     try:
+        if args.mode == "_config-editor":
+            from .config_editor import editor_main
+
+            if not (args.config_kind and args.config_path and args.config_result):
+                raise ValueError("Settings editor requires kind, path and result")
+            return editor_main(args)
         if args.mode == "_action":
             from .controls import send_action
 

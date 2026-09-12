@@ -515,6 +515,8 @@ MENU_ROUTES = {
 RENAMED = {"Exit": "Detach"}
 # Infrequent controls sit behind Configure…; scenarios keep naming them.
 CONFIGURE = {
+    "Edit colors JSON…",
+    "Edit shortcuts JSON…",
     "Shortcuts",
     "Colors…",
     "Detach",
