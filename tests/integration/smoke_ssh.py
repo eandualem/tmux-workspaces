@@ -280,13 +280,25 @@ def exercise() -> None:
             )
             untouched_pid = source.run("display-message", "-p", "-t", "=untouched:", "#{pane_pid}")
             attached_leaf = saved(library).pane["id"]
-            attached_pane = next(
-                line.split()[0]
-                for line in viewer.run(
-                    "list-panes", "-F", "#{pane_id} #{@viewer_leaf_id}"
-                ).splitlines()
-                if line.split()[-1] == attached_leaf
-            )
+            attached_pane = None
+
+            def attachment_is_drawn():
+                nonlocal attached_pane
+                attached_pane = next(
+                    (
+                        line.split()[0]
+                        for line in viewer.run(
+                            "list-panes", "-F", "#{pane_id} #{@viewer_leaf_id}"
+                        ).splitlines()
+                        if line.split()[-1] == attached_leaf
+                    ),
+                    None,
+                )
+                return attached_pane is not None
+
+            # Saved selection precedes display construction. Keep the exact leaf
+            # target, but wait for its actual pane before testing source loss.
+            wait(client, attachment_is_drawn, "SSH attachment pane was not drawn")
             source.run("kill-session", "-t", "=sample:")
             wait(
                 client,
