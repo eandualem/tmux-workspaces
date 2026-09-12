@@ -58,8 +58,11 @@ or shell process IDs. Window hints are local to the running viewer; reopening a
 closed viewer starts from the source's current window.
 `smoke_attachment_palette` seeds chooser RGB colors in a private tmux pane,
 respawns the real terminal startup path, and queries the pane's palette before
-its first attachment subprocess. Both ordinary and external startup clear the
-owned RGB override while preserving an unowned color slot.
+its first attachment subprocess. Rendered markers in the owned outer PTY prove
+the RGB override is present before startup and cleared afterward; this also
+works with older tmux versions whose OSC 4 query cannot report extended slots.
+Individual queries followed by device-status replies accept both indexed and
+indexless color replies and verify an unowned color slot remains unchanged.
 
 The keyboard-menu suite distinguishes tab switching from pane focus and explicit
 focus/restore layout. It checks the exact active leaf in four-pane layouts at
