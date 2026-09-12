@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import errno
 import fcntl
 import json
 import os
@@ -96,15 +95,11 @@ class Client:
                 except OSError:
                     break
 
-    def click(self, x, y):
-        os.write(self.master, f"\x1b[<0;{x};{y}M".encode())
-        self.pump(0.08)
-        try:
-            os.write(self.master, f"\x1b[<0;{x};{y}m".encode())
-        except OSError as exc:
-            # Clicking Exit can close the terminal before the physical release.
-            if exc.errno != errno.EIO:
-                raise
+    def click(self, x, y, *, count=1):
+        # Queue a complete gesture before draining output. Host scheduling must
+        # not stretch a synthetic double-click past the application's deadline.
+        gesture = f"\x1b[<0;{x};{y}M\x1b[<0;{x};{y}m"
+        os.write(self.master, (gesture * count).encode())
         self.pump(0.3)
 
     def type(self, text):
@@ -551,6 +546,7 @@ def click_button(client, viewer, text):
         return
     for attempt in range(4):
         if attempt:
+            print(f"RETRY: opening {opener} to reach {text} (attempt {attempt + 1}/4)", flush=True)
             # A missed click may have opened something else, or nothing;
             # Escape leaves a menu and is harmless on the plain sidebar.
             client.type("\x1b")
@@ -588,28 +584,35 @@ def _click(client, viewer, text, timeout: float = 10):
     seen: dict = {}
 
     def settled() -> bool:
-        """The label is drawn, and on the same row as it was a moment ago.
+        """The label is drawn at the same terminal position as a moment ago.
 
         Waiting only for the text to appear can measure a half-drawn sidebar,
         where the rows sit at different offsets than the finished frame. The row
         computed from that capture then clicks whatever the finished frame puts
         there instead -- one row up, in practice, which is a different button.
-        Requiring the row to repeat is what makes the position mean something.
+        Require its row, column and pane offset to repeat before using them.
         """
         lines = sidebar().splitlines()
         row = next((index for index, line in enumerate(lines) if text in line), None)
-        previous, seen["row"], seen["lines"] = seen.get("row"), row, lines
-        return row is not None and row == previous
+        top = int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
+        position = None if row is None else (row, lines[row].index(text), top)
+        previous = seen.get("position")
+        seen.update(position=position, lines=lines)
+        return position is not None and position == previous
 
-    wait(client, settled, "missing button: " + text, timeout=timeout)
-    lines, row = seen["lines"], seen["row"]
-    top = int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
     # A one-glyph control sits at the right end of its hit area, so it is
     # clicked on the glyph itself; a word is clicked one cell in.
     offset = 1 if len(text) == 1 else 2
-    before = "\n".join(lines)
-    for _attempt in range(3):
-        client.click(lines[row].index(text) + offset, row + top + 1)
+    for attempt in range(3):
+        if attempt:
+            print(f"RETRY: menu click {text} (attempt {attempt + 1}/3)", flush=True)
+        # Resolve again after a failed attempt: a resize or redraw may have
+        # moved the control since the preceding click.
+        seen.clear()
+        wait(client, settled, "missing button: " + text, timeout=timeout)
+        row, column, top = seen["position"]
+        before = "\n".join(seen["lines"])
+        client.click(column + offset, row + top + 1)
         # A row of an open menu always changes the panel when clicked: it
         # opens another menu, closes this one or shows a message. A click that
         # left the menu exactly as it was is one the loaded host dropped, so
@@ -627,3 +630,4 @@ def _click(client, viewer, text, timeout: float = 10):
             if changed:
                 return
             client.pump(0.1)
+    raise AssertionError(f"menu click {text} had no visible effect after three attempts")

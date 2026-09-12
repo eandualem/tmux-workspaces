@@ -121,8 +121,18 @@ def raw_prefix(directory: Path, library: Path, client: Client, viewer: Tmux, she
     wait(client, lambda: ready(library, viewer, shells), "prefix probe shell not focused")
     client.type(shlex.join([sys.executable, str(program)]) + "\r")
     wait(client, started.exists, "raw prefix reader did not start")
-    client.type("\x01\x1b")
-    client.pump(0.3)
+    client.type("\x01")
+    wait(
+        client,
+        lambda: viewer.run("list-clients", "-F", "#{client_prefix}") == "1",
+        "prefix probe did not enter prefix mode",
+    )
+    client.type("\x1b")
+    wait(
+        client,
+        lambda: viewer.run("list-clients", "-F", "#{client_prefix}") == "0",
+        "Escape did not cancel prefix mode",
+    )
     assert not recording.exists(), "prefix Escape leaked bytes into the ordinary terminal"
     client.type("\x01\x01")
     wait(client, recording.exists, "double prefix did not deliver the literal prefix")
@@ -161,6 +171,7 @@ def editor(directory: Path) -> None:
             # it did not. Every later step verifies its own effect already.
             for attempt in range(4):
                 if attempt:
+                    print(f"RETRY: opening shortcut editor (attempt {attempt + 1}/4)", flush=True)
                     # A missed click opens whatever sits a row away, so leave
                     # that before trying again; Escape on the plain sidebar is
                     # harmless.

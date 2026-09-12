@@ -214,6 +214,7 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
         observed = contents()
         return all(
             [target for target, text in observed.items() if marker in text] == [destination]
+            and observed[destination].count(marker) == 1
             for marker, destination in expected
         )
 
@@ -224,7 +225,20 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
                 # clicks apart; there is no single click to route in a burst.
                 continue
             for burst in (False, True):
-                client.type(direct_sequence("select-workspace-1") + direct_sequence("select-tab-1"))
+                command, marker = packet()
+                client.type(
+                    direct_sequence("select-workspace-1")
+                    + direct_sequence("select-tab-1")
+                    + command
+                )
+                destination = terminal(spaces[0]["tabs"][0])
+                wait(
+                    client,
+                    lambda marker=marker, destination=destination: (
+                        marker in shells.run("capture-pane", "-p", "-t", destination)
+                    ),
+                    f"{method}/{kind} routing setup did not finish",
+                )
                 packets = []
                 for index in (1, 0, 1, 0):
                     tab = spaces[index if kind == "workspace" else 0]["tabs"][
@@ -258,6 +272,7 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
         assert identities() == original, "native mouse checks changed a shell process"
     print(
         f"PASS: {pane_count}-pane tab/workspace immediate and burst click/shortcut routing; "
-        "all 32 commands executed only in their intended shell; original PIDs retained",
+        f"all {len(expected)} commands executed only in their intended shell; "
+        "original PIDs retained",
         flush=True,
     )

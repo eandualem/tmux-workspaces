@@ -243,5 +243,78 @@ class ServerCleanupTests(unittest.TestCase):
             wait(None, lambda: False, "not ready", timeout=0.001)
 
 
+class GestureSynchronizationTests(unittest.TestCase):
+    def test_double_click_is_queued_before_output_pumping(self):
+        client = Client.__new__(Client)
+        client.master = 901
+        events = []
+        client.pump = lambda seconds: events.append(("pump", seconds))
+        with patch("os.write", side_effect=lambda fd, data: events.append((fd, data))):
+            client.click(7, 5, count=2)
+        self.assertEqual(events, [(901, b"\x1b[<0;7;5M\x1b[<0;7;5m" * 2), ("pump", 0.3)])
+
+    def click_fixture(self):
+        client, viewer = Mock(), Mock()
+        clock = [0.0]
+        client.pump.side_effect = lambda seconds: clock.__setitem__(0, clock[0] + seconds)
+        return client, viewer, lambda: clock[0]
+
+    def test_click_waits_for_column_and_pane_offset_to_settle(self):
+        from tests.integration.support import _click
+
+        client, viewer, clock = self.click_fixture()
+        frames = iter(["Go", "    Go", "    Go", "    Go"])
+        tops = iter(["0", "0", "2", "2"])
+
+        def run(command, *args):
+            if command == "capture-pane":
+                return next(frames)
+            return next(tops)
+
+        viewer.run.side_effect = run
+        with patch("tests.integration.support.time.monotonic", side_effect=clock):
+            _click(client, viewer, "Go")
+        client.click.assert_called_once_with(6, 3)
+
+    def test_exhausted_menu_clicks_fail_and_report_every_retry(self):
+        from tests.integration.support import _click
+
+        client, viewer, clock = self.click_fixture()
+        viewer.run.side_effect = lambda command, *args: (
+            "‹ Back\nGo" if command == "capture-pane" else "0"
+        )
+        with (
+            patch("tests.integration.support.time.monotonic", side_effect=clock),
+            patch("builtins.print") as output,
+            self.assertRaisesRegex(AssertionError, "no visible effect"),
+        ):
+            _click(client, viewer, "Go")
+        self.assertEqual(client.click.call_count, 3)
+        self.assertEqual(output.call_count, 2)
+        self.assertTrue(all("RETRY:" in call.args[0] for call in output.call_args_list))
+
+    def test_menu_retry_resolves_the_current_position(self):
+        from tests.integration.support import _click
+
+        client, viewer, clock = self.click_fixture()
+
+        def run(command, *args):
+            if command != "capture-pane":
+                return "0"
+            if client.click.call_count >= 2:
+                return "done"
+            # During the first attempt the menu does not change. It moves only
+            # when the helper starts waiting for its second attempt.
+            return "‹ Back\n    Go" if clock() >= 1.6 else "‹ Back\nGo"
+
+        viewer.run.side_effect = run
+        with (
+            patch("tests.integration.support.time.monotonic", side_effect=clock),
+            patch("builtins.print"),
+        ):
+            _click(client, viewer, "Go")
+        self.assertEqual(client.click.call_args_list, [((2, 2),), ((6, 2),)])
+
+
 if __name__ == "__main__":
     unittest.main()
