@@ -506,8 +506,8 @@ def click_attach(client, viewer, leaf_id):
 MENU_ROUTES = {
     "Split →": "Split right",
     "Split ↓": "Split below",
-    "Focus": "Focus pane",
-    "Layout": "Show layout",
+    "Focus": "Focus one pane",
+    "Layout": "Restore layout",
     "Next →": "Next pane",
     "Attach session…": "Attach session",
 }

@@ -32,6 +32,21 @@ def visible(text: str) -> str:
 
 MENU_RULE = RULE
 
+TAB_SHORTCUTS = {
+    "Rename tab": "rename-tab",
+    "Previous tab": "previous-tab",
+    "Next tab": "next-tab",
+    "Split right": "split-right",
+    "Split below": "split-below",
+    "Focus one pane": "focus",
+    "Restore layout": "focus",
+    "Previous pane": "previous-pane",
+    "Next pane": "next-pane",
+    "Attach session": "attach",
+    "Close focused pane": "close-pane",
+    "Close tab": "close-tab",
+}
+
 # Glyphs a workspace may carry: one cell wide in the monospace fonts terminals
 # use, and common to their box-drawing and symbol ranges. A workspace without
 # one shows its number.
@@ -858,9 +873,9 @@ class Sidebar:
             self.display.select(self.model.tab["focus"])
             self.save()
 
-    def menu_next_pane(self) -> None:
-        """Next pane from the tab menu: the menu closes and typing follows the pane."""
-        self.next_pane()
+    def menu_next_pane(self, offset: int = 1) -> None:
+        """Cycle panes from the menu, closing it so typing follows the pane."""
+        self.next_pane(offset)
         if self.menu:
             self.show()
 
@@ -1062,9 +1077,15 @@ class Sidebar:
             # keeps one plain list, and a split opens as a chooser anyway.
             return [
                 ("Rename tab", lambda: self.rename("rename-tab")),
+                ("Previous tab", lambda: self.next_tab(-1)),
+                ("Next tab", lambda: self.next_tab(1)),
                 ("Split right", lambda: self.split("right")),
                 ("Split below", lambda: self.split("below")),
-                ("Show layout" if self.model.state["focus"] else "Focus pane", self.toggle_focus),
+                (
+                    "Restore layout" if self.model.state["focus"] else "Focus one pane",
+                    self.toggle_focus,
+                ),
+                ("Previous pane", lambda: self.menu_next_pane(-1)),
                 ("Next pane", self.menu_next_pane),
                 ("Move tab up", lambda: self.move_tab(-1)),
                 ("Move tab down", lambda: self.move_tab(1)),
@@ -1229,6 +1250,20 @@ class Sidebar:
             width=max(1, self.size()[1] - 2),
             break_on_hyphens=False,
         )
+
+    def tab_shortcut_hint(self, width: int) -> str:
+        """The selected action's effective keys, never a clipped key sequence."""
+        entry = self.selection.entry() if self.menu == "tab" else None
+        action = TAB_SHORTCUTS.get(entry.label) if entry else None
+        if not action:
+            return ""
+        command = self.shortcut_hints == "command"
+        keys = self.keymap.label(action, command=command)
+        if command:
+            hint = keys or "No direct key"
+        else:
+            hint = f"{tmux_key_label(self.keymap.prefix)}, then {keys}" if keys else "No prefix key"
+        return hint if cells(hint) <= width - 2 else "See Shortcuts"
 
     def command_rows(self, start: int) -> list[str]:
         lines = self.command_lines()
@@ -1550,6 +1585,9 @@ class Sidebar:
                 if width >= 24:
                     hint = "read · Esc" if command_rows else "↵ open · Esc"
                     self.put(height - 2, 15, hint, self.style("accent"))
+                hint = self.tab_shortcut_hint(width)
+                if hint:
+                    self.put(height - 3, 1, hint, self.style("muted"))
             if self.menu_message:
                 self.put(height - 1, 1, self.menu_message, self.style("accent"))
         else:

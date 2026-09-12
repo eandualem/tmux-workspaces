@@ -42,6 +42,13 @@ without waits or retries between them, and require each marker exactly once in
 only its intended shell. These checks reduce fixture timing assumptions; they do
 not guarantee success under arbitrary host starvation or prove native GUI paint.
 
+The keyboard-menu suite distinguishes tab switching from pane focus and explicit
+focus/restore layout. It checks the exact active leaf in four-pane layouts at
+160×38 and 72×16, including scrolling menus. Unit checks cover effective custom
+and disabled shortcut hints and mouse hit targets after short/narrow scrolling.
+These are navigation and targeting checks; owner visual acceptance and the
+separate performance-budget procedure are not inferred from them.
+
 On Debian/Ubuntu, install terminal test prerequisites with:
 
 ```sh
