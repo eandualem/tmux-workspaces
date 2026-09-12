@@ -72,8 +72,10 @@ overrides that part of the preset, so `preset = "plain"` followed by
 `[accent]` with `foreground = "red"` is plain with a red accent, and
 `panel = "#1f2430"` on its own is the default look on a different panel.
 Inherited normal, accent and muted backgrounds follow `panel`, including after
-saving and reopening. An explicit role `background` takes precedence and stays
-fixed; remove that key to inherit the panel again. The outline background follows
+saving and reopening. In `mono`, the active background also inherits `panel`;
+its reverse attribute still distinguishes the selected row. An explicit role
+`background` takes precedence and stays fixed; remove that key to inherit the
+panel again. The outline background follows
 `surface` in the same way. Bright ground colors accept
 both `bright-blue` and tmux's `brightblue` spelling.
 Without a `preset` line everything starts from `default`. The theme editor
