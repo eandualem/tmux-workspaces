@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from tmux_workspaces import chooser as chooser_module
 from tmux_workspaces.application import roster_args
@@ -342,6 +342,25 @@ class ChooserThemeTests(unittest.TestCase):
         self.assertEqual(styles["muted"], 4)
         self.assertEqual(styles["background"], 1)
         self.assertTrue(styles["title"] & Curses.A_BOLD)
+
+    def test_installed_snapshot_ignores_peer_file_changes(self):
+        installed = preset_theme("paper")
+        self.path.write_text('preset = "default"\n')
+        fake = Curses()
+        fake.COLORS = 256
+        with patch(
+            "tmux_workspaces.theme.load_theme", side_effect=AssertionError("read shared file")
+        ):
+            styles = install_theme(fake, self.path, 256, theme_state=installed.to_toml())
+        self.assertEqual(fake.pairs[2], installed.resolve(256).entries["active"][:2])
+        self.assertIsNotNone(styles)
+
+    def test_bad_snapshot_degrades_without_adopting_the_shared_theme(self):
+        self.path.write_text('preset = "paper"\n')
+        with patch(
+            "tmux_workspaces.theme.load_theme", side_effect=AssertionError("read shared file")
+        ):
+            self.assertIsNone(install_theme(Curses(), self.path, 256, theme_state="invalid = ["))
 
     def test_respawned_chooser_resets_inherited_rgb_before_using_indexed_color(self):
         self.path.write_text('preset = "default"\n[muted]\nforeground = "16"\n')

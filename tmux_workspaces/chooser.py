@@ -207,23 +207,29 @@ def clicked_row(sequence: str) -> int | None:
 
 
 def install_theme(
-    curses, theme_path, terminal_colors: int | None, write=None
+    curses, theme_path, terminal_colors: int | None, write=None, *, theme_state: str | None = None
 ) -> dict[str, int] | None:
     """Install the sidebar's theme in this pane, or None to draw with attributes.
 
-    The chooser is its own curses process, so it resolves the same file the
-    sidebar read against the same palette size. A theme that cannot be read or
-    installed never stops the chooser: it draws as it did without one.
+    The chooser is its own curses process. Use the viewer's installed snapshot
+    so a peer saving the shared file cannot change this pane's colors. The file
+    remains a fallback for callers without a snapshot. Unusable colors never
+    stop the chooser: it draws as it did without a theme.
     """
-    if theme_path is None:
+    if theme_path is None and theme_state is None:
         return None
-    from .theme import RGB_SLOTS, ThemeError, load_theme
+    from .theme import RGB_SLOTS, ThemeError, load_theme, parse_theme_state
 
     try:
         curses.start_color()
         ceiling = getattr(curses, "COLORS", 0) or 8
         colors = min(terminal_colors or ceiling, ceiling)
-        palette = load_theme(theme_path).theme.resolve(colors)
+        theme = (
+            parse_theme_state(theme_state)
+            if theme_state is not None
+            else load_theme(theme_path).theme
+        )
+        palette = theme.resolve(colors)
         # A respawned chooser may inherit this private pane's old RGB overrides.
         # Reset unused slots from the range we own before defining the new ones.
         palette.install(curses, write, previous_rgb=RGB_SLOTS)
@@ -321,7 +327,9 @@ def chooser_main(args) -> int:
             sys.stdout.flush()
 
         def main(screen):
-            styles = install_theme(curses, args.theme, args.terminal_colors, emit)
+            styles = install_theme(
+                curses, args.theme, args.terminal_colors, emit, theme_state=args.chooser_theme
+            )
             run(screen, chooser, source, args.action_socket, curses, styles=styles)
 
         curses.wrapper(main)

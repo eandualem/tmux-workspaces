@@ -8,10 +8,11 @@ from contextlib import closing
 from pathlib import Path
 
 from tests.integration.smoke_json_settings import replace
-from tests.integration.smoke_themes import screen
-from tests.integration.support import FixtureResources, click_button, sidebar, wait
+from tests.integration.smoke_themes import Screen, screen
+from tests.integration.support import FixtureResources, click_button, saved, sidebar, wait
 from tmux_workspaces.adapters.tmux import TmuxProvider
 from tmux_workspaces.attachments import GROUPED_MARKER
+from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.model import leaves
 from tmux_workspaces.persistence import Store
 from tmux_workspaces.theme import parse_theme, preset_theme
@@ -170,9 +171,125 @@ def exercise(resources):
     )
 
 
+def exercise_viewer_theme_snapshots(resources, launcher=None):
+    library = resources.library()
+    with closing(Store(library)) as store:
+        model = store.load()
+        model.pane["empty"] = True
+        model.pane["cwd"] = str(resources.root)
+        first = model.pane["id"]
+        store.save(model)
+    theme = resources.root / "shared-theme.toml"
+    theme.write_text(
+        parse_theme(
+            b'preset = "plain"\n'
+            b'[normal]\nforeground = "red"\n'
+            b'[muted]\nforeground = "red"\n'
+            b'[accent]\nforeground = "red"\n'
+        ).to_toml()
+    )
+    arguments = [
+        "--data-dir",
+        str(library),
+        "--source-socket",
+        str(resources.root / "absent.sock"),
+        "--theme",
+        str(theme),
+    ]
+    clients, viewers = [], []
+    for _ in range(2):
+        client = resources.client(arguments, launcher=launcher, cwd=resources.root)
+        wait(client, lambda client=client: client.manifest(library), "shared-theme viewer missing")
+        clients.append(client)
+        viewers.append(Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"]))
+
+    def chooser(viewer, leaf):
+        pane = next(
+            (
+                row.split("|")[0]
+                for row in viewer.run(
+                    "list-panes", "-F", "#{pane_id}|#{@viewer_leaf_id}"
+                ).splitlines()
+                if row.endswith("|" + leaf)
+            ),
+            None,
+        )
+        if not pane:
+            return None
+        style = Screen(viewer.run("capture-pane", "-e", "-p", "-t", pane)).at("Choose what")
+        return (pane, viewer.run("display-message", "-p", "-t", pane, "#{pane_pid}"), style)
+
+    def has_theme(viewer, leaf, color):
+        content = chooser(viewer, leaf)
+        panel = screen(viewer).at("Workspace", first_row=True)
+        return bool(
+            content and content[2] and content[2][0] == color and panel and panel[0] == color
+        )
+
+    for client, viewer in zip(clients, viewers, strict=True):
+        wait(client, lambda viewer=viewer: has_theme(viewer, first, 1), "initial red theme missing")
+    sidebar_pids = [
+        viewer.run("display-message", "-p", "-t", "%0", "#{pane_pid}") for viewer in viewers
+    ]
+    green = {
+        "preset": "plain",
+        "normal": {"foreground": "green"},
+        "muted": {"foreground": "green"},
+        "accent": {"foreground": "green"},
+    }
+
+    def apply(client, viewer):
+        client.output = b""
+        click_button(client, viewer, "Edit theme…")
+        wait(client, lambda: b"saved as TOML" in client.output, "shared-theme editor missing")
+        replace(client, json.dumps(green))
+        client.type("\x13")
+        wait(
+            client,
+            lambda: "Colors saved and applied" in sidebar(viewer),
+            "local theme apply missing",
+        )
+
+    apply(clients[0], viewers[0])
+    wait(clients[0], lambda: has_theme(viewers[0], first, 2), "saving viewer did not apply green")
+    assert parse_theme(theme.read_bytes()).roles["normal"].foreground == ("green",)
+    assert has_theme(viewers[1], first, 1), "peer viewer changed its installed theme unexpectedly"
+    clients[1].type(direct_sequence("new-tab"))
+    wait(clients[1], lambda: len(saved(library).space["tabs"]) == 2, "peer new tab missing")
+    second = saved(library).pane["id"]
+    wait(
+        clients[1],
+        lambda: has_theme(viewers[1], second, 1),
+        "new peer chooser reread shared theme instead of using the installed red theme",
+    )
+    previous = chooser(viewers[1], second)[1]
+    clients[1].resize(144, 32)
+    wait(
+        clients[1],
+        lambda: has_theme(viewers[1], second, 1) and chooser(viewers[1], second)[1] != previous,
+        "resized peer chooser did not retain its installed red theme",
+    )
+    clients[0].type(direct_sequence("select-tab-2"))
+    wait(clients[0], lambda: has_theme(viewers[0], second, 2), "saving viewer lost its green theme")
+    apply(clients[1], viewers[1])
+    wait(
+        clients[1],
+        lambda: has_theme(viewers[1], second, 2),
+        "peer local apply did not update chooser",
+    )
+    for index, viewer in enumerate(viewers):
+        assert viewer.run("display-message", "-p", "-t", "%0", "#{pane_pid}") == sidebar_pids[index]
+    print(
+        "PASS: two viewers retain their installed sidebar/chooser themes "
+        "through new tabs and resize"
+    )
+
+
 if __name__ == "__main__":
     with (
         tempfile.TemporaryDirectory(prefix="tw-theme-refresh-", dir="/tmp") as directory,
         FixtureResources(parent=Path(directory)) as resources,
     ):
         exercise(resources)
+    with FixtureResources(prefix="tw-theme-snapshots-") as resources:
+        exercise_viewer_theme_snapshots(resources)

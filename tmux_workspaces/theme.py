@@ -861,9 +861,8 @@ def parse_theme(payload: bytes) -> Theme:
 def parse_theme_state(state: str) -> Theme:
     """Rebuild a theme from a validated snapshot of its TOML.
 
-    Unused by the current launcher, which transports an absolute path and lets
-    the viewer read the file itself; this is the parser a snapshot transport
-    would need, and it makes no claim about how the viewer is started today.
+    Chooser processes receive the theme installed by their viewer, independently
+    of later edits to the shared configuration file.
     """
     payload = state.encode("utf-8")
     if len(payload) > MAX_THEME_BYTES:

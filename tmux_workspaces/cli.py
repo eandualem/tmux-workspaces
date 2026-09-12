@@ -112,6 +112,7 @@ def parser() -> argparse.ArgumentParser:
     # An empty pane: a chooser for that exact tab and leaf, offering a shell or
     # the same session roster the sidebar shows.
     result.add_argument("--chooser", action="store_true", help=argparse.SUPPRESS)
+    result.add_argument("--chooser-theme", help=argparse.SUPPRESS)
     result.add_argument("--tab", default="", help=argparse.SUPPRESS)
     result.add_argument("--leaf", default="", help=argparse.SUPPRESS)
     result.add_argument("--shell-socket", help=argparse.SUPPRESS)

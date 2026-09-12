@@ -69,6 +69,27 @@ def _exercise(resources: FixtureResources) -> None:
     def editing():
         return "Esc cancel" in sidebar(viewer)
 
+    def caret(row, column):
+        expected = f"{column},{row},1"
+        wait(
+            client,
+            lambda: (
+                viewer.run(
+                    "display-message", "-p", "-t", "%0", "#{cursor_x},#{cursor_y},#{cursor_flag}"
+                )
+                == expected
+            ),
+            f"inline caret did not follow its field to {expected}",
+            timeout=3,
+        )
+
+    def hidden_caret():
+        wait(
+            client,
+            lambda: viewer.run("display-message", "-p", "-t", "%0", "#{cursor_flag}") == "0",
+            "sidebar caret remained visible outside an editor",
+        )
+
     def begin(name):
         client.pump(0.5)
         double(name)
@@ -85,8 +106,18 @@ def _exercise(resources: FixtureResources) -> None:
         assert "Type a name" not in sidebar(viewer)
         assert viewer.run("display-message", "-p", "-t", "viewer:", "#{pane_id}") == "%0"
 
+    hidden_caret()
     begin_workspace()
     client.type("Development")
+    workspace_column = sidebar(viewer).splitlines()[1].index("Development")
+    caret(1, workspace_column + len("Development"))
+    client.type("\x1bOD")
+    caret(1, workspace_column + len("Development") - 1)
+    client.pump(0.5)
+    tap(1, workspace_column + 3)
+    caret(1, workspace_column + 3)
+    client.type("\x1bOC" * (len("Development") - 3))
+    caret(1, workspace_column + len("Development"))
     assert saved(library).space["name"] == original.space["name"]
     client.type("\r")
     wait(
@@ -101,11 +132,13 @@ def _exercise(resources: FixtureResources) -> None:
     )
     assert saved(library).tab["name"] == first_name
     assert saved(library).tab["id"] == first_id
+    hidden_caret()
     begin_workspace()
     client.type("discard-workspace")
     client.type("\x1b")
     wait(client, lambda: not editing(), "workspace Escape did not cancel")
     assert saved(library).space["name"] == "Development"
+    hidden_caret()
 
     # The first click on an inactive tab selects it, with no accidental editor.
     key("new-tab")
@@ -116,8 +149,13 @@ def _exercise(resources: FixtureResources) -> None:
     assert not editing(), "double-clicking an inactive tab started editing"
     begin(first_name)
     client.type("inline-name")
+    row = tab_row(viewer, "inline-name")
+    column = sidebar(viewer).splitlines()[row].index("inline-name")
+    caret(row, column + len("inline-name"))
     assert saved(library).tab["name"] == first_name, "draft saved before Enter"
-    client.type("\x1bOD\x1b[3~X\r")  # Left, Delete, X, Enter in application keypad mode.
+    client.type("\x1bOD")
+    caret(row, column + len("inline-name") - 1)
+    client.type("\x1b[3~X\r")  # Delete, X, Enter in application keypad mode.
     wait(
         client,
         lambda: saved(library).tab["name"] == "inline-namX",

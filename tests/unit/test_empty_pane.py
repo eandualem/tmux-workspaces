@@ -3,6 +3,7 @@
 import contextlib
 import shlex
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -118,6 +119,19 @@ class DisplayTests(unittest.TestCase):
         before = Display._layout_key(model.tab["tree"])
         model.open_terminal()
         self.assertNotEqual(before, Display._layout_key(model.tab["tree"]))
+
+    def test_chooser_command_transports_installed_theme_as_one_argument(self):
+        from tmux_workspaces.theme import parse_theme_state, preset_theme
+
+        display = self.display("--theme", "/shared/theme.toml")
+        model = Model.initial()
+        model.add_tab(empty=True)
+        display._tab_id = model.tab["id"]
+        theme = preset_theme("paper")
+        display.chooser_theme_state = theme.to_toml()
+        args = parser().parse_args(shlex.split(display._leaf_command(model.pane))[2:])
+        self.assertEqual(parse_theme_state(args.chooser_theme), theme)
+        self.assertEqual(args.theme, Path("/shared/theme.toml"))
 
     def test_roster_options_follow_the_sidebar_selection(self):
         base = {
