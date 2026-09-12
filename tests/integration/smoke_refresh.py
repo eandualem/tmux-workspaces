@@ -264,7 +264,7 @@ def exercise(resources: FixtureResources) -> None:
         client,
         lambda: (
             "REFRESH_MARKER_" + token
-            in shells.run("capture-pane", "-S", "-", "-p", "-t", first_terminal)
+            in shells.run("capture-pane", "-J", "-S", "-", "-p", "-t", first_terminal)
         ),
         "ordinary shell did not run its command",
     )
@@ -357,9 +357,10 @@ def exercise(resources: FixtureResources) -> None:
 
     # The work beneath the viewer is untouched.
     assert shell_pid == shells.run("display-message", "-p", "-t", first_terminal, "#{pane_pid}")
-    assert "REFRESH_MARKER_" + token in shells.run(
-        "capture-pane", "-S", "-", "-p", "-t", first_terminal
-    )
+    # Attachment resize can wrap a logical history line across physical rows.
+    # Check retained text, not the terminal width at the moment it was printed.
+    history = shells.run("capture-pane", "-J", "-S", "-", "-p", "-t", first_terminal)
+    assert "REFRESH_MARKER_" + token in history, f"refresh lost shell history: {history!r}"
     assert identities == user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     # The replacement attached through a fresh grouped session; the old one died
     # with its client, and the external session's status line stayed as set.

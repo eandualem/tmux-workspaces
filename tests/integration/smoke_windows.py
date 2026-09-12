@@ -133,8 +133,11 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     click(first, first_view, "Save name")
     wait(
         second,
-        lambda: len(saved(library).state["workspaces"]) == 2,
-        "new workspace did not synchronize",
+        # The shared database is written before the peer has polled it. Menus
+        # deliberately retain their opening snapshot, so wait for the peer's
+        # two workspace buttons before opening its workspace chooser.
+        lambda: any(line.split() == ["1", "2"] for line in sidebar(second_view).splitlines()),
+        "new workspace did not reach the second viewer",
     )
     assert "1 researcher" in selected(second_view)
     click(second, second_view, "▾")

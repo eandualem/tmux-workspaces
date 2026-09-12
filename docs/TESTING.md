@@ -28,6 +28,20 @@ compatibility entry points. Each scenario can also run as its module under
 `tests.integration`. Failures include the predicate that timed out; waits use a
 monotonic deadline rather than assuming a fixed startup time.
 
+Synthetic mouse gestures queue their press/release reports together; double-clicks
+do not pause to drain output between taps. Menu targets must repeat at the same
+row, column and pane offset before a click. Existing bounded menu-opening retries
+print `RETRY:` with the control and attempt number, remeasure their target and fail
+when exhausted; a successful run with retries is not evidence of a retry-free run.
+Prefix cancellation waits for the tmux client's key table, and routing scenarios
+prove their setup reached the starting shell before sending the measured input.
+Multi-viewer scenarios wait for the receiving viewer to display shared edits,
+not just for the database write; an open menu retains its opening snapshot.
+Immediate and burst navigation still send the gesture and command in one write,
+without waits or retries between them, and require each marker exactly once in
+only its intended shell. These checks reduce fixture timing assumptions; they do
+not guarantee success under arbitrary host starvation or prove native GUI paint.
+
 On Debian/Ubuntu, install terminal test prerequisites with:
 
 ```sh

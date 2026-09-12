@@ -50,16 +50,13 @@ def _exercise(resources: FixtureResources) -> None:
     def pane_top():
         return int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
 
-    def tap(row, column, top=None):
+    def tap(row, column, top=None, count=1):
         # The offset is sampled per gesture, never between the taps of one: a tmux
         # query there can delay the second tap past the viewer's 450ms double-click
         # window and turn a double click into two single clicks.
         if top is None:
             top = pane_top()
-        os.write(client.master, f"\x1b[<0;{column + 1};{row + top + 1}M".encode())
-        client.pump(0.035)
-        os.write(client.master, f"\x1b[<0;{column + 1};{row + top + 1}m".encode())
-        client.pump(0.035)
+        client.click(column + 1, row + top + 1, count=count)
 
     def double(name):
         row = tab_row(viewer, name)
@@ -67,8 +64,7 @@ def _exercise(resources: FixtureResources) -> None:
         # Freshly sampled for this gesture, after the row and column lookups, so
         # both taps travel with no tmux round trip between them.
         top = pane_top()
-        tap(row, column, top)
-        tap(row, column, top)
+        tap(row, column, top, count=2)
 
     def editing():
         return "Esc cancel" in sidebar(viewer)
@@ -84,8 +80,7 @@ def _exercise(resources: FixtureResources) -> None:
         client.pump(0.5)
         top = pane_top()
         # The heading is the first row inside the panel's outline.
-        tap(1, 6, top)
-        tap(1, 6, top)
+        tap(1, 6, top, count=2)
         wait(client, editing, "workspace header double-click did not open inline editor")
         assert "Type a name" not in sidebar(viewer)
         assert viewer.run("display-message", "-p", "-t", "viewer:", "#{pane_id}") == "%0"
