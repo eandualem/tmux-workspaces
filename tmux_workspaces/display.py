@@ -63,6 +63,10 @@ class DisplayState:
     panes: dict[str, PaneState]
 
 
+class _LayoutTooSmall(ValueError):
+    """The live pane no longer has room for the planned padded subtree."""
+
+
 class Display:
     def __init__(
         self,
@@ -817,8 +821,35 @@ class Display:
         )
 
     def render(self, tab: dict | None, focus: bool) -> None:
-        # Only pane IDs on this dedicated server may be destroyed or rearranged.
         state = self.state()
+        for attempt in range(2):
+            try:
+                self._render_once(tab, focus, state)
+                return
+            except (RuntimeError, OSError, ValueError) as error:
+                # Partial mappings must never become the user's saved focus.
+                # A failed render remains dirty so the next poll can recover.
+                self.panes.clear()
+                self.last_size = (0, 0)
+                self._rendered_key = self._rendered_shape = self._rendered_geometry = None
+                self.invalidate_snapshot()
+                with contextlib.suppress(RuntimeError, OSError, ValueError):
+                    self.select_sidebar()
+                geometry_error = isinstance(error, _LayoutTooSmall) or (
+                    isinstance(error, RuntimeError) and "no space for a new pane" in str(error)
+                )
+                if attempt == 0 and geometry_error:
+                    current = None
+                    with contextlib.suppress(RuntimeError, OSError, ValueError):
+                        current = self.state()
+                    self.invalidate_snapshot()
+                    if current and current.size != state.size:
+                        state = current
+                        continue
+                raise
+
+    def _render_once(self, tab: dict | None, focus: bool, state: DisplayState) -> None:
+        # Only pane IDs on this dedicated server may be destroyed or rearranged.
         owned = state.panes
         # Gutters are the display's own furniture; only content panes are
         # matched against the tab's leaves.
@@ -864,7 +895,6 @@ class Display:
         self._capture_attachment_windows()
         self.invalidate_snapshot()
         self._rendered_key = self._rendered_shape = self._rendered_geometry = None
-        self.last_size = (cols, rows)
         self.panes.clear()
         self._tab_id = tab["id"] if tab else ""
         self._shell_names = self.shells.ensure_many(
@@ -920,6 +950,7 @@ class Display:
         if tree:
             self._rendered_shape = self._shape_key(tree)
             self._rendered_geometry = self._geometry(self.state())
+        self.last_size = (cols, rows)
 
     def _tree(self, tree: dict, pane: str) -> None:
         if "agent" in tree:
@@ -950,7 +981,7 @@ class Display:
             lower = padded_layout.minimum(tree["first"])[axis]
             upper = padded_layout.minimum(tree["second"])[axis]
             if content < lower + upper:
-                raise ValueError("Window is too small to render this split")
+                raise _LayoutTooSmall("Window is too small to render this split")
             first = min(max(round(ratio * content), lower), content - upper)
             length = str(size - 1 - first)
         else:

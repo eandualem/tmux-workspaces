@@ -54,6 +54,11 @@ that focus and subsequent typing follow the click without a stale warning.
 Unit checks cover the three-second deadline, stale/dead panes, failed action
 acknowledgements, and skipping offline external sessions and empty choosers.
 
+The real-tmux gutter tests shrink the window during nested layout construction,
+after a leaf has already been mapped. Recovery must retain the requested focus,
+route typing to its shell, and restore the saved proportions when the window
+grows, with every original shell process preserved.
+
 `smoke_attachment_policy` verifies local and inherited auto-destroy policies
 attach directly without creating a dangerous group. Source shell PIDs, settings
 and bindings survive viewer close, and a remaining viewer keeps the source usable
