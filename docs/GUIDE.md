@@ -88,17 +88,22 @@ returns to the program inside, while the session you attached keeps its own
 status line and every other setting untouched. The grouped session disappears
 when the pane lets go of it, or as soon as the session it joined is gone, so
 a session that ends shows as offline instead of living on inside the viewer.
-The roster is only an attachment chooser, never a source of tabs.
+The attachment starts on the source session's current window. A window you select
+inside it stays selected through resizing and tab navigation, independently of
+the source session. Reopening a closed viewer starts from the source's current
+window again. The roster is only an attachment chooser, never a source of tabs.
 
 The navigation panel is a rounded, outlined panel inset in the window, and
 the terminals sit on a slightly lighter surface beside it. Split panes are
 separated by one thin line in the outline color, with a blank column of
 surface on each side of it, so text never touches a boundary; no border marks
 the focused pane, the cursor does. The panel, surface and outline colors are
-single values in the colors editor and may be RGB values such as `#22252b`,
+values in **Edit theme…** and may be RGB values such as `#22252b`,
 so they can be matched to your terminal's theme. The padding is made of thin
-panes tmux cannot tell apart from the rest, so a click on one simply hands
-focus back to the pane you were in. The tab menu's **Attach session** and the
+panes tmux cannot tell apart from the rest. Drag the visible separator line
+to resize a split; the surrounding blank columns and sidebar keep their widths.
+The hidden borders beside the line stay inert. The plain theme uses tmux's
+normal border dragging. The tab menu's **Attach session** and the
 attachment shortcut work on all supported tmux versions.
 Once open, the chooser keeps its selected destination even if focus moves to
 another pane. If another viewer removes or changes that destination, attach again

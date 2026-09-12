@@ -8,6 +8,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 
+from . import padded_layout
 from .entrypoints import script_command
 from .keymap import DEFAULT_KEYMAP, Keymap, direct_sequence
 from .model import is_empty, leaves, minimum_size
@@ -107,11 +108,14 @@ class Display:
         self.last_size = (0, 0)
         self.small = False
         self._shell_names: dict[str, str] = {}
+        self._external_targets: dict[str, tuple[str, str]] = {}
+        self._attachment_windows: dict[tuple[str, str, str], str] = {}
         self._rendered_key = None
         self._rendered_shape = None
         self._rendered_geometry = None
         self._snapshot_enabled = False
         self._snapshot: DisplayState | None = None
+        self._split_drag = None
 
     def setup(self) -> None:
         for name, value in {
@@ -129,6 +133,7 @@ class Display:
             # finish. exit-unattached then retires this entire private server.
             "destroy-unattached": "off",
             "exit-unattached": "on",
+            "@viewer_padded": "1" if self.padded else "0",
         }.items():
             self.tmux.run("set-option", "-g", name, value)
         for name, value in {
@@ -160,6 +165,39 @@ class Display:
         # into the sidebar before it has handled navigation.
         native_click = "select-pane -t = ; send-keys -M"
         native_double = "select-pane -t = ; copy-mode -H ; send-keys -X select-word"
+
+        def resize_command(phase):
+            # tmux exposes coordinates relative to the mouse pane, and none
+            # on its border cells. Those hidden borders remain inert padding;
+            # only the visible rule starts a bounded split resize.
+            action = (
+                "resize:end:-1:-1"
+                if phase == "cancel"
+                else f"resize:{phase}:"
+                "#{?#{!=:#{mouse_x},},#{e|+:#{mouse_x},#{pane_left}},-1}:"
+                "#{?#{!=:#{mouse_y},},#{e|+:#{mouse_y},#{pane_top}},-1}"
+            )
+            return "run-shell " + shlex.quote(
+                script_command(
+                    "_action",
+                    "--action-socket",
+                    self.action_socket,
+                    "--action",
+                    action,
+                    "--wait-action",
+                )
+            )
+
+        drag_active = "#{==:#{@viewer_resizing},1}"
+        native_click = (
+            "if-shell -F "
+            + shlex.quote(drag_active)
+            + " "
+            + shlex.quote(resize_command("cancel"))
+            + " ; "
+            + native_click
+        )
+        drag_target = f"#{{||:{drag_active},#{{==:#{{@viewer_gutter}},1}}}}"
         # Selection belongs to the viewer, including when a nested application
         # requests mouse events. Its frozen pane buffer cannot include a sibling
         # pane, and background output cannot erase the user's highlight.
@@ -169,10 +207,36 @@ class Display:
             "MouseDrag1Pane",
             "if-shell",
             "-F",
-            f"#{{||:#{{==:#{{mouse_pane}},{self.sidebar}}},#{{@viewer_gutter}}}}",
-            "send-keys -M",
-            "select-pane -t = ; copy-mode -M",
+            drag_target,
+            resize_command("move"),
+            f"if-shell -F '#{{==:#{{mouse_pane}},{self.sidebar}}}' 'send-keys -M' "
+            "'select-pane -t = ; copy-mode -M'",
         )
+        for key, phase, native in (
+            ("MouseDown1Border", "start", "select-pane -M"),
+            ("MouseDrag1Border", "move", "resize-pane -M"),
+        ):
+            self.tmux.run(
+                "bind-key",
+                "-n",
+                key,
+                "if-shell",
+                "-F",
+                "#{==:#{@viewer_padded},1}",
+                resize_command(phase),
+                native,
+            )
+        for key in ("MouseDragEnd1Pane", "MouseDragEnd1Border", "MouseUp1Pane", "MouseUp1Border"):
+            self.tmux.run(
+                "bind-key",
+                "-n",
+                key,
+                "if-shell",
+                "-F",
+                drag_active,
+                resize_command("end"),
+                "send-keys -M",
+            )
         for table in ("copy-mode", "copy-mode-vi"):
             self.tmux.run(
                 "bind-key",
@@ -197,7 +261,13 @@ class Display:
                 self.tmux.run("bind-key", "-T", table, key, "send-keys", "-X", selection)
             self.tmux.run("bind-key", "-T", table, "Escape", "send-keys", "-X", "cancel")
         for key, native in (
-            ("MouseDown1Pane", native_click),
+            (
+                "MouseDown1Pane",
+                "if-shell -F '#{==:#{@viewer_gutter},1}' "
+                + shlex.quote(resize_command("start"))
+                + " "
+                + shlex.quote(native_click),
+            ),
             # Keep the second down here: forwarding it lets nested tmux
             # schedule its default delayed double-click clipboard copy,
             # which can overwrite this viewer's explicit selection copy.
@@ -374,6 +444,7 @@ class Display:
             return
         style = self._band_style()
         commands = [
+            ["set-option", "-g", "@viewer_padded", "1" if self.padded else "0"],
             ["set-window-option", "-g", "pane-border-style", style],
             ["set-window-option", "-g", "pane-active-border-style", style],
             # The sidebar's own cells are curses'; its ground shows only where
@@ -531,9 +602,60 @@ class Display:
                 ) from error
             raise
 
+    def _capture_attachment_windows(self) -> None:
+        """Remember each owned helper's window before its wrapper is replaced."""
+        from .attachments import GROUPED_MARKER, GROUPED_SOURCE_SESSION
+
+        targets = {
+            leaf: self._external_targets[leaf]
+            for leaf in self.panes
+            if leaf in self._external_targets
+        }
+        if not targets:
+            return
+        try:
+            tty_by_pane = dict(
+                row.split("|", 1)
+                for row in self.tmux.run(
+                    "list-panes", "-t", self.sidebar, "-F", "#{pane_id}|#{pane_tty}"
+                ).splitlines()
+                if "|" in row
+            )
+        except (RuntimeError, OSError, subprocess.TimeoutExpired):
+            return
+        for source in {target[0] for target in targets.values()}:
+            try:
+                clients = Tmux(source).run(
+                    "list-clients",
+                    "-F",
+                    f"#{{client_tty}}|#{{window_id}}|#{{{GROUPED_MARKER}}}|"
+                    f"#{{pid}}|#{{{GROUPED_SOURCE_SESSION}}}",
+                    check=False,
+                    timeout=0.5,
+                )
+            except (RuntimeError, OSError, subprocess.TimeoutExpired):
+                continue
+            windows = {}
+            for row in clients.splitlines():
+                parts = row.split("|")
+                if (
+                    len(parts) == 5
+                    and parts[2] == "1"
+                    and parts[1].startswith("@")
+                    and parts[3].isdigit()
+                    and parts[4].startswith("$")
+                ):
+                    windows[parts[0]] = f"{parts[3]}:{parts[4]}:{parts[1]}"
+            for leaf, target in targets.items():
+                tty = tty_by_pane.get(self.panes[leaf])
+                if target[0] == source and tty in windows:
+                    self._attachment_windows[(leaf, *target)] = windows[tty]
+
     def _leaf_command(self, pane: dict | None) -> str:
         if not pane:
             return script_command("_leaf")
+        if not pane["agent"]:
+            self._external_targets.pop(pane["id"], None)
         if is_empty(pane):
             return script_command(
                 "_leaf",
@@ -556,6 +678,10 @@ class Display:
             }:
                 raise ValueError("Saved attachment must use an external source socket")
             args = ["_leaf", "--source-socket", source_socket, "--agent=" + pane["agent"]]
+            self._external_targets[pane["id"]] = (source_socket, pane["agent"])
+            window = self._attachment_windows.get((pane["id"], source_socket, pane["agent"]))
+            if window:
+                args += ["--attachment-window", window]
             if self.host_socket and self.host_pane:
                 args += ["--host-socket", self.host_socket, "--host-pane", self.host_pane]
             return script_command(*args)
@@ -634,6 +760,7 @@ class Display:
 
     def _reuse_containers(self, tab: dict, tree: dict, key) -> None:
         try:
+            self._capture_attachment_windows()
             displayed = leaves(tree)
             containers = list(self.panes.values())
             replacement = {
@@ -726,6 +853,7 @@ class Display:
         ):
             self._reuse_containers(tab, tree, key)
             return
+        self._capture_attachment_windows()
         self.invalidate_snapshot()
         self._rendered_key = self._rendered_shape = self._rendered_geometry = None
         self.last_size = (cols, rows)
@@ -865,3 +993,114 @@ class Display:
                 # the measured one.
                 self._rendered_key = (self._rendered_key[0], self._layout_key(tree))
                 self._rendered_shape = self._shape_key(tree)
+
+    def cancel_resize(self) -> None:
+        if self._split_drag is not None:
+            self._split_drag = None
+            self.tmux.run("set-option", "-g", "@viewer_resizing", "0")
+
+    def resize_split(self, tab: dict | None, phase: str, x: int, y: int) -> bool:
+        """Move one padded separator over existing panes; never resize a gutter."""
+        if phase == "start":
+            self._split_drag = None
+            self.tmux.run("set-option", "-g", "@viewer_resizing", "0")
+        drag = self._split_drag
+        if phase == "end":
+            self._split_drag = None
+            self.tmux.run("set-option", "-g", "@viewer_resizing", "0")
+        if x < 0 or y < 0:
+            if phase == "start" and self.padded and tab:
+                # Hidden borders have no pane-relative coordinates. Consume
+                # their whole gesture: older tmux releases classify motion
+                # crossing into content as MouseDrag1Pane, which otherwise
+                # starts a selection and changes the focused pane.
+                self.tmux.batch([["copy-mode", "-q", "-t", pane] for pane in self.panes.values()])
+                self._split_drag = {}  # Captured padding gesture, without a split to resize.
+                self.tmux.run("set-option", "-g", "@viewer_resizing", "1")
+            return False
+        if drag == {}:
+            return False  # Padding remains captured even in a focused or narrow layout.
+        if not self.padded or not tab or len(self.panes) != len(leaves(tab["tree"])):
+            self.cancel_resize()
+            return False
+        self.invalidate_snapshot()
+        state = self.state()
+        nodes = padded_layout.splits(tab["tree"])
+        if len(nodes) != len(self._band_gutters) or len(self._blank_gutters) != 2:
+            self.cancel_resize()
+            return False
+        bands = dict(zip((node["id"] for node in nodes), self._band_gutters, strict=True))
+        if phase == "start":
+            for node in nodes:
+                band = state.panes[bands[node["id"]]]
+                right = node["direction"] == "right"
+                hit = (
+                    band.left - 1 <= x <= band.left + 1 and band.top <= y < band.top + band.height
+                    if right
+                    else band.top - 1 <= y <= band.top + 1
+                    and band.left <= x < band.left + band.width
+                )
+                if not hit:
+                    continue
+                # A frozen viewer selection must not switch later drag events
+                # into a copy-mode key table as the pointer crosses content.
+                self.tmux.batch([["copy-mode", "-q", "-t", pane] for pane in self.panes.values()])
+                self.remember_ratios(tab["tree"])
+                rect = padded_layout.bounds(node, self.panes, state.panes)
+                axis = 0 if right else 1
+                available = rect[axis + 2] - 3
+                first = padded_layout.bounds(node["first"], self.panes, state.panes)[axis + 2]
+                self._split_drag = {
+                    "tab": tab["id"],
+                    "node": node["id"],
+                    "size": state.size,
+                    "panes": dict(self.panes),
+                    "geometry": self._geometry(state),
+                    "start": x if right else y,
+                    "first": first,
+                    "available": available,
+                }
+                self.tmux.run("set-option", "-g", "@viewer_resizing", "1")
+                break
+            return False
+        if not drag:
+            return False
+        if (
+            drag["tab"] != tab["id"]
+            or drag["size"] != state.size
+            or drag["panes"] != self.panes
+            or drag["geometry"] != self._geometry(state)
+        ):
+            self.cancel_resize()
+            return False
+        node = next((node for node in nodes if node["id"] == drag["node"]), None)
+        if node is None:
+            self.cancel_resize()
+            return False
+        axis = 0 if node["direction"] == "right" else 1
+        available = drag["available"]
+        lower = max(padded_layout.minimum(node["first"])[axis], round(available * 0.15))
+        upper = min(
+            available - padded_layout.minimum(node["second"])[axis], round(available * 0.85)
+        )
+        if lower > upper:
+            return False
+        first = min(max(drag["first"] + (x if axis == 0 else y) - drag["start"], lower), upper)
+        previous = node.get("ratio", 0.5)
+        ratio = first / available
+        if ratio == previous:
+            return False
+        node["ratio"] = ratio
+        try:
+            encoded = padded_layout.layout(
+                tab["tree"], self.panes, bands, self.sidebar, self._blank_gutters, state
+            )
+            self.tmux.run("select-layout", "-t", self.sidebar, encoded)
+        except (RuntimeError, OSError, ValueError):
+            node["ratio"] = previous
+            raise
+        self.invalidate_snapshot()
+        self.remember_ratios(tab["tree"])
+        self._rendered_geometry = self._geometry(self.state())
+        drag["geometry"] = self._rendered_geometry
+        return True

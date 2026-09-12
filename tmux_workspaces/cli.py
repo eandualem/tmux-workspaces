@@ -108,6 +108,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--instance-dir", type=Path, help=argparse.SUPPRESS)
     result.add_argument("--agent", default="", help=argparse.SUPPRESS)
     result.add_argument("--terminal", default="", help=argparse.SUPPRESS)
+    result.add_argument("--attachment-window", default="", help=argparse.SUPPRESS)
     # An empty pane: a chooser for that exact tab and leaf, offering a shell or
     # the same session roster the sidebar shows.
     result.add_argument("--chooser", action="store_true", help=argparse.SUPPRESS)

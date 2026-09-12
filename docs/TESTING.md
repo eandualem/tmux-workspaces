@@ -51,6 +51,19 @@ has attached to that shell; another viewer's client cannot satisfy readiness.
 Unit checks cover the three-second deadline, stale/dead panes, failed action
 acknowledgements, and skipping offline external sessions and empty choosers.
 
+`smoke_attachment_windows` starts a grouped helper on the source's current
+window, selects a different window only in that helper, then checks resize and
+tab navigation retain it without changing source selection, options, bindings,
+or shell process IDs. Window hints are local to the running viewer; reopening a
+closed viewer starts from the source's current window.
+`smoke_attachment_palette` seeds chooser RGB colors in a private tmux pane,
+respawns the real terminal startup path, and queries the pane's palette before
+its first attachment subprocess. Rendered markers in the owned outer PTY prove
+the RGB override is present before startup and cleared afterward; this also
+works with older tmux versions whose OSC 4 query cannot report extended slots.
+Individual queries followed by device-status replies accept both indexed and
+indexless color replies and verify an unowned color slot remains unchanged.
+
 The keyboard-menu suite distinguishes tab switching from pane focus and explicit
 focus/restore layout. It checks the exact active leaf in four-pane layouts at
 160×38 and 72×16, including scrolling menus. Unit checks cover effective custom

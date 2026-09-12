@@ -21,7 +21,7 @@ import os
 import re
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import MappingProxyType
 
@@ -225,7 +225,7 @@ class Role:
             ),
         )
 
-    def to_toml_table(self, role: str) -> str:
+    def to_toml_table(self, role: str, *, inherit_background: bool = False) -> str:
         def emit(names: tuple[str, ...]) -> str:
             values = [name if name.isdigit() else json.dumps(name) for name in names]
             return values[0] if len(values) == 1 else "[" + ", ".join(values) + "]"
@@ -233,8 +233,8 @@ class Role:
         return (
             f"[{role}]\n"
             f"foreground = {emit(self.foreground)}\n"
-            f"background = {emit(self.background)}\n"
-            f"attributes = {json.dumps(list(self.attributes))}\n"
+            + ("" if inherit_background else f"background = {emit(self.background)}\n")
+            + f"attributes = {json.dumps(list(self.attributes))}\n"
         )
 
 
@@ -261,6 +261,8 @@ def canonical_panel(value, what: str = "panel") -> str:
         return DEFAULT_PANEL
     if text.startswith("colour") and text[6:].isdigit():
         return canonical_panel(int(text[6:]), what)
+    if text.startswith("bright") and text[6:] in _BASIC_NAMES:
+        return text
     if text in _NAME_TO_INDEX:
         return text.replace("bright-", "bright")
     raise ValueError(
@@ -372,7 +374,20 @@ def preset_theme(name: str) -> Theme:
         raise ValueError(f"unknown preset {name!r}; use one of {', '.join(PRESET_NAMES)}")
     key = name.strip().lower()
     return Theme(
-        MappingProxyType(dict(_PRESET_ROLES[key])), _PRESET_PANELS[key], _PRESET_SURFACES[key]
+        MappingProxyType(dict(_PRESET_ROLES[key])),
+        _PRESET_PANELS[key],
+        _PRESET_SURFACES[key],
+        frozenset(
+            role
+            for role, value in _PRESET_ROLES[key].items()
+            if role != "outline" and tmux_spelling(value.background[0]) == _PRESET_PANELS[key]
+        ),
+        key,
+        frozenset(
+            role
+            for role, value in _PRESET_ROLES[key].items()
+            if role == "outline" and tmux_spelling(value.background[0]) == _PRESET_SURFACES[key]
+        ),
     )
 
 
@@ -560,6 +575,10 @@ class Theme:
     roles: Mapping[str, Role]
     panel: str = DEFAULT_PANEL
     surface: str = DEFAULT_PANEL
+    # Retain inheritance through Save/reopen; explicit role backgrounds stay fixed.
+    _panel_roles: frozenset[str] = field(default=frozenset(), repr=False)
+    _base_preset: str = field(default=DEFAULT_PRESET, compare=False, repr=False)
+    _surface_roles: frozenset[str] = field(default=frozenset(), repr=False)
 
     @classmethod
     def from_dict(cls, data: Mapping) -> Theme:
@@ -573,21 +592,63 @@ class Theme:
             )
         # A preset is the starting point; a ground value or role table overrides it.
         base = preset_theme(data["preset"]) if "preset" in data else DEFAULT_THEME
+        if "panel" in data:
+            base = base.with_panel(data["panel"])
+        if "surface" in data:
+            base = base.with_surface(data["surface"])
         roles = dict(base.roles)
+        panel_roles = set(base._panel_roles)
+        surface_roles = set(base._surface_roles)
         for role in ROLES:
             if role in data:
                 roles[role] = Role.from_dict(data[role], role=role, base=roles[role])
-        panel = canonical_panel(data["panel"]) if "panel" in data else base.panel
-        surface = canonical_panel(data["surface"], "surface") if "surface" in data else base.surface
-        return cls(MappingProxyType(roles), panel, surface)
+                if "background" in data[role]:
+                    panel_roles.discard(role)
+                    surface_roles.discard(role)
+        panel = base.panel
+        surface = base.surface
+        return cls(
+            MappingProxyType(roles),
+            panel,
+            surface,
+            frozenset(panel_roles),
+            base._base_preset,
+            frozenset(surface_roles),
+        )
+
+    def _with_ground(self, value, ground: str, inherited: frozenset[str]) -> Theme:
+        color = canonical_panel(value, ground)
+        if color == getattr(self, ground):
+            return self
+        role_color = (
+            color[6:]
+            if color.startswith("colour")
+            else next((name for name in COLOR_NAMES if tmux_spelling(name) == color), color)
+        )
+        preset_ground = (_PRESET_PANELS if ground == "panel" else _PRESET_SURFACES)[
+            self._base_preset
+        ]
+        roles = {
+            role: Role(
+                value.foreground,
+                _PRESET_ROLES[self._base_preset][role].background
+                if color == preset_ground
+                else (role_color,),
+                value.attributes,
+            )
+            if role in inherited
+            else value
+            for role, value in self.roles.items()
+        }
+        return replace(self, roles=MappingProxyType(roles), **{ground: color})
 
     def with_panel(self, value) -> Theme:
-        """Return a copy with another panel color. Pure; raises ValueError."""
-        return Theme(self.roles, canonical_panel(value), self.surface)
+        """Change the panel and its inherited roles, preserving explicit backgrounds."""
+        return self._with_ground(value, "panel", self._panel_roles)
 
     def with_surface(self, value) -> Theme:
-        """Return a copy with another surface color. Pure; raises ValueError."""
-        return Theme(self.roles, self.panel, canonical_panel(value, "surface"))
+        """Change the surface and its inherited outline background."""
+        return self._with_ground(value, "surface", self._surface_roles)
 
     def separator(self) -> str:
         """The tmux color for the separators between split panes: the outline's
@@ -615,7 +676,16 @@ class Theme:
                 what=f"{role}.attributes",
             ),
         )
-        return Theme(MappingProxyType(dict(self.roles) | {role: updated}), self.panel, self.surface)
+        inherited = self._panel_roles - {role} if "background" in changes else self._panel_roles
+        surface_inherited = (
+            self._surface_roles - {role} if "background" in changes else self._surface_roles
+        )
+        return replace(
+            self,
+            roles=MappingProxyType(dict(self.roles) | {role: updated}),
+            _panel_roles=inherited,
+            _surface_roles=surface_inherited,
+        )
 
     def preset_name(self) -> str | None:
         """The preset this theme equals exactly, or None for custom colors."""
@@ -643,9 +713,16 @@ class Theme:
                 + "# [accent]\n"
                 + '# foreground = "red"\n'
             )
-        tables = "\n".join(self.roles[role].to_toml_table(role) for role in ROLES)
+        tables = "\n".join(
+            self.roles[role].to_toml_table(
+                role, inherit_background=role in self._panel_roles | self._surface_roles
+            )
+            for role in ROLES
+        )
         grounds = f"panel = {json.dumps(self.panel)}\nsurface = {json.dumps(self.surface)}\n"
-        return header + "\n" + grounds + "\n" + tables
+        return (
+            header + "\n" + f"preset = {json.dumps(self._base_preset)}\n" + grounds + "\n" + tables
+        )
 
     def resolve(self, colors: int) -> Palette:
         """Resolve against a real palette size. Never raises: colors always render."""
@@ -721,9 +798,7 @@ def palette_sequence(slots: Mapping[str, int]) -> str:
     )
 
 
-DEFAULT_THEME = Theme(
-    MappingProxyType(_shipped()), _PRESET_PANELS[DEFAULT_PRESET], _PRESET_SURFACES[DEFAULT_PRESET]
-)
+DEFAULT_THEME = preset_theme(DEFAULT_PRESET)
 
 
 def _read_file(path: Path) -> bytes:

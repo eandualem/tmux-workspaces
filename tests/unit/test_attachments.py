@@ -16,6 +16,25 @@ class StopFixture(Exception):
 
 
 class AttachmentTests(unittest.TestCase):
+    def test_all_owned_rgb_slots_are_reset_before_any_attachment_subprocess(self):
+        from tmux_workspaces.theme import RGB_SLOTS
+
+        expected = "".join(f"\x1b]104;{slot}\x1b\\" for slot in RGB_SLOTS)
+        for agent in ("", "external"):
+            with self.subTest(agent=agent):
+                output = StringIO()
+
+                def attach(*args, output=output, **kwargs):
+                    self.assertEqual(output.getvalue(), expected)
+                    raise StopFixture
+
+                with (
+                    redirect_stdout(output),
+                    patch("tmux_workspaces.attachments.subprocess.run", side_effect=attach),
+                    self.assertRaises(StopFixture),
+                ):
+                    leaf_main(self.args(agent=agent, terminal="" if agent else "ordinary"))
+
     def args(self, *, agent="", terminal="ordinary"):
         return SimpleNamespace(
             agent=agent,
@@ -35,6 +54,7 @@ class AttachmentTests(unittest.TestCase):
             ) as run,
             patch("tmux_workspaces.attachments.time.sleep", side_effect=[None, StopFixture]),
             self.assertRaises(StopFixture),
+            redirect_stdout(StringIO()),
         ):
             leaf_main(self.args())
         self.assertEqual(
@@ -139,7 +159,7 @@ class GroupedAttachTests(unittest.TestCase):
                 # The preflight before an attach: the session exists.
                 return SimpleNamespace(returncode=0)
             if command[3] == "display-message":
-                return SimpleNamespace(returncode=0, stdout="$8\n")
+                return SimpleNamespace(returncode=0, stdout="$8|@12|123\n")
             if command[3] == "show-options":
                 # The target's own settings, in tmux's quoting.
                 return SimpleNamespace(returncode=0, stdout='mouse on\nstatus-left "a \\"b\\""\n')
@@ -177,6 +197,7 @@ class GroupedAttachTests(unittest.TestCase):
                 patch("tmux_workspaces.attachments.subprocess.Popen", return_value=client) as popen,
                 patch("tmux_workspaces.attachments.time.sleep", side_effect=StopFixture),
                 self.assertRaises(StopFixture),
+                redirect_stdout(StringIO()),
             ):
                 leaf_main(args)
             if kind == "agent":
@@ -189,7 +210,8 @@ class GroupedAttachTests(unittest.TestCase):
                     f"; set-option -t {name} mouse on ; set-option -t {name} status-left", text
                 )
                 self.assertEqual(command[command.index("status-left") + 1], 'a "b"')
-                self.assertTrue(text.endswith(f"; set-option -t {name} destroy-unattached on"))
+                self.assertIn(f"; set-option -t {name} destroy-unattached on", text)
+                self.assertTrue(text.endswith(f"; select-window -t ={name}:@12"))
                 self.assertIn(f"; set-option -t {name} status off ;", text)
                 self.assertEqual(
                     [c[3] for c in seen[-3:]], ["has-session", "display-message", "show-options"]
@@ -216,7 +238,7 @@ class GroupedAttachTests(unittest.TestCase):
         def run(command, **kwargs):
             seen.append(command)
             if command[3] == "display-message":
-                return SimpleNamespace(returncode=0, stdout="$8\n")
+                return SimpleNamespace(returncode=0, stdout="$8|@12|123\n")
             if command[3] == "has-session":
                 # The original ID is gone, but a replacement already uses its name.
                 return SimpleNamespace(returncode=0 if command[-1] == "=manager:" else 1)

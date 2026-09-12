@@ -109,9 +109,86 @@ class PresetThemeTests(unittest.TestCase):
             self.assertEqual(parse_theme(text.encode()), preset_theme(name))
         custom = DEFAULT_THEME.with_role("accent", foreground=["red"])
         text = custom.to_toml()
-        self.assertNotIn("preset =", text)
+        self.assertIn('preset = "default"', text)
         self.assertIn("[accent]", text)
         self.assertEqual(parse_theme(text.encode()), custom)
+
+    def test_bright_grounds_round_trip_through_all_presets(self):
+        for preset in PRESET_NAMES:
+            for name in ("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"):
+                with self.subTest(preset=preset, color=name):
+                    theme = Theme.from_dict(
+                        {"preset": preset, "panel": "bright-" + name, "surface": "bright" + name}
+                    )
+                    self.assertEqual(theme.panel, "bright" + name)
+                    self.assertEqual(parse_theme(theme.to_toml().encode()), theme)
+
+    def test_panel_override_follows_inherited_roles_and_preserves_explicit_backgrounds(self):
+        for preset in ("default", "paper", "mono"):
+            with self.subTest(preset=preset):
+                theme = Theme.from_dict(
+                    {
+                        "preset": preset,
+                        "panel": "bright-blue",
+                        "accent": {"foreground": "red"},
+                        "muted": {
+                            "background": list(preset_theme(preset).roles["muted"].background)
+                        },
+                    }
+                )
+                self.assertEqual(theme.roles["normal"].background, ("bright-blue",))
+                self.assertEqual(theme.roles["accent"].background, ("bright-blue",))
+                self.assertEqual(
+                    theme.roles["muted"].background, preset_theme(preset).roles["muted"].background
+                )
+                restored = parse_theme(theme.to_toml().encode())
+                self.assertEqual(restored, theme)
+                again = restored.with_panel("red")
+                self.assertEqual(again.roles["normal"].background, ("red",))
+                self.assertEqual(again.roles["accent"].background, ("red",))
+                self.assertEqual(again.roles["muted"], restored.roles["muted"])
+                self.assertEqual(again.roles["outline"], restored.roles["outline"])
+                self.assertEqual(parse_theme(again.to_toml().encode()), again)
+
+    def test_surface_override_follows_outline_but_preserves_explicit_background(self):
+        for preset in PRESET_NAMES:
+            with self.subTest(preset=preset):
+                theme = Theme.from_dict({"preset": preset, "surface": "brightgreen"})
+                self.assertEqual(theme.roles["outline"].background, ("bright-green",))
+                self.assertEqual(theme.roles["normal"], preset_theme(preset).roles["normal"])
+                restored = parse_theme(theme.to_toml().encode())
+                self.assertEqual(restored, theme)
+                self.assertEqual(restored.with_surface("red").roles["outline"].background, ("red",))
+                fixed = theme.with_role("outline", background=["bright-green"])
+                self.assertEqual(
+                    parse_theme(fixed.to_toml().encode())
+                    .with_surface("red")
+                    .roles["outline"]
+                    .background,
+                    ("bright-green",),
+                )
+
+    def test_returning_to_preset_grounds_restores_inherited_fallbacks(self):
+        for preset in PRESET_NAMES:
+            base = preset_theme(preset)
+            restored = (
+                base.with_panel("red")
+                .with_surface("green")
+                .with_panel(base.panel)
+                .with_surface(base.surface)
+            )
+            self.assertEqual(restored, base)
+            self.assertEqual(parse_theme(restored.to_toml().encode()), base)
+
+    def test_explicit_background_equal_to_panel_is_not_reclassified_on_save(self):
+        theme = Theme.from_dict(
+            {"normal": {"background": list(DEFAULT_THEME.roles["normal"].background)}}
+        )
+        self.assertIsNone(theme.preset_name())
+        restored = parse_theme(theme.to_toml().encode())
+        changed = restored.with_panel("red")
+        self.assertEqual(changed.roles["normal"], DEFAULT_THEME.roles["normal"])
+        self.assertEqual(changed.roles["accent"].background, ("red",))
 
     def test_an_rgb_slot_never_takes_a_number_a_role_already_uses(self):
         theme = DEFAULT_THEME.with_role("muted", foreground=["16"])
@@ -200,6 +277,7 @@ class PanelColorTests(unittest.TestCase):
         display.style_panel("default")
         display.tmux.batch.assert_called_once_with(
             [
+                ["set-option", "-g", "@viewer_padded", "0"],
                 ["set-window-option", "-g", "pane-border-style", "fg=default,bg=default"],
                 ["set-window-option", "-g", "pane-active-border-style", "fg=default,bg=default"],
                 ["set-option", "-p", "-t", "%0", "window-style", "default"],
