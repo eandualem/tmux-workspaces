@@ -5,9 +5,10 @@ Applies to every agent and all work in this repository.
 ## Read first
 
 Read README.md, docs/INITIAL_TASK.md and the relevant code and tests.
-Read `.backbone/memory/HANDOFF.md` (active scratchpad) and `INDEX.md`, when present,
-then relevant linked memory. In linked worktrees, use the owning checkout's
-`.backbone/memory/` beside the common Git directory, not a separate memory copy.
+Read `.backbone/memory/HANDOFF.md` (active scratchpad) and
+`.backbone/memory/INDEX.md`, when present, then relevant linked memory.
+For every memory read and write in linked worktrees, resolve `.backbone/memory/`
+from the parent of the common Git directory; do not create a worktree-local copy.
 Shared memory, credentials, transcripts, runtime state and test artifacts stay
 untracked. Development orchestration is optional; it is not a product dependency.
 
