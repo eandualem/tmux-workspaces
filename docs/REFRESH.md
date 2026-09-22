@@ -4,7 +4,7 @@ Viewer refresh reloads viewer code and settings while keeping the work beneath
 the viewer running. It is not an updater or dependency installer.
 
 With the shipped keymap, press **Ctrl-g**, release it, then **f** to open the
-refresh confirmation. The shortcut controls also expose **Refresh viewer** by
+refresh confirmation. **Configure… → Refresh viewer…** opens the same confirmation by
 mouse. Save or cancel an open name or color edit first. Cancel the confirmation to keep
 the current viewer.
 
@@ -41,7 +41,7 @@ viewer running.
 Each replacement gets fresh display and action sockets and a fresh runtime
 identity. Repeated requests for one refresh create at most one replacement. Once
 a refresh is confirmed, further queued actions for that old viewer, including
-Exit, are ignored. Exit remains available in the replacement. The
+Detach, are ignored. Detach remains available in the replacement. The
 canonical library, attachment source, optional adapter selection, working directory
 and theme and keymap selections belong to the launch context, rather than a temporary viewer.
 A refreshed instance does not reuse a stale keymap snapshot.

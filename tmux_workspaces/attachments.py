@@ -7,7 +7,7 @@ import time
 import uuid
 
 from .targets import session_target
-from .tmux import Tmux, clean_env
+from .tmux import Tmux, clean_env, command_args
 
 
 def attachment_hosts_viewer(args, target: str) -> bool:
@@ -105,7 +105,7 @@ def grouped_attach_command(
     detaches; the target is never modified.
     """
     name = name or grouped_session_name()
-    command = ["tmux", "-S", source_socket, "new-session", "-E", "-t", target, "-s", name]
+    commands = [["new-session", "-E", "-t", target, "-s", name]]
     for option in [
         *(options or []),
         [GROUPED_MARKER, "1"],
@@ -113,10 +113,10 @@ def grouped_attach_command(
         ["status", "off"],
         ["destroy-unattached", "on"],
     ]:
-        command += [";", "set-option", "-t", name, *option]
+        commands.append(["set-option", "-t", name, *option])
     if window:
-        command += [";", "select-window", "-t", f"={name}:{window}"]
-    return command
+        commands.append(["select-window", "-t", f"={name}:{window}"])
+    return ["tmux", "-S", source_socket, *command_args(commands)]
 
 
 def target_session_options(source_socket: str, target: str) -> list[list[str]]:

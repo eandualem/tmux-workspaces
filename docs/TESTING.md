@@ -86,7 +86,7 @@ The keyboard-menu suite distinguishes tab switching from pane focus and explicit
 focus/restore layout. It checks the exact active leaf in four-pane layouts at
 160×38 and 72×16, including scrolling menus. Unit checks cover effective custom
 and disabled shortcut hints and mouse hit targets after short/narrow scrolling.
-These are navigation and targeting checks; owner visual acceptance and the
+These are navigation and targeting checks; native visual behavior and the
 separate performance-budget procedure are not inferred from them.
 
 On Debian/Ubuntu, install terminal test prerequisites with:
@@ -160,22 +160,11 @@ PTY setup failures, timeouts, interruptions and hostile manifest paths.
 
 ## Coverage and limits
 
-The startup-preflight follow-up passed 187 application and 12 benchmark tests on
-both platforms below, plus eleven Linux and ten macOS PTY scenarios (SSH skipped
-on macOS). Its failure fixtures establish empty-library/no-server behavior for
-unsupported environments. Full evidence and the final preview exit-status check
-are recorded in [ACCEPTANCE.md](ACCEPTANCE.md).
+The hosted matrix runs Ubuntu/Python 3.11 and 3.14 plus macOS/Python 3.14. Linux
+requires the SSH scenario; macOS explicitly skips it. Each job runs the unit,
+terminal and installed-bundle suites. See [recorded results and known limits](ACCEPTANCE.md)
+for evidence, including retries, rather than inferring a pass from the configured
+matrix.
 
-The combined fixture/keymap branch passed `make check` with 164 application tests
-and 12 benchmark tests on macOS and Linux. All ten PTY scenarios passed on Linux;
-nine passed on macOS with an explicit SSH skip. macOS used Python 3.14.7 and tmux
-3.7c. The Debian 13 aarch64 container used Python 3.12.14,
-tmux 3.5a and OpenSSH 10.0p2. Both use `LANG=en_US.UTF-8` and
-`TERM=xterm-256color`; resize exercises narrow and four-pane dimensions.
-
-The configured hosted matrix is Ubuntu/Python 3.11 and 3.14 plus macOS/Python 3.14.
-Linux jobs require the SSH scenario; macOS jobs explicitly skip it. The previous
-merged terminal suites passed that matrix, but this change's hosted runs remain
-pending account availability. Record final-head CI results before merging.
 Native macOS SSH, WSL, the exact tmux 3.3 floor, real network latency and native
 Ghostty GUI rendering remain unverified by these fixtures.

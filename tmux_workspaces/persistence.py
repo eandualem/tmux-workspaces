@@ -35,6 +35,7 @@ class Store:
     def __init__(self, directory: Path):
         self.path = directory / "layouts.db"
         self.base: dict | None = None
+        self._data_version: int | None = None
         try:
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             self._existing = self.path.exists() and self.path.stat().st_size > 0
@@ -144,8 +145,14 @@ class Store:
 
     def refresh(self, model: Model) -> bool:
         try:
+            # Read the version first: a peer committing during this refresh must
+            # still invalidate the next poll. Our own saves already update base.
+            version = self.db.execute("PRAGMA data_version").fetchone()[0]
+            if version == self._data_version:
+                return False
             latest = shared_layout(self._current())
             if latest == self.base:
+                self._data_version = version
                 return False
             try:
                 merged = merge_layout(self.base, shared_layout(model.state), latest)
@@ -157,6 +164,7 @@ class Store:
             state = local_navigation(merged, model.state)
             validate_state(state)
             self.base, model.state = latest, state
+            self._data_version = version
             return True
         except InvalidLayout as error:
             raise self.failure(str(error)) from error

@@ -1,9 +1,7 @@
 # Sample workspace library
 
-The compact navigation UI is included in the normal application. To load an
-update, choose **Exit** and relaunch from the checkout with the same data/source
-options: `./run`, or `./ghostty` on macOS. Saved arrangements and running shells
-remain available.
+Explore the viewer with a separate sample arrangement and disposable attachment
+sessions. Your normal library and existing viewers remain independent.
 
 ## Try a separate sample
 
@@ -58,11 +56,13 @@ role and ground; see [THEMES.md](THEMES.md).
 2. Create a tab, split right/below, type into shells and rename both kinds of name.
 3. Select an inactive pane, attach reviewer, then return to its parked shell.
 4. Try right-click options, inline Enter/Escape, and a long name.
-5. Drag the gaps and resize smaller/larger; Focus pane/Show layout restores the saved splits.
-6. Exit and launch the sample again; check the arrangement and ordinary shell state.
+5. Drag the separators and resize smaller/larger; **Focus one pane / Restore
+   layout** toggles the saved splits.
+6. Detach and launch the sample again; check the arrangement and ordinary shell state.
 
 Very short navigation panels (under 16 rows) show an enlarge hint while core
-terminal shortcuts remain available. Complete keyboard menu navigation is pending.
+terminal shortcuts remain available. In menus, arrows move the selection, Enter
+activates it and Escape returns to the pane; see [keyboard controls](SHORTCUTS.md).
 
 See [ACCEPTANCE.md](ACCEPTANCE.md) for actual PTY verification and platform limits.
 Native Ghostty GUI behavior is a separate manual check.

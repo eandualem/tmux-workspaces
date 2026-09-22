@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 import tempfile
 import tomllib
 import unittest
@@ -360,6 +363,29 @@ class KeymapTests(unittest.TestCase):
                     load_keymap(path)
             with self.assertRaisesRegex(ValueError, "keymap"):
                 load_keymap(Path(directory))
+
+    def test_fifo_keymap_is_rejected_without_blocking_the_launcher(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "keymap.toml"
+            os.mkfifo(path)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "tmux_workspaces",
+                    "--keymap",
+                    str(path),
+                    "--print-keymap",
+                    "toml",
+                ],
+                cwd=Path(__file__).resolve().parents[2],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("not a regular file", result.stderr)
+            self.assertIn(str(path), result.stderr)
 
 
 if __name__ == "__main__":

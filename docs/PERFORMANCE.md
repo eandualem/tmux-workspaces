@@ -1,12 +1,12 @@
 # Performance measurement
 
-Switching performance was the public-release gate. The target for **each** one-
-and four-pane tab/workspace navigation path is **p50 ≤ 150 ms and p95 ≤ 250 ms**,
+The engineering target for **each** one- and four-pane tab/workspace navigation
+path is **p50 ≤ 150 ms and p95 ≤ 250 ms**,
 for both clicks and direct shortcuts, met for both shell-client readiness and the
 routed-input acknowledgement in repeated untraced runs. These are engineering
-acceptance budgets, not a guarantee about any particular machine. Three quiet-host
-runs met them; [the result](#release-gate-result) records what that does and does
-not establish. Timing is deliberately not asserted by ordinary unit tests.
+acceptance budgets, not a guarantee about any particular machine. Three historical
+quiet-host runs met them; [the version-specific result](#release-gate-result)
+records what that does and does not establish. Timing is deliberately not asserted by ordinary unit tests.
 
 ## Run on disposable terminals
 
@@ -178,13 +178,12 @@ process-set churn and retained in the raw evidence; all nine four-pane samples
 were valid. No run or latency sample was discarded. At this revision, only the
 one-pane click-tab path met both navigation budgets in every run.
 
-An independent same-write gesture-and-typing stress test found an existing mouse
-input loss on the baseline: readiness probes alone do not establish immediate
-typing correctness. This is tracked separately in issue #17 and must be fixed
-and included in the optimized comparison. Keep the raw baseline runs and final
-comparison with the engineering review; timing eligibility is not acceptance.
+A same-write gesture-and-typing stress test found mouse input loss on this
+baseline. Readiness probes alone do not establish immediate typing correctness.
+The acknowledged-input implementation below addresses that failure; do not use
+the older baseline as evidence for current input routing.
 
-## Reviewed navigation implementation
+## Navigation implementation and comparison
 
 Actions wake the persistent controller directly instead of waiting for its
 150 ms fallback poll. Pane state is shared only within one event and invalidated
@@ -237,20 +236,19 @@ per pane count; all 720 post-readiness routing probes were unique and every shel
 identity survived. Per-run figures and the paired baseline comparison are recorded
 on [the performance gate](https://github.com/eandualem/tmux-workspaces/issues/3).
 
-Considerable work landed afterwards — keymaps, startup checks, packaging, keyboard
-menus, viewer themes and explicit refresh — so the release head was re-measured
-against `4d3d213` directly. Runs alternated between the two revisions so that host
-load fell on both equally, three runs each, identical benchmark source and options.
-Pooled over ninety events per path, the release head was faster at the median on
+Revision `e86de17`, including keymaps, startup checks, packaging, keyboard menus,
+themes and refresh, was measured against `4d3d213` directly. Runs alternated
+between the two revisions so that host load fell on both equally, three runs each, identical benchmark source and options.
+Pooled over ninety events per path, `e86de17` was faster at the median on
 seven of eight paths, by 1.2% to 25.8%. One path moved the other way: four-pane
-shortcut-workspace rose 8.9% at the median, while its p95 fell 5.3%. Taken
-together the later work did not slow navigation overall, and that single path is
-the exception to watch if four-pane workspace switching is changed again.
+shortcut-workspace rose 8.9% at the median, while its p95 fell 5.3%. These results
+show a tradeoff on the four-pane shortcut-workspace path rather than uniform
+improvement.
 
 That comparison ran on a host under heavy competing load, where **neither**
-revision meets the budgets: it establishes the absence of a regression, not
-compliance. Do not quote its absolute milliseconds as a result. Budget compliance
-rests on the quiet-host runs above.
+revision met the budgets. It supports only the relative results described above,
+not budget compliance or a guarantee for current main. Budget compliance rests
+on the quiet-host runs at `fad3d125` above.
 
 ### What this does not establish
 
@@ -266,13 +264,7 @@ session going offline and reconnecting. The PTY same-write and burst suites cove
 typing immediately alongside a gesture, which readiness probes alone cannot
 establish.
 
-What automation cannot supply is step 1: watching the selection and the
-destination together on a real terminal for a highlight flash, a missing name, a
-transient layout expansion or a visibly late selection. The owner has reported
-switching as smooth and the earlier highlight and transition artifact as gone.
-That is the observation the numbers cannot describe, but it is not the full
-recorded pass — twenty alternations by click and then by shortcut, at one and
-four panes, with the terminal, version, dimensions and connection recorded. Run
-that pass on the terminal you intend to support before making a performance claim
-to other people, and re-run it whenever navigation, rendering or attachment code
-changes materially.
+Automation does not establish step 1: watching selection and destination together
+for a highlight flash, missing name, transient expansion or visibly late selection.
+Run the full recorded pass on the intended terminal before making a visual
+performance claim, and repeat it when navigation, rendering or attachment changes.

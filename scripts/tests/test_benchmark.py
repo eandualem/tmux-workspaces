@@ -55,13 +55,58 @@ class BenchmarkTests(unittest.TestCase):
         fixture.views, fixture.shell = ["display"], "shells"
         fixture.leaves = lambda tab: [{"id": "abcdef123456"}]
         rows = {
-            "display": "||/dev/ttys0\ntab|abcdef123456|/dev/ttys1",
+            "display": "||/dev/ttys0|0\ntab|abcdef123456|/dev/ttys1|0",
             "shells": "terminal-abcdef123456|/dev/other-viewer",
         }
         fixture.tmux = lambda socket, *args: rows[socket]
         self.assertFalse(fixture.ready({"id": "tab"}))
         rows["shells"] = "terminal-abcdef123456|/dev/ttys1"
         self.assertTrue(fixture.ready({"id": "tab"}))
+
+    def test_readiness_excludes_gutters_but_rejects_extra_or_missing_content(self):
+        fixture = benchmark.Fixture.__new__(benchmark.Fixture)
+        fixture.views, fixture.shell = ["display"], "shells"
+        fixture.leaves = lambda tab: [{"id": "abcdef123456"}, {"id": "123456abcdef"}]
+        panes = [
+            "||/dev/ttys0|0",  # Sidebar.
+            "tab|abcdef123456|/dev/ttys1|0",
+            "tab|123456abcdef|/dev/ttys2|0",
+        ]
+        gutters = [f"||/dev/gutter{index}|1" for index in range(3)]
+        rows = {
+            "display": "\n".join(panes + gutters),
+            "shells": "terminal-abcdef123456|/dev/ttys1\nterminal-123456abcdef|/dev/ttys2",
+        }
+        fixture.tmux = lambda socket, *args: rows[socket]
+        self.assertTrue(fixture.ready({"id": "tab"}))
+        for contents in ([*panes, "||/dev/unexpected|0"], panes[:-1], [*panes, panes[-1]]):
+            with self.subTest(contents=contents):
+                rows["display"] = "\n".join(contents + gutters)
+                self.assertFalse(fixture.ready({"id": "tab"}))
+
+    def test_workspace_click_targets_footer_icons_not_tab_numbers(self):
+        lines = [
+            "╭──────────────────╮",
+            "│ Purpose 1        │",
+            "│ tabs           + │",
+            "│  1 view-1-1    1  │",
+            "│  2 view-1-2    1  │",
+            "│                  │",
+            "│ Configure…       │",
+            "│                  │",
+            "│  1   2           │",
+            "│                  │",
+            "╰──────────────────╯",
+        ]
+        tab = {"name": "view-1-2"}
+        for index, column in ((0, 4), (1, 8)):
+            self.assertEqual(
+                benchmark.navigation_click(lines, "workspace", index, tab),
+                f"\x1b[<0;{column};9M\x1b[<0;{column};9m",
+            )
+        self.assertEqual(
+            benchmark.navigation_click(lines, "tab", 1, tab), "\x1b[<0;6;5M\x1b[<0;6;5m"
+        )
 
     def test_provenance_marks_dirty_tracked_source_without_relabeling_head(self):
         with tempfile.TemporaryDirectory(prefix="tw-provenance-") as temporary:
