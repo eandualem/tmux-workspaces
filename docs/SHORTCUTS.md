@@ -85,12 +85,12 @@ Your normal Command-V paste binding remains available.
 
 ## Right-click
 
-Right-click a tab’s row or the active tab’s detail line to open that tab's menu, even if it
+Right-click a tab’s row to open that tab's menu, even if it
 was inactive. **Rename tab** is first; the menu also supports reordering, moving
 to another workspace, returning to the parked shell, and closing panes/tabs.
 Double-click the active tab's name or the workspace name at the top to edit it
 in place. Enter saves and Escape cancels; the existing rename shortcuts still
-open their usual form. The + beside the workspace name still creates a tab.
+open their usual form. The + on the tabs row creates a tab.
 See the [inline rename guide](INLINE_RENAME.md).
 
 Right-click the workspace heading, or click its ▾, for that workspace's options.
@@ -98,12 +98,13 @@ The rename field starts selected: typing replaces it, Enter keeps it, and Ctrl-U
 clears it. Use a secondary/two-finger click; holding Shift may make Ghostty handle
 the click itself instead of forwarding it to the viewer.
 
-The **+** beside the workspace name creates a tab. The wider numbered buttons at
-the bottom switch workspaces; arrows reveal additional workspaces when needed.
+The **+** on the tabs row creates a tab. The icon or numbered slots at the bottom
+switch workspaces; an **…** slot opens the full list when it does not fit.
 The workspace name is a label, with its options available by right-click or the
 **▾** beside its name. To attach a session, select its destination pane and open
 the tab menu's **Attach session** (the ⋯ on the selected tab, or a right-click);
-splits, focus and pane cycling live in the same menu. Panes are set apart by a gap in the panel's color, not by ruled borders.
+splits, focus and pane cycling live in the same menu. Split panes have a thin
+separator in the outline color, with surface-colored padding.
 The tab menu's **Attach session** and the attachment shortcut work on all supported versions.
 
 ## Other terminals and the existing launcher
@@ -151,7 +152,7 @@ make smoke
   --config-file="$PWD/integrations/ghostty.conf"
 ```
 
-The added PTY smoke exercises direct action input, four panes, tab/workspace
+The PTY smoke suites exercise direct action input, four panes, tab/workspace
 navigation, selected-name replacement, right-click targets, shell persistence,
 and an unchanged outer tmux server. Generated config is validated with installed
 Ghostty 1.3.1. The Ghostty GUI key handling and second-instance restoration have
@@ -159,31 +160,18 @@ not been automated; PTY tests and config validation are distinct evidence.
 
 ## Launch error: `exec: exec: not found`
 
-The first shortcut launcher incorrectly added `exec` to Ghostty's shell command.
-On macOS, Ghostty itself prepends `exec -l`, so bash tried to run an executable
-named `exec` and exited before the workspace viewer started. The launcher now
-passes the quoted Python executable and arguments without that extra word.
-[Ghostty 1.3.1's execution source](https://github.com/ghostty-org/ghostty/blob/v1.3.1/src/termio/Exec.zig#L1377)
-shows the wrapper. Configuration validation alone does not execute the command;
-the regression checks now include that execution step.
-
-The same test also caught an unsuccessful exit status on **Detach** (now under **Configure…**). Normal
-exit now detaches the private tmux client before shutting its viewer server down,
-so Ghostty receives success. Unexpected server failures still return an error.
-
 Close only the failed Ghostty surfaces showing this error, then run `./ghostty`
 again from a working terminal. An already-running Ghostty instance retains its
 old launch command until closed. No workspace data repair or deletion is needed:
 this error occurs before the viewer starts.
 
-Several native tabs showing the same error may be restored Ghostty tabs or extra
-native surfaces using that same command. This has not been reproduced in the GUI.
-Restoration preferences and saved native windows are left unchanged; the launcher
-does not use `open -F`, which can discard native saved state.
+The launcher preserves Ghostty's restoration preferences and saved native windows.
+Configuration validation alone does not execute the launch command; the PTY
+launch fixture separately checks execution and the successful Detach exit status.
 
 ## Keyboard coverage and customization
 
-The dedicated terminal profile has 18 core action bindings plus numbered selection
+The dedicated terminal profile has action bindings plus numbered selection
 for tabs and workspaces 1–9. Navigation, creating tabs/workspaces, splitting,
 renaming, focus and closing are available by shortcut.
 
@@ -334,9 +322,6 @@ instance freezes its native profile, so start a fresh `./ghostty` instance to
 apply native-key changes. Automatic hot reload is not performed. Existing shells
 and saved arrangements remain independent of keymaps.
 
-User keymaps and keyboard menu navigation are separate features. The keymap
-feature landed first; menu navigation supplies the previously missing keyboard
-routes for attachment and option commands. Menu movement and filtering keys are
-fixed; the TOML map customizes viewer action bindings, including the actions that
-open menus. Verified coverage and platform limits are recorded in
+Menu movement and filtering keys are fixed; the TOML map customizes viewer action
+bindings, including the actions that open menus. Verified coverage and platform limits are recorded in
 [ACCEPTANCE.md](ACCEPTANCE.md).

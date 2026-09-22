@@ -1,38 +1,19 @@
-# Packaging decision and local prototype
+# Installation bundles and upgrades
 
-This is the design/prototype for [issue #12](https://github.com/eandualem/tmux-workspaces/issues/12),
-dated 2026-09-08. No tap, release asset, bottle or Python package has been published.
-Repository visibility and package publication remain separate owner decisions.
-The [naming decision](NAMING.md) plans Muxstead; this prototype retains all
-`tmux-workspaces` identifiers until the compatibility rebrand is implemented.
+Start with [source installation](../README.md#try-it) or [TPM setup](GUIDE.md#launch-from-tmux-with-tpm).
+This page covers the local bundle installer, reproducible archives and safe
+application replacement for contributors and packagers. A local Homebrew recipe
+is included, but there is no published tap or GitHub release asset.
 
-## Decision
+The core is a standard-library Python package with a `tmux-workspaces` console
+command. A wheel does not include the source layout needed by the Ghostty and
+TPM launchers, so the bundle installer retains that layout. No virtual environment
+or third-party Python resources are needed for the bundle.
 
-Keep source installation and TPM as supported entry points. Prototype a personal
-Homebrew **tap**, without a homebrew-core submission. A tap is a separate formula
-repository; creating this local recipe does not create that repository.
-See [Homebrew's tap documentation](https://docs.brew.sh/Taps).
-
-The issue's initial evidence has changed: `pyproject.toml` now defines a setuptools
-package, Python 3.11+ and an installed `tmux-workspaces` console command. The core
-can use `python -m tmux_workspaces` when installed. However, the TPM and Ghostty
-modules still reference the source-tree `run`, compatibility script and profile.
-A plain wheel is not yet the full installation contract for those integrations.
-
-For the first tap, install a **source bundle with its existing runtime layout**.
-The runtime is standard-library-only, so this requires no virtual environment or
-third-party Python resources. Preserve the internal package and distribution
-identity; do not introduce a second distribution owning the same Python files.
-Revisit wheel resource lookup separately if pip/uv distribution becomes a priority.
-
-The prototype recipe declares `python@3.14` and `tmux`; the application floors
-remain Python 3.11 and tmux 3.3. Python 3.14 is the formula's selected interpreter,
-not a new minimum. Homebrew maintains those dependencies:
-[Python formula](https://formulae.brew.sh/formula/python@3.14),
-[tmux formula](https://formulae.brew.sh/formula/tmux).
-The installer requires supplied executables; it does not install dependencies.
-Clear application startup/version checks are pending in
-[PR #26](https://github.com/eandualem/tmux-workspaces/pull/26).
+The local Homebrew recipe selects `python@3.14` and `tmux`; application minimums
+remain Python 3.11 and tmux 3.3. The installer requires existing executables and
+does not install dependencies. See [startup requirements](STARTUP.md) for the
+checks applied when launching the installed application.
 
 ## Installed layout
 
@@ -66,9 +47,9 @@ Ordinary library selection remains `--data-dir`, `TMUX_WORKSPACES_DATA_DIR`,
 `$XDG_DATA_HOME/tmux-workspaces`, then `~/.local/share/tmux-workspaces`.
 Never put a library in a keg, virtual environment, TPM clone or bundle prefix.
 Configuration, sockets and saved layouts are not installation payloads.
-The planned rebrand must retain these paths and shell-server identities.
+These paths and shell-server identities are independent of the installation location.
 
-## Source and TPM installation
+## Install a local bundle
 
 For development, keep using `./run` from a stable checkout. Do not move a checkout
 while any viewer, generated Ghostty command or TPM binding references it.
@@ -84,7 +65,7 @@ python3 scripts/install_bundle.py \
 
 Use the full command path initially. Adding a symlink to an existing PATH
 directory is optional; check for an existing command before creating one.
-The current source-linked TPM installation remains documented in the README.
+For a source checkout, follow the [TPM setup](GUIDE.md#launch-from-tmux-with-tpm).
 For a staged bundle, tmux can load its installed entry with an explicit path:
 
 ```tmux
@@ -97,7 +78,7 @@ No installer edits `~/.tmux.conf`, installs TPM, reloads a live server or change
 Ghostty settings. TPM loads executable `.tmux` entry files; this bundle keeps that
 convention. See [TPM's plugin contract](https://github.com/tmux-plugins/tpm/blob/master/docs/how_to_create_plugin.md).
 
-## Immutable artifacts and private access
+## Build a reproducible source archive
 
 `scripts/package_source.py` archives a committed revision with `git archive`,
 compresses it with an explicit gzip header (empty filename, timestamp zero, level 9
@@ -111,8 +92,8 @@ Compressed body bytes can still differ between zlib versions. Reproduce an exact
 checksum with the same Git/archive and compression toolchain, and always verify
 the actual artifact digest. `check_package.py` checks that digest before extraction.
 
-The destination must be new. Generate a local candidate only after committing
-the prototype:
+The destination must be new. Commit the intended changes before generating an
+archive; otherwise they will not be included:
 
 ```sh
 python3 scripts/package_source.py --revision HEAD --output .backbone/package-candidate
@@ -126,19 +107,16 @@ Never distribute a formula pointing at a moving branch or invent a checksum.
 Homebrew's [formula cookbook](https://docs.brew.sh/Formula-Cookbook) describes
 versioned sources, checksums, dependencies and installation/test blocks.
 
-While the repository is private, a developer first obtains source with their
-own authorized Git/SSH or GitHub CLI session, then builds locally. Neither the
-formula nor archive contains tokens, authentication headers or SSH keys.
-A `file:` recipe is specific to the developer's artifacts and is not a tap release.
-Anonymous installation from this private repository is not promised. A private
-tap alone would not grant access to its private source assets.
+A generated `file:` recipe refers to that local archive. It is not a tap release
+and cannot be used on another machine without transferring the artifact and
+updating its location. Repository visibility does not publish a package.
 
 ## Upgrade and uninstall contract
 
 The initial supported procedure is an **application-only replacement with
 unchanged supported Python and tmux dependencies**:
 
-1. Choose **Exit** in every viewer using that installation. Keep tabs and panes;
+1. Choose **Configure… → Detach** in every viewer using that installation. Keep tabs and panes;
    their ordinary shells and external sessions must remain running. Close the
    dedicated Ghostty instance after exiting its viewers, so a new surface cannot
    reuse an old generated command.
@@ -175,7 +153,7 @@ Before manually unbinding, verify the configured key still points at this plugin
 Preserve libraries, sockets, ordinary shells, attached sessions and user settings.
 The installer has no uninstall hook and never kills processes or deletes state.
 
-## Local verification and remaining release checks
+## Verify an installation
 
 ```sh
 make check
@@ -192,19 +170,9 @@ This is same-version relocation/reinstall coverage, not evidence for arbitrary
 schema changes, dependency upgrades or live updates. Ghostty launch is inspected
 with `--dry-run`; no native GUI is opened.
 
-On 2026-09-08, the archive of prototype commit
-`af131b334033027d3f2acaa25e66a904a3e017a4` passed this installed PTY suite on
-macOS with Python 3.14.7/tmux 3.7c and Debian 13 with Python 3.12.14/tmux 3.5a.
-The Linux container ran as an unprivileged user, with no network and a read-only
-source mount. Both platforms passed `make check`: 132 application tests,
-12 benchmark tests and five packaging tests. All eight existing macOS PTY
-suites also passed; the full existing Linux suite was not repeated in this issue.
-The generated local formula passed Ruby syntax validation. This is local evidence;
-hosted CI is still held by the account payment/spending-limit restriction.
-
 The formula calls the tested installer and includes noninteractive smoke checks.
 Full Homebrew installation, audit, bottles, upgrade/cleanup behavior and supported
 macOS/Linux packaging matrices still need isolated package-manager validation
-before a tap release. No normal Homebrew prefix is used by this issue's tests.
-Source/TPM remain the working installation paths until those checks and the
-owner's separate publication decision are complete.
+before a tap release. The automated bundle tests do not use a normal Homebrew prefix.
+Use source or TPM installation for normal use. Publishing a tap is a separate
+release decision; generating or testing a local recipe does not publish it.

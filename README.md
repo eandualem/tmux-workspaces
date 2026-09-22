@@ -27,16 +27,17 @@ a split layout in each one, and come back to the same arrangement tomorrow.
 └────────────────────────────┴───────────────────────────────────┘
 ```
 
-The terminal used to be where you did your work. Now it is also where work
-happens without you — agents keep building and testing while you turn to
-something else — and checking in is a browsing posture. This gives that work an
-arrangement you can return to. It adds no notifications, rings or badges: you
-look when you choose.
+Use it for shells, editors, development servers or sessions you already run in
+tmux. The optional Agents section shown above reads state from Backbone; the
+workspace viewer works without it and adds no notifications.
 
 ## Try it
 
 You need **Python 3.11+**, **tmux 3.3+** and a Unix terminal. There are no
-third-party Python packages to install.
+third-party Python packages to install. Python needs curses support, and the
+terminal needs a usable color terminfo entry. See [startup help](docs/STARTUP.md)
+if a prerequisite check fails. macOS and Linux are tested; WSL and native Ghostty
+rendering have separate [verification limits](docs/ACCEPTANCE.md).
 
 ```sh
 git clone https://github.com/eandualem/tmux-workspaces
@@ -52,6 +53,24 @@ Ghostty appearance without editing its configuration.
 ./ghostty
 ```
 
+## Make your first workspace
+
+1. On first launch, **Workspace 1** contains a randomly named tab and a shell.
+   Run `pwd` to see its starting directory.
+2. Press **Ctrl-g**, release it, then **r**. Type `development` and press Enter
+   to name the tab.
+3. Press **Ctrl-g**, release it, then **v** to split right. Select **Open terminal**
+   in the new pane and press Enter. It starts in the neighboring shell's directory.
+4. Press **Ctrl-g**, release it, then **t** for another tab. Choose **Open terminal**
+   and run a command. **Ctrl-g**, then **p** returns to the first tab and its splits.
+5. Choose **Configure… → Detach**, or press **Ctrl-g**, then **d**. Run `./run`
+   again: names, splits and shells remain. Closing a pane or tab instead ends its
+   own shells. Running processes survive only while their tmux server stays alive.
+
+The mouse path starts with **+** on the tabs row; **⋯** on the selected tab opens
+its split and rename options. See the [guide](docs/GUIDE.md) for workspaces,
+existing sessions and settings.
+
 ## The keys
 
 Press **Ctrl-g**, release it, then:
@@ -66,13 +85,13 @@ Press **Ctrl-g**, release it, then:
 | `r` / `R` | rename tab / workspace |
 | `a` | attach an existing tmux session |
 | `z` | focus one pane, or restore the layout |
-| `d` | exit — your shells keep running |
+| `d` | detach — your shells keep running |
 
 With `./ghostty`: **⌘T** new tab, **⌘D** / **⌘⇧D** split, **⌘⇧[** / **⌘⇧]** move
 between tabs, **⌘⌥←** / **⌘⌥→** between workspaces.
 
-The mouse works too: click to select, double-click a name to rename it in place,
-right-click for options.
+The mouse works too: click to select, double-click the active tab or workspace
+name to rename it, right-click for options.
 
 ## What you get
 
@@ -101,14 +120,14 @@ mkdir -p ~/.local/bin
 ln -s "$PWD/run" ~/.local/bin/tmux-workspaces
 ```
 
-Or load it with TPM — link the checkout into `~/.tmux/plugins/tmux-workspaces`,
-add `set -g @plugin 'tmux-workspaces'` before your TPM initialisation, and
-**Prefix W** opens a workspace window on the server you are already using. The
-[full guide](docs/GUIDE.md) covers both, plus the optional read-only adapter for
-reading agent state from a local Backbone instance.
+Keep `~/.local/bin` on your PATH and do not move the checkout while viewers or
+launchers use it. If that command already exists, choose another name rather
+than replacing it.
 
-Source and TPM are the supported installation paths today. There is no published
-Homebrew tap.
+For a tmux window launched through **TPM** (Tmux Plugin Manager), follow the
+[TPM setup](docs/GUIDE.md#launch-from-tmux-with-tpm). Source and TPM are the
+supported installation paths. The [packaging reference](docs/PACKAGING.md)
+explains local source bundles; it does not provide a published Homebrew tap.
 
 ## Docs
 
