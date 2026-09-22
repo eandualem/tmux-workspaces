@@ -62,7 +62,7 @@ class SidebarTests(unittest.TestCase):
         self.screen = Mock()
         # The panel draws its interior into a subwindow; the tests read one mock.
         self.screen.derwin.return_value = self.screen
-        self.screen.getmaxyx.return_value = (38, 28)
+        self.screen.getmaxyx.return_value = (38, 29)
         self.store = Mock()
         self.source = Mock(socket="/unused/source.sock", persistent_socket=True)
         self.source.snapshot.return_value = ({}, "")
@@ -535,7 +535,7 @@ class SidebarTests(unittest.TestCase):
         self.assertTrue(heading.startswith("Workspace 1"))
 
     def test_indexed_tab_selection_stays_visible_with_shorter_footer(self):
-        self.screen.getmaxyx.return_value = (30, 28)
+        self.screen.getmaxyx.return_value = (30, 29)
         for index in range(12):
             self.model.add_tab(f"Tab {index + 2}")
         self.display.focused_leaf.return_value = self.model.tab["focus"]
@@ -580,7 +580,7 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(self.model.tab["id"], second["id"])
 
     def test_scrolled_tabs_do_not_overlap_controls_and_last_tab_is_reachable(self):
-        self.screen.getmaxyx.return_value = (20, 28)
+        self.screen.getmaxyx.return_value = (20, 29)
         for index in range(30):
             self.model.add_tab(f"Tab {index + 2}")
         self.display.focused_leaf.return_value = self.model.tab["focus"]
@@ -779,7 +779,7 @@ class SidebarTests(unittest.TestCase):
         self.relaunch.problem = "Reopen this terminal"
         self.relaunch.command = "run " + " ".join(f"segment{i:02d}" for i in range(80))
         self.sidebar.action("refresh-viewer")
-        self.screen.getmaxyx.return_value = (20, 28)
+        self.screen.getmaxyx.return_value = (20, 29)
         self.sidebar.draw()
         first = self.sidebar.command_rows(self.sidebar.menu_rows()[1])
         self.assertIn("segment00", " ".join(first))
@@ -888,7 +888,7 @@ class KeyboardMenuTests(SidebarTests):
 
     def overflowing_workspaces(self, count=21):
         """Open the move-to-workspace list on more workspaces than fit."""
-        self.screen.getmaxyx.return_value = (21, 28)
+        self.screen.getmaxyx.return_value = (21, 29)
         for index in range(count - 1):
             self.model.add_workspace(f"Space {index + 2}")
         self.model.state["selected"] = self.model.state["workspaces"][0]["id"]
@@ -962,7 +962,7 @@ class KeyboardMenuTests(SidebarTests):
         self.assertEqual(self.sidebar.options[self.sidebar.selected][0], "manager")
 
     def test_scrolled_chooser_activates_a_row_that_is_actually_visible(self):
-        self.screen.getmaxyx.return_value = (18, 28)
+        self.screen.getmaxyx.return_value = (18, 29)
         self.sessions(*[f"session-{index:02d}" for index in range(20)])
         self.sidebar.action("attach")
         self.sidebar.scroll(6)
@@ -1122,7 +1122,7 @@ class KeyboardMenuTests(SidebarTests):
     def test_a_menu_too_small_to_draw_activates_nothing_until_it_fits_again(self):
         self.sessions("unseen")
         self.sidebar.action("attach")
-        self.screen.getmaxyx.return_value = (13, 28)
+        self.screen.getmaxyx.return_value = (13, 29)
         self.sidebar.draw()
         drawn = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
         self.assertIn("Enlarge terminal", drawn)
@@ -1133,7 +1133,7 @@ class KeyboardMenuTests(SidebarTests):
         self.assertIsNone(self.model.pane["agent"])
         self.assertEqual(self.sidebar.menu, "agents")
         # The chooser is still open, so restoring the size restores activation.
-        self.screen.getmaxyx.return_value = (38, 28)
+        self.screen.getmaxyx.return_value = (38, 29)
         self.assertEqual(self.labels(), ["unseen"])
         self.sidebar.input("\n")
         self.assertEqual(self.model.pane["agent"], "unseen")
@@ -1149,7 +1149,7 @@ class KeyboardMenuTests(SidebarTests):
                 self.sidebar.input(curses.KEY_UP)
                 self.sidebar.input("\n")
                 self.assertIsNone(self.model.pane["agent"])
-                self.screen.getmaxyx.return_value = (38, 28)
+                self.screen.getmaxyx.return_value = (38, 29)
                 self.sidebar.draw()
                 self.assertEqual(self.sidebar.options[self.sidebar.selected][0], "manager")
         self.sidebar.input("\n")
@@ -1242,7 +1242,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.screen = Mock()
         # The panel draws its interior into a subwindow; the tests read one mock.
         self.screen.derwin.return_value = self.screen
-        self.screen.getmaxyx.return_value = (38, 28)
+        self.screen.getmaxyx.return_value = (38, 29)
         self.store = Mock()
         source = Mock(socket="/unused/source.sock", persistent_socket=True)
         source.snapshot.return_value = ({}, "")

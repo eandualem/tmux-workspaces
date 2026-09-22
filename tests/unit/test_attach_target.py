@@ -36,7 +36,7 @@ class AttachTargetTests(unittest.TestCase):
         screen = Mock()
         # The panel draws its interior into a subwindow; the tests read one mock.
         screen.derwin.return_value = screen
-        screen.getmaxyx.return_value = (38, 28)
+        screen.getmaxyx.return_value = (38, 29)
         self.sidebar = Sidebar(
             screen,
             self.model,

@@ -162,8 +162,8 @@ changes apply to the running viewer. [THEMES.md](THEMES.md) describes every
 role. **Edit shortcuts…** uses the same editor, while **View shortcuts…** opens
 a read-only reference to the active keys in the same popup frame.
 
-The status row along the bottom of the window, set off by a rule above and
-below, has three parts. On the left,
+The status row along the bottom of the window, set off by a rule above it,
+has three parts. On the left,
 where you are: the workspace, the tab and the focused pane, or the selected menu
 row and its keys, or the open popup. In the centre, the few keys that matter in
 the current mode. On the right, the agents toggle when an agent source is

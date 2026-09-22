@@ -349,7 +349,9 @@ def right_click(client: Client, viewer: Tmux, row: int, column: int = 3) -> None
     client.pump(0.3)
 
 
-OUTLINE = str.maketrans(dict.fromkeys("╭╮╰╯│─", " "))
+# Menu rules and the line down the panel's edge are blanked in captured text,
+# so lines strip and compare as text alone.
+OUTLINE = str.maketrans(dict.fromkeys("╭╮╰╯│─▕", " "))
 _SEQUENCE = re.compile(r"\x1b\[[0-9;:?]*[A-Za-z]")
 
 

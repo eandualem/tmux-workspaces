@@ -367,8 +367,12 @@ def normal_background(directory: Path) -> None:
         def base_is_configured():
             drawn = Screen(viewer.run("capture-pane", "-e", "-N", "-p", "-t", "%0"))
             # A blank row: the row under the heading, and the rows between
-            # the tabs and the footer.
-            blanks = [states for text, states in drawn.lines if states and not text.strip()]
+            # the tabs and the footer. The last cell carries the edge line.
+            blanks = [
+                states[:-1]
+                for text, states in drawn.lines
+                if len(states) > 1 and not text[:-1].strip()
+            ]
             return (
                 drawn.at("Tab ") is not None
                 and bool(blanks)

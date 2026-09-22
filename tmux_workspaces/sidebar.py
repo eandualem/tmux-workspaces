@@ -96,6 +96,7 @@ LEGEND = (
 ASCII_GLYPHS = {
     "▶": ">",
     "▮": "|",
+    "▕": "|",
     "●": "*",
     "›": ">",
     "○": "o",
@@ -856,9 +857,23 @@ class Sidebar:
     FOOTER_ROWS = 3
 
     def size(self) -> tuple[int, int]:
-        """Rows and columns of the pane: the space the panel lays out in."""
+        """Rows and columns the panel lays out in: the pane less its last
+        column, which carries the line at the panel's edge."""
         height, width = self.screen.getmaxyx()
-        return max(0, height), max(0, width)
+        return max(0, height), max(0, width - 1)
+
+    def draw_edge(self) -> None:
+        """The line at the panel's edge: a right-aligned glyph in the outline
+        color down the reserved column, so the line touches the surface
+        beside it rather than sitting in the middle of a cell. On the
+        terminal's own surface tmux draws the line instead."""
+        if self.theme is None or self.theme.surface == "default":
+            return
+        height, width = self.size()
+        glyph = self.glyph("▕")
+        for row in range(height):
+            with contextlib.suppress(curses.error):
+                self.body.addnstr(row, width, glyph, 1, self.style("outline"))
 
     def interior(self):
         """The window the panel draws into: the pane itself."""
@@ -1621,6 +1636,7 @@ class Sidebar:
                 style=self.style("muted"),
             )
         self.icon_row(bottom + 2, width)
+        self.draw_edge()
         if cursor:
             with contextlib.suppress(curses.error):
                 curses.curs_set(1)

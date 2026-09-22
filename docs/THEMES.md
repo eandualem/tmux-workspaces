@@ -160,14 +160,15 @@ message leads with its reason and puts the file path last, because a narrow side
 
 The following parts are drawn in these colors, so the window reads as one layer:
 
-- **The separators.** tmux's own pane borders, one thin line in the `outline`
-  foreground: on the panel beside the navigation panel, so the panel reaches
-  the line, and on the surface between split panes, down a column between
-  panes side by side, across a row between stacked ones. There is no padding
-  beside a separator; no border marks the focused pane. Everything here
-  changes the moment a theme installs, including after saving in the editor.
-- **The status row.** One line across the bottom of the window between two
-  rules in the `outline` color, painted by tmux on the panel in the `muted`
+- **The separators.** Beside the navigation panel, a line in the `outline`
+  foreground drawn at the panel's own edge, followed by one column of surface
+  before the terminal's text; tmux's border there hides in the surface. Between
+  split panes, tmux's own borders: one thin line in the `outline` foreground on
+  the surface, down a column between panes side by side, across a row between
+  stacked ones. No border marks the focused pane. Everything here changes the
+  moment a theme installs, including after saving in the editor.
+- **The status row.** One line across the bottom of the window under a rule
+  in the `outline` color, painted by tmux on the panel in the `muted`
   foreground, with the `normal` and `accent` foregrounds for its emphasised
   words and a green light for the saved state.
 - **The new-pane chooser.** Each empty pane runs its own chooser using the

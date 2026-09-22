@@ -14,8 +14,11 @@ from .model import is_empty, leaves, minimum_size
 from .shells import Shells
 from .tmux import Tmux, command_args
 
-# The navigation panel: a fixed number of columns, flush to the left edge.
+# The navigation panel: a fixed number of columns, flush to the left edge,
+# plus one column for the line at its edge, then tmux's border cell.
 SIDEBAR_WIDTH = 22
+SIDEBAR_PANE = SIDEBAR_WIDTH + 1
+CONTENT_LEFT = SIDEBAR_PANE + 1
 # The popups: the editors and the shortcut reference, centred over the content.
 POPUP_WIDTH = 88
 
@@ -97,10 +100,10 @@ class Display:
         commands = []
         for name, value in {
             "mouse": "on",
-            # The status row: one line, full width, at the bottom, between two
-            # rules. Its text is a single format the sidebar replaces as the
-            # state changes; the rules are redrawn when the width changes.
-            "status": "3",
+            # The status row: one line, full width, at the bottom, under a
+            # rule. Its text is a single format the sidebar replaces as the
+            # state changes; the rule is redrawn when the width changes.
+            "status": "2",
             "status-position": "bottom",
             "status-interval": "0",
             "status-left": "",
@@ -123,7 +126,7 @@ class Display:
         }.items():
             commands.append(["set-option", "-g", name, value])
         commands.append(["set-option", "-g", "status-format[1]", self._status_format or ""])
-        # The rules span the panel until the first render learns the width.
+        # The rule spans the panel until the first render learns the width.
         commands.extend(self._rule_commands())
         commands.append(self._sidebar_border_command())
         for name, value in {
@@ -335,34 +338,29 @@ class Display:
         return f"fg={text},bg={self.panel_color}"
 
     def _sidebar_border_command(self) -> list[str]:
-        """The line beside the panel sits on the panel's own ground, so the
-        panel reaches the line; the lines between split panes keep the surface."""
-        return [
-            "set-option",
-            "-p",
-            "-t",
-            self.sidebar,
-            "pane-border-style",
-            f"fg={self.separator},bg={self.panel_color}",
-        ]
+        """The panel draws its own line in its last column, so tmux's border
+        beside it vanishes into the surface and reads as the pane's padding.
+        On the terminal's own surface the border cannot hide, so the line
+        beside the panel is tmux's; the lines between split panes keep theirs."""
+        if self.surface == "default":
+            style = f"fg={self.separator},bg=default"
+        else:
+            style = f"fg={self.surface},bg={self.surface}"
+        return ["set-option", "-p", "-t", self.sidebar, "pane-border-style", style]
 
     def _rule_format(self) -> str:
         """One rule across the window in the outline color: on the panel under
-        the sidebar and its border column, on the surface under the panes."""
+        the sidebar, on the surface under its border column and the panes."""
         outline = self.status_styles.get("outline", "default")
-        columns = max(self._rule_columns, SIDEBAR_WIDTH + 1)
-        panel = "─" * (SIDEBAR_WIDTH + 1)
-        rest = "─" * (columns - SIDEBAR_WIDTH - 1)
+        columns = max(self._rule_columns, SIDEBAR_PANE)
+        panel = "─" * SIDEBAR_PANE
+        rest = "─" * (columns - SIDEBAR_PANE)
         return (
             f"#[align=left]#[fg={outline},bg={self.panel_color}]{panel}#[bg={self.surface}]{rest}"
         )
 
     def _rule_commands(self) -> list[list[str]]:
-        rule = self._rule_format()
-        return [
-            ["set-option", "-g", "status-format[0]", rule],
-            ["set-option", "-g", "status-format[2]", rule],
-        ]
+        return [["set-option", "-g", "status-format[0]", self._rule_format()]]
 
     def _ground_commands(self, pane: str, ground: str) -> list[list[str]]:
         """Give a pane one of the grounds: panel, surface or default."""
@@ -423,9 +421,9 @@ class Display:
         as ``display-popup`` takes it (left column, bottom row, width, height).
         Panes stay visible around it; a small window gets what fits."""
         cols, rows = self.size()
-        width = min(POPUP_WIDTH, max(20, cols - SIDEBAR_WIDTH - 3))
+        width = min(POPUP_WIDTH, max(20, cols - CONTENT_LEFT - 2))
         height = max(6, min(height, rows))
-        left = SIDEBAR_WIDTH + 1 + max(0, (cols - SIDEBAR_WIDTH - 1 - width) // 2)
+        left = CONTENT_LEFT + max(0, (cols - CONTENT_LEFT - width) // 2)
         top = max(0, (rows - height) // 2)
         return left, top + height, width, height
 
@@ -849,15 +847,15 @@ class Display:
         owned = state.panes
         content = [pane for pane in owned if pane != self.sidebar]
         cols, rows = state.size
-        sidebar_width = SIDEBAR_WIDTH
+        sidebar_width = SIDEBAR_PANE
         if cols != self._rule_columns and self._setup_done:
-            # The rules are literal text: a new width needs new ones.
+            # The rule is literal text: a new width needs a new one.
             self._rule_columns = cols
             self.tmux.batch(self._rule_commands())
         tree = tab["tree"] if tab else None
         # Narrow displays use temporary focus. The saved tree is never replaced.
         needed_cols, needed_rows = minimum_size(tree)
-        self.small = cols - sidebar_width - 1 < needed_cols or rows < needed_rows
+        self.small = cols - CONTENT_LEFT < needed_cols or rows < needed_rows
         if tree and (focus or self.small):
             tree = next(
                 (item for item in leaves(tree) if item["id"] == tab["focus"]), leaves(tree)[0]
