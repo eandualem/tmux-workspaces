@@ -1142,8 +1142,8 @@ class Sidebar:
     def menu_start(self) -> int:
         """The first row of the open menu's options."""
         if self.menu in {"agents", "name"}:
-            return 5
-        return 3 + len(self.notes(self.size()[1]))
+            return 6
+        return 4 + len(self.notes(self.size()[1]))
 
     def menu_rows(
         self, agents: dict | None = None, *, drawn: bool = True
@@ -1386,9 +1386,9 @@ class Sidebar:
         left, centre, right = self.status_slots(rows)
         muted = self._tmux_fg("muted")
         return (
-            f"#[fg={muted}]#[align=left]{left}"
+            f"#[fg={muted}]#[align=left] {left}"
             f"#[fg={muted}]#[align=centre]{centre}"
-            f"#[fg={muted}]#[align=right]{right}"
+            f"#[fg={muted}]#[align=right]{right} "
         )
 
     # -- the agent roster --------------------------------------------------
@@ -1453,7 +1453,7 @@ class Sidebar:
         roster = self.roster()
         if roster is None or not self.show_agents:
             return 0
-        room = self.size()[0] - 3 - self.FOOTER_ROWS - MIN_TAB_ROWS
+        room = self.size()[0] - 4 - self.FOOTER_ROWS - MIN_TAB_ROWS
         if room < 2:
             return 0
         wanted = 1 + max(1, min(MAX_ROSTER_ROWS, len(self.roster_entries(roster))))
@@ -1531,9 +1531,9 @@ class Sidebar:
             )
 
     def tab_capacity(self) -> int:
-        """One row per tab: the heading, a blank row and the section label sit
-        above, the roster and the footer below."""
-        return max(1, self.size()[0] - 3 - self.FOOTER_ROWS - self.roster_rows())
+        """One row per tab below the three-row heading and section label,
+        with the roster and footer reserved at the bottom."""
+        return max(1, self.size()[0] - 4 - self.FOOTER_ROWS - self.roster_rows())
 
     def draw(self) -> None:
         self._frame_roster = _UNREAD
@@ -1633,31 +1633,32 @@ class Sidebar:
         context label, then the rows with their keys at the right end."""
         cursor = None
         muted = self.style("muted")
-        self.fill(0, self.style("header"))
-        self.button(0, "‹ Back", self.show, width=7, style=self.style("accent", "header"))
-        self.put_right(0, "esc", self.style("muted", "header"))
+        for row in range(3):
+            self.fill(row, self.style("header"))
+        self.button(1, "‹ Back", self.show, width=7, style=self.style("accent", "header"))
+        self.put_right(1, "esc", self.style("muted", "header"))
         title = self.menu_title()
         if self.menu == "tab" and self.model.tab:
             tabs = self.model.space["tabs"]
             number = tabs.index(self.model.tab) + 1
-            self.put(2, 1, "TAB · ", muted)
+            self.put(3, 1, "TAB · ", muted)
             self.put(
-                2, 7, f"{number} {visible(self.model.tab['name'])}", self.style("normal"), width - 8
+                3, 7, f"{number} {visible(self.model.tab['name'])}", self.style("normal"), width - 8
             )
         else:
-            self.put(2, 1, title.upper(), muted)
+            self.put(3, 1, title.upper(), muted)
         notes = self.notes(width)
         for index, line in enumerate(notes):
-            self.put(3 + index, 1, line, self.style("accent"))
+            self.put(4 + index, 1, line, self.style("accent"))
         if self.menu in {"name", "agents"}:
-            self.put(3, 1, "›", self.style("accent"))
+            self.put(4, 1, "›", self.style("accent"))
             style = self.style("normal") | (curses.A_REVERSE if self.replace_name else 0)
             shown = self.query[-(width - 5) :]
-            self.put(3, 3, shown, style)
+            self.put(4, 3, shown, style)
             if not self.replace_name:
-                self.put(3, 3 + cells(shown), " ", self.style("normal") | curses.A_REVERSE)
+                self.put(4, 3 + cells(shown), " ", self.style("normal") | curses.A_REVERSE)
         if self.menu == "name":
-            self.button(5, "Save name", self.accept_name, style=self.style("accent"))
+            self.button(6, "Save name", self.accept_name, style=self.style("accent"))
             return cursor
         for row, line in enumerate(command_rows, start):
             self.put(row, 1, line, self.style("normal"))
@@ -1724,9 +1725,10 @@ class Sidebar:
         # A double click renames in place.
         workspace_edit = bool(self.inline_editor and self.inline_target[1] is None)
         tab_edit = bool(self.inline_editor and self.inline_target[1] is not None)
-        self.fill(0, self.style("header"))
+        for row in range(3):
+            self.fill(row, self.style("header"))
         name_width = width - 4
-        self.name_hits.append((0, 1, 1 + name_width, "workspace:" + self.model.space["id"]))
+        self.name_hits.append((1, 1, 1 + name_width, "workspace:" + self.model.space["id"]))
         header = self.style("header") | curses.A_BOLD
         icon = self.model.space.get("icon")
         icon = icon if isinstance(icon, str) and icon.isprintable() and icon else ""
@@ -1735,18 +1737,18 @@ class Sidebar:
         if len(title) > room:
             title = title[: max(0, room - 1)] + "…"
         if icon and not workspace_edit:
-            self.put(0, 1, icon, self.style("accent", "header") | curses.A_BOLD, len(icon))
-            self.put(0, 1 + len(icon) + 1, title, header, room)
+            self.put(1, 1, icon, self.style("accent", "header") | curses.A_BOLD, len(icon))
+            self.put(1, 1 + len(icon) + 1, title, header, room)
         else:
-            self.put(0, 1, title, header, name_width)
+            self.put(1, 1, title, header, name_width)
         if workspace_edit:
-            cursor = self.draw_inline(0, 1, name_width)
+            cursor = self.draw_inline(1, 1, name_width)
         self.context_hits.append(
-            (0, 1, 1 + name_width, lambda: self.context_workspace(self.model.space))
+            (1, 1, 1 + name_width, lambda: self.context_workspace(self.model.space))
         )
         # The chevron opens the chooser: switch, create, rename or delete.
         self.button(
-            0,
+            1,
             " ▾",
             lambda: self.open_menu("workspace"),
             x=width - 3,
@@ -1760,10 +1762,10 @@ class Sidebar:
         # add glyph and, when the list overflows, its scroll arrows, at the
         # right end.
         if workspace_edit or tab_edit:
-            self.put(1, 1, hint, self.style("accent"))
-        self.put(2, 1, "TABS", muted)
+            self.put(2, 1, hint, self.style("accent", "header"))
+        self.put(3, 1, "TABS", muted)
         self.button(
-            2,
+            3,
             "  +",
             self.new_tab,
             x=width - 4,
@@ -1775,9 +1777,9 @@ class Sidebar:
         available = self.tab_capacity()
         self.tab_offset = min(self.tab_offset, max(0, len(tabs) - available))
         if len(tabs) > available:
-            self.button(2, "↑", lambda: self.scroll(-1), x=width - 8, width=2, style=muted)
-            self.button(2, "↓", lambda: self.scroll(1), x=width - 6, width=2, style=muted)
-        row = 3
+            self.button(3, "↑", lambda: self.scroll(-1), x=width - 8, width=2, style=muted)
+            self.button(3, "↓", lambda: self.scroll(1), x=width - 6, width=2, style=muted)
+        row = 4
         for index, item in enumerate(
             tabs[self.tab_offset : self.tab_offset + available], self.tab_offset
         ):

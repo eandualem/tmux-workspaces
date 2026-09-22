@@ -557,6 +557,8 @@ def exercise_supervision(resources: FixtureResources) -> None:
             DEFAULT_CONFIG,
         ],
         launcher=[sys.executable, str(checkout / "run")],
+        # Keep the whole wrapped command visible below the padded header/footer.
+        rows=40,
     )
     wait(pinned, lambda: ready(pinned, library), "fixed-key viewer did not start", timeout=25)
     pinned.viewer_socket = runtime(pinned, library)["viewer_socket"]

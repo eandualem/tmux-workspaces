@@ -161,7 +161,7 @@ class SidebarTests(unittest.TestCase):
         self.model.space["selected"] = first["id"]
         self.sidebar.draw()
 
-        self.mouse(3, 4, curses.BUTTON3_PRESSED)
+        self.mouse(3, 5, curses.BUTTON3_PRESSED)
 
         self.assertEqual(self.sidebar.menu, "tab")
         self.assertEqual(self.model.tab["id"], target["id"])
@@ -181,14 +181,14 @@ class SidebarTests(unittest.TestCase):
 
     def test_right_click_status_row_accepts_click_event_and_does_not_repeat_on_release(self):
         self.sidebar.draw()
-        self.mouse(3, 3, curses.BUTTON3_CLICKED)
+        self.mouse(3, 4, curses.BUTTON3_CLICKED)
         self.assertEqual(self.sidebar.menu, "tab")
         self.sidebar.draw()
         # In a menu only the workspace slots keep a context action.
         self.assertTrue(all(hit[0] == 37 for hit in self.sidebar.context_hits))
         self.store.save.reset_mock()
         self.display.select_sidebar.reset_mock()
-        self.mouse(3, 3, curses.BUTTON3_RELEASED)
+        self.mouse(3, 4, curses.BUTTON3_RELEASED)
         self.assertEqual(self.sidebar.menu, "tab")
         self.store.save.assert_not_called()
         self.display.select_sidebar.assert_not_called()
@@ -243,12 +243,12 @@ class SidebarTests(unittest.TestCase):
 
     def test_right_click_never_triggers_regular_button_and_left_click_still_works(self):
         self.sidebar.draw()
-        self.mouse(26, 2, curses.BUTTON3_PRESSED)  # New-tab button has no context action.
+        self.mouse(26, 3, curses.BUTTON3_PRESSED)  # New-tab button has no context action.
         self.assertEqual(len(self.model.space["tabs"]), 1)
         self.assertIsNone(self.sidebar.menu)
-        self.mouse(3, 2, curses.BUTTON3_RELEASED)
+        self.mouse(3, 3, curses.BUTTON3_RELEASED)
         self.assertIsNone(self.sidebar.menu)
-        self.mouse(26, 2, curses.BUTTON1_PRESSED)
+        self.mouse(26, 3, curses.BUTTON1_PRESSED)
         self.assertEqual(len(self.model.space["tabs"]), 2)
 
     def test_workspace_button_context_targets_clicked_workspace_and_header_opens_options(self):
@@ -265,7 +265,7 @@ class SidebarTests(unittest.TestCase):
 
         # The chevron at the heading's right end is the workspace chooser:
         # the list and the options are one menu.
-        self.mouse(26, 0, curses.BUTTON1_PRESSED)
+        self.mouse(26, 1, curses.BUTTON1_PRESSED)
         self.assertEqual(self.sidebar.menu, "workspace")
         dict(self.sidebar._options({}))["Other workspace"]()
 
@@ -274,7 +274,7 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(self.model.tab["tree"], target_tree)
         self.display.shells.close.assert_not_called()
         self.sidebar.draw()
-        self.mouse(26, 0, curses.BUTTON3_PRESSED)
+        self.mouse(26, 1, curses.BUTTON3_PRESSED)
         self.assertEqual(self.sidebar.menu, "workspace")
         dict(self.sidebar._options({}))["Rename"]()
         self.assertEqual(self.sidebar.query, "Other workspace")
@@ -283,13 +283,13 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(target["name"], "Renamed workspace")
         self.assertEqual(first, original)
         self.sidebar.draw()
-        self.mouse(3, 0, curses.BUTTON3_CLICKED)
+        self.mouse(3, 1, curses.BUTTON3_CLICKED)
         self.assertEqual(self.sidebar.menu, "workspace")
 
     def test_header_adds_tabs_and_footer_keeps_attachment_visible(self):
         self.sidebar.draw()
         before = copy.deepcopy(self.model.state)
-        self.mouse(3, 0, curses.BUTTON1_PRESSED)
+        self.mouse(3, 1, curses.BUTTON1_PRESSED)
         self.assertIsNone(self.sidebar.menu)
         self.assertEqual(self.model.state, before)
         labels = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
@@ -312,7 +312,7 @@ class SidebarTests(unittest.TestCase):
         for x in range(24, 27):
             self.sidebar.draw()
             previous_count = len(self.model.space["tabs"])
-            self.mouse(x, 2, curses.BUTTON1_PRESSED)
+            self.mouse(x, 3, curses.BUTTON1_PRESSED)
             self.assertEqual(len(self.model.space["tabs"]), previous_count + 1)
 
     def test_json_popup_guards_input_and_drains_queued_actions_on_cancel(self):
@@ -445,10 +445,12 @@ class SidebarTests(unittest.TestCase):
         # The first row is Rename tab: its key at the right end, both routes in
         # the status row's left slot, and the menu hints in the centre.
         cells = {(c.args[0], c.args[1]): c.args[2] for c in self.screen.addnstr.call_args_list}
-        self.assertEqual(cells[3, 1], "▶")
-        self.assertEqual(cells[3, 3], "Rename tab")
-        self.assertEqual(cells[3, 25], "F2")
+        self.assertEqual(cells[4, 1], "▶")
+        self.assertEqual(cells[4, 3], "Rename tab")
+        self.assertEqual(cells[4, 25], "F2")
         status = self.sidebar.status_line(self.sidebar.selection.entries)
+        self.assertIn("#[align=left] ", status)
+        self.assertTrue(status.endswith(" "))
         self.assertIn("Rename tab", status)
         self.assertIn("^b F2 · ⌘⌥F2 in Ghostty", status)
         self.assertIn("↑↓ move · ⏎ open · esc back", status)
@@ -501,14 +503,14 @@ class SidebarTests(unittest.TestCase):
         # Every cell of the chevron button opens the chooser.
         for x in (25, 26):
             self.sidebar.draw()
-            self.mouse(x, 0, curses.BUTTON1_PRESSED)
+            self.mouse(x, 1, curses.BUTTON1_PRESSED)
             self.assertEqual(self.sidebar.menu, "workspace")
             self.sidebar.close_menu()
-        self.mouse(26, 0, curses.BUTTON1_PRESSED)
+        self.mouse(26, 1, curses.BUTTON1_PRESSED)
         dict(self.sidebar._options({}))["Second"]()
         self.assertEqual(self.model.space["id"], second["id"])
         self.sidebar.draw()
-        self.mouse(26, 0, curses.BUTTON1_PRESSED)
+        self.mouse(26, 1, curses.BUTTON1_PRESSED)
         dict(self.sidebar._options({}))["New workspace"]()
         self.assertEqual((self.sidebar.menu, self.sidebar.pending), ("name", "new-workspace"))
 
@@ -530,7 +532,7 @@ class SidebarTests(unittest.TestCase):
         heading = next(
             call.args[2]
             for call in self.screen.addnstr.call_args_list
-            if call.args[0] == 0 and call.args[1] == 1
+            if call.args[0] == 1 and call.args[1] == 1
         )
         self.assertTrue(heading.startswith("Workspace 1"))
 
@@ -543,9 +545,9 @@ class SidebarTests(unittest.TestCase):
         self.sidebar.draw()
         labels = [call.args[2].strip() for call in self.screen.addnstr.call_args_list]
         self.assertIn("Tab 9", labels)
-        # 30 rows, less the heading, its blank row, the label and the
+        # 30 rows, less the three-row heading, section label and
         # three-row footer; this source reports no roster.
-        self.assertEqual(self.sidebar.tab_capacity(), 24)
+        self.assertEqual(self.sidebar.tab_capacity(), 23)
         self.assertEqual(self.sidebar.tab_offset, 0)
 
     def test_compact_rows_keep_counts_and_click_targets_separate(self):
@@ -564,18 +566,18 @@ class SidebarTests(unittest.TestCase):
         # selected row also carries the ⋯ menu at the right end; a resting
         # row's glyphs end one cell in from the edge. No row repeats what the
         # panes hold.
-        self.assertEqual((cells[3, 1], cells[3, 3]), ("1", self.model.space["tabs"][0]["name"]))
-        self.assertEqual(cells[3, 23], "▮▮")
-        self.assertEqual(cells[3, 26], "⋯")
-        self.assertTrue(cells[4, 3].endswith("…"))
-        self.assertEqual(cells[4, 26], "▮")
-        self.assertEqual((cells[5, 1], cells[5, 3]), ("3", "Third"))
+        self.assertEqual((cells[4, 1], cells[4, 3]), ("1", self.model.space["tabs"][0]["name"]))
+        self.assertEqual(cells[4, 23], "▮▮")
+        self.assertEqual(cells[4, 26], "⋯")
+        self.assertTrue(cells[5, 3].endswith("…"))
+        self.assertEqual(cells[5, 26], "▮")
+        self.assertEqual((cells[6, 1], cells[6, 3]), ("3", "Third"))
         self.assertFalse(any(text in {"shells", "Shell", "Empty"} for text in cells.values()))
         # Glyphs and the right edge belong to the tab, not an adjacent row.
-        self.mouse(26, 4, curses.BUTTON1_PRESSED)
+        self.mouse(26, 5, curses.BUTTON1_PRESSED)
         self.assertEqual(self.model.tab["id"], second["id"])
         self.sidebar.draw()
-        self.mouse(26, 4, curses.BUTTON1_PRESSED)  # The ⋯ moved with the selection.
+        self.mouse(26, 5, curses.BUTTON1_PRESSED)  # The ⋯ moved with the selection.
         self.assertEqual(self.sidebar.menu, "tab")
         self.assertEqual(self.model.tab["id"], second["id"])
 
@@ -677,10 +679,10 @@ class SidebarTests(unittest.TestCase):
         self.assertEqual(self.sidebar.menu, "refresh")
         self.sidebar.draw()
         rows = self.drawn()
-        self.assertIn((2, 1, "REFRESH VIEWER"), rows)
+        self.assertIn((3, 1, "REFRESH VIEWER"), rows)
         # The note wraps inside the panel; it starts on the row under the label.
         self.assertTrue(
-            any(row[:2] == (3, 1) and row[2].startswith("Restarts this") for row in rows)
+            any(row[:2] == (4, 1) and row[2].startswith("Restarts this") for row in rows)
         )
         option = next(row for row in rows if row[2].startswith("Refresh viewer now"))
         self.assertIn((option[0], 0, 28), [hit[:3] for hit in self.sidebar.hits])
@@ -1181,7 +1183,7 @@ class KeyboardMenuTests(SidebarTests):
     def test_end_and_home_reach_both_edges_of_an_overflowing_chooser(self):
         names = self.overflowing_workspaces()
         rows = self.painted_rows()
-        self.assertEqual(len(rows), 15)
+        self.assertEqual(len(rows), 14)
         self.assertNotIn(names[-1], rows)
 
         self.sidebar.input(curses.KEY_END)
@@ -1342,7 +1344,13 @@ class ThemeMenuTests(unittest.TestCase):
             for call in self.screen.addnstr.call_args_list
             if call.args[2].startswith(self.model.space["name"])
         )
+        self.assertEqual(header[0], 1)
         self.assertEqual(header[4], self.sidebar.style("header") | curses.A_BOLD)
+        for row in (0, 2):
+            padding = [c.args for c in self.screen.addnstr.call_args_list if c.args[:2] == (row, 0)]
+            self.assertEqual(len(padding), 1)
+            self.assertEqual(padding[0][2], " " * 28)
+            self.assertEqual(padding[0][4], self.sidebar.style("header"))
 
     def styles_for(self, prefix):
         return [

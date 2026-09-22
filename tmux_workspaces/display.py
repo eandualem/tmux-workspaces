@@ -100,10 +100,9 @@ class Display:
         commands = []
         for name, value in {
             "mouse": "on",
-            # The status row: one line, full width, at the bottom, under a
-            # rule. Its text is a single format the sidebar replaces as the
-            # state changes; the rule is redrawn when the width changes.
-            "status": "2",
+            # The footer keeps a rule above its text and a blank row below,
+            # so text never touches the window edge.
+            "status": "3",
             "status-position": "bottom",
             "status-interval": "0",
             "status-left": "",
@@ -126,6 +125,7 @@ class Display:
         }.items():
             commands.append(["set-option", "-g", name, value])
         commands.append(["set-option", "-g", "status-format[1]", self._status_format or ""])
+        commands.append(["set-option", "-g", "status-format[2]", ""])
         # The rule spans the panel until the first render learns the width.
         commands.extend(self._rule_commands())
         for name, value in {
@@ -337,12 +337,11 @@ class Display:
         return f"fg={text},bg={self.panel_color}"
 
     def _rule_format(self) -> str:
-        """The top of the status band: one row on the panel with a line along
-        its upper edge in the outline color, so the band below the panes is
-        two rows deep with its border exactly where the panes end."""
+        """A centred rule leaves half a row between the line and footer text,
+        instead of the full empty row below a top-edge glyph."""
         outline = self.status_styles.get("outline", "default")
         columns = max(self._rule_columns, SIDEBAR_PANE)
-        return f"#[align=left]#[fg={outline},bg={self.panel_color}]" + "▔" * columns
+        return f"#[align=left]#[fg={outline},bg={self.panel_color}]" + "─" * columns
 
     def _rule_commands(self) -> list[list[str]]:
         return [["set-option", "-g", "status-format[0]", self._rule_format()]]

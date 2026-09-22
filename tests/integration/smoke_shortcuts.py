@@ -98,7 +98,7 @@ def _standalone(resources: FixtureResources) -> None:
         check(
             lambda: (
                 saved(library).space["name"] == expected
-                and expected in sidebar(viewer).splitlines()[0]
+                and expected in sidebar(viewer).splitlines()[1]
                 and content_ready()
             ),
             "direct workspace selection failed",
@@ -228,7 +228,7 @@ def _standalone(resources: FixtureResources) -> None:
         assert any(tab["name"] == "Beta" for tab in saved(library).space["tabs"])
         assert shell_pid == shells.run("display-message", "-p", "-t", first_terminal, "#{pane_pid}")
 
-    right_click(client, viewer, 0)
+    right_click(client, viewer, 1)
     check(lambda: "WORKSPACES" in sidebar(viewer), "workspace header menu missing")
     button("Rename")
     client.type("Main\r")
@@ -236,7 +236,7 @@ def _standalone(resources: FixtureResources) -> None:
     choose_space(3, "Archive")
     # Another workspace's options: switch to it first, then the heading again.
     choose_space(1, "Main")
-    right_click(client, viewer, 0)
+    right_click(client, viewer, 1)
     check(lambda: "WORKSPACES" in sidebar(viewer), "workspace heading menu missing")
     button("Rename")
     client.type("Primary\r")

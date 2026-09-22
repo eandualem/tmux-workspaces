@@ -34,13 +34,13 @@ ANCHORS = {
     # The add glyph on the tabs label row.
     "accent": "+",
 }
-# The workspace header occupies the top row, and the "Workspaces…" button
+# The workspace header occupies the second row, and the "Workspaces…" button
 # repeats its word further down the sidebar. Searching the whole screen for the
 # title would report that button's style as the header's, and would accept a
 # screen whose header is not drawn yet, asserting against a partial paint.
-# Match the top row instead of the row's first column: a configured background
+# Match the heading row instead of the row's first column: a configured background
 # shifts where the captured header text begins, but never which row holds it.
-FIRST_ROW_ROLES = frozenset({"title"})
+HEADER_ROLES = frozenset({"title"})
 _ATTRIBUTES = {1: "bold", 2: "dim", 4: "underline", 7: "reverse"}
 _CLEAR = {22: ("bold", "dim"), 24: ("underline",), 27: ("reverse",)}
 
@@ -127,13 +127,13 @@ class Screen:
             index += 1
         return "".join(text), states
 
-    def at(self, anchor: str, *, first_row: bool = False):
+    def at(self, anchor: str, *, header_row: bool = False):
         """The style in force where `anchor` starts, or None when it is not drawn.
 
-        `first_row` searches only the heading row, the panel's first, for an
+        `header_row` searches only the heading row, the panel's second, for an
         anchor whose word also appears elsewhere in the sidebar.
         """
-        for text, states in self.lines[0:1] if first_row else self.lines:
+        for text, states in self.lines[1:2] if header_row else self.lines:
             position = text.find(anchor)
             if position >= 0:
                 return states[position]
@@ -193,7 +193,7 @@ def styles(viewer: Tmux) -> dict[str, tuple[int, int, tuple[str, ...]]]:
     drawn = screen(viewer)
     found = {}
     for role, anchor in ANCHORS.items():
-        state = drawn.at(anchor, first_row=role in FIRST_ROW_ROLES)
+        state = drawn.at(anchor, header_row=role in HEADER_ROLES)
         if state is not None:
             found[role] = state
     return found
@@ -267,7 +267,7 @@ def assert_roles_distinct(viewer: Tmux, context: str) -> None:
 
 def assert_grid(client, viewer: Tmux, cols: int, rows: int) -> None:
     """The sidebar uses 22 cells and exactly one separator at every size."""
-    expected = f"0,0,22,{rows - 2}\n23,0,{cols - 23},{rows - 2}"
+    expected = f"0,0,22,{rows - 3}\n23,0,{cols - 23},{rows - 3}"
     wait(
         client,
         lambda: (
@@ -278,7 +278,7 @@ def assert_grid(client, viewer: Tmux, cols: int, rows: int) -> None:
         ),
         f"viewer grid did not reach {cols}x{rows} with a single separator",
     )
-    wait(client, lambda: screen(viewer).at("Workspace", first_row=True), "header lost on resize")
+    wait(client, lambda: screen(viewer).at("Workspace", header_row=True), "header lost on resize")
     assert viewer.run("show-window-options", "-gv", "pane-border-style").strip() == (
         "fg=#2a2e36,bg=#1b1e24"
     )
@@ -388,12 +388,10 @@ def normal_background(directory: Path) -> None:
 
         def base_is_configured():
             drawn = Screen(viewer.run("capture-pane", "-e", "-N", "-p", "-t", "%0"))
-            # A blank row: the row under the heading, and the rows between
-            # the tabs and the footer. The last cell carries the edge line.
+            # Blank body rows use normal; the first three rows deliberately
+            # use the header background, including its vertical padding.
             blanks = [
-                states[:-1]
-                for text, states in drawn.lines
-                if len(states) > 1 and not text[:-1].strip()
+                states for text, states in drawn.lines[3:] if len(states) > 1 and not text.strip()
             ]
             return (
                 drawn.at("Tab ") is not None
