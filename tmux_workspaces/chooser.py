@@ -238,10 +238,11 @@ def draw(screen, chooser: Chooser, curses, styles: dict[str, int] | None = None)
         text = styles["selected"] | curses.A_BOLD if selected else styles["normal"]
         if item == 0:
             put(row, 3, label[:room], text)
-            if chooser.cwd:
+            keep = room - len(label) - 4
+            if chooser.cwd and keep > 0:
                 put_right(
                     row,
-                    chooser.cwd[-max(0, room - len(label) - 4) :],
+                    chooser.cwd[-keep:],
                     styles["selected"] if selected else styles["muted"],
                 )
         else:

@@ -160,6 +160,13 @@ class ChooserDrawTests(unittest.TestCase):
         self.assertIn((8, "running"), texts)
         self.assertIn((2, "/home/me/ws/project"), texts)
 
+    def test_a_pane_too_narrow_for_the_directory_leaves_it_out(self):
+        screen, curses = fake_curses([])
+        screen.getmaxyx.return_value = (20, 12)
+        draw(screen, Chooser(TAB, LEAF, "/home/me/ws/project"), curses)
+        drawn = [call.args[2] for call in screen.addnstr.call_args_list]
+        self.assertFalse(any("project" in text for text in drawn), drawn)
+
     def test_a_roster_taller_than_the_pane_scrolls_with_the_selection(self):
         """Keyboard and mouse agree: only drawn rows are clickable, and the
         selection is always among them."""
