@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .cli import default_source_socket, effective_keymap
+from .cli import default_source_socket, effective_keymap, resolve_backbone
 from .cli import parser as viewer_parser
 from .keymap import keymap_source
 
@@ -62,14 +62,13 @@ def launch_command(
         viewer_args += ["--keymap" if explicit else "--keymap-source", str(selected)]
     if app.expanduser().resolve() != DEFAULT_APP:
         viewer_args += ["--ghostty-app", str(app.expanduser().resolve())]
-    if options.backbone:
-        backbone_dir = (
-            options.backbone_data_dir
-            or Path(os.environ.get("BACKBONE_DATA_DIR") or "~/.local/share/agent-backbone")
-        ).expanduser()
-        if not backbone_dir.is_absolute():
-            backbone_dir = cwd / backbone_dir
-        viewer_args += ["--backbone-data-dir", str(backbone_dir.resolve())]
+    # The application started this way does not inherit the environment that
+    # names Backbone's directory, so the answer is settled here and named.
+    backbone, backbone_dir = resolve_backbone(options, cwd)
+    if backbone:
+        viewer_args += ["--backbone", "--backbone-data-dir", str(backbone_dir)]
+    else:
+        viewer_args.append("--no-backbone")
     # Ghostty wraps shell commands in its own exec ("exec -l" on macOS).
     # Supplying another exec makes bash try to execute a program named "exec".
     command = "shell:" + shlex.join([sys.executable, str(root / "run"), *viewer_args])
@@ -96,6 +95,9 @@ def launch_command(
         # terminals reach the window edge instead of leaving a bare strip.
         # "extend" alone applies heuristics that skip some rows on macOS.
         "--window-padding-color=extend-always",
+        # Split that remainder between the top and the bottom edge, so the
+        # heading has air above it and the status row does not float.
+        "--window-padding-balance=true",
         "--quit-after-last-window-closed=true",
         "--command=" + command,
     ]

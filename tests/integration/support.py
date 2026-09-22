@@ -41,6 +41,9 @@ class Client:
                 "SHELL": "/bin/sh",
             }
             env.update(terminal_env or {})
+            if launcher is None and not {"--backbone", "--no-backbone"} & set(arguments):
+                # This host may run Backbone; a scenario never reads it unasked.
+                arguments = [*arguments, "--no-backbone"]
             self.process = subprocess.Popen(
                 [
                     *(
@@ -396,8 +399,9 @@ def sidebar(viewer: Tmux) -> str:
 
 
 def status_row(viewer: Tmux) -> str:
-    """The status row's text, as the sidebar last sent it to tmux."""
-    return viewer.run("show-options", "-gv", "status-format[0]")
+    """The status row's text, as the sidebar last sent it to tmux: the middle
+    line of the three, between the rules."""
+    return viewer.run("show-options", "-gv", "status-format[1]")
 
 
 def tab_row(viewer: Tmux, name: str) -> int:

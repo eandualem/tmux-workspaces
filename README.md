@@ -27,8 +27,9 @@ a split layout in each one, and come back to the same arrangement tomorrow.
 ```
 
 Use it for shells, editors, development servers or sessions you already run in
-tmux. The optional Agents section shown above reads state from Backbone; the
-workspace viewer works without it and adds no notifications. The status row
+tmux. The Agents section shown above reads state from Backbone when its data
+directory is on this host; the workspace viewer works without it and adds no
+notifications. The status row
 along the bottom names where you are, the keys that matter in the current
 mode, and whether the saved arrangement is current.
 

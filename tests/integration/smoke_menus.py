@@ -226,7 +226,7 @@ def _exercise(resources: FixtureResources) -> None:
     assert len(pane_ids) == 4
     # Exercise the complete layout first, then the scrolling menu and temporary
     # focus layout used by a short/narrow terminal, with explicit focus on/off.
-    for columns, rows in ((160, 38), (72, 16)):
+    for columns, rows in ((160, 38), (72, 18)):
         client.resize(columns, rows)
         wait(client, lambda: "Configure…" in panel(), "resized panel did not settle")
         for focus_mode in (False, True):
@@ -316,8 +316,8 @@ def _exercise(resources: FixtureResources) -> None:
             lambda index=index: len(saved(library).state["workspaces"]) == index + 2,
             "workspace creation failed",
         )
-    # Fifteen rows: fourteen for the panel above the status row.
-    client.resize(160, 15)
+    # Seventeen rows: fourteen for the panel above the status row and its rules.
+    client.resize(160, 17)
     wait(client, lambda: "Space 10" in panel() or "Configure…" in panel(), "resize failed")
     open_menu("w", "WORKSPACES")
     assert "Space 10" not in panel(), "the overflowing list already showed its last row"

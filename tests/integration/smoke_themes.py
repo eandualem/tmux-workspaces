@@ -322,7 +322,7 @@ def write_config(path: Path, text: str) -> Path:
 
 def status(viewer: Tmux) -> str:
     """The status row's right slot: the message the sidebar sent to tmux."""
-    text = viewer.run("show-options", "-gv", "status-format[0]")
+    text = viewer.run("show-options", "-gv", "status-format[1]")
     right = text.rsplit("#[align=right]", 1)[-1]
     return re.sub(r"#\[[^\]]*\]", "", right).strip()
 

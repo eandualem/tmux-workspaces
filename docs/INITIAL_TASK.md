@@ -20,7 +20,8 @@ and attaching a session does not define or rename that organization.
 5. Multiple viewer windows share saved arrangements with independent navigation.
    Concurrent edits are merged or surfaced as conflicts, never silently redirected.
 6. The core works with Python and tmux, without a browser, Ghostty, an agent manager
-   or a notification service. A normal launch performs no Backbone config/API reads.
+   or a notification service. A launch reads Backbone's config and API only when
+   its data directory holds a database, or when asked to; `--no-backbone` opts out.
 7. Backbone is an optional read-only adapter. Adapter failure does not prevent
    generic attachment or ordinary terminal use. No agent lifecycle ownership moves.
 8. Both standalone and TPM entry points launch the same application. Packaging

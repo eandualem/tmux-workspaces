@@ -46,10 +46,11 @@ or edit tmux configuration.
   imports, configuration reads or provider-specific branches. The UI receives
   independent copies of the current observation.
 - `adapters/tmux.py`: generic session discovery on one explicit socket.
-  `adapters/backbone.py`: opt-in loopback HTTP/config metadata and stale cache.
+  `adapters/backbone.py`: read-only loopback HTTP/config metadata and stale cache,
+  loaded when Backbone's data directory holds a database or when asked for.
   `adapters/demo.py`: isolated fixture reads and stale cache. `application.make_source`
-  selects these providers with lazy imports; ordinary launch never imports the
-  Backbone or demo provider.
+  selects these providers with lazy imports; a launch without Backbone's
+  database or the demo imports neither provider.
 - `entrypoints.py`: quoted helper commands that work after tmux clears launcher
   environment variables. `ghostty_launcher.py`, `tmux_plugin.py` and `ui_preview.py`
   are optional entry-point integrations.

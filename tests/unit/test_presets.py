@@ -221,7 +221,9 @@ class PanelColorTests(unittest.TestCase):
     def test_grounds_set_before_setup_are_applied_by_setup(self):
         display = self.display()
         display.tmux = Mock()
-        display.style_panel("#15171c", "#1b1e24", "#2a2e36", {"muted": "#7d828c"})
+        display.style_panel(
+            "#15171c", "#1b1e24", "#2a2e36", {"muted": "#7d828c", "outline": "#2a2e36"}
+        )
         display.tmux.batch.assert_not_called()
         display.setup()
         commands = [
@@ -238,10 +240,18 @@ class PanelColorTests(unittest.TestCase):
         self.assertEqual(options["pane-border-style"], "fg=#2a2e36,bg=#1b1e24")
         self.assertEqual(options["pane-active-border-style"], "fg=#2a2e36,bg=#1b1e24")
         self.assertEqual(options["pane-border-lines"], "single")
-        # The status row is one line at the bottom, on the panel, in muted text.
-        self.assertEqual(options["status"], "on")
+        # The status row is one line at the bottom, on the panel, in muted
+        # text, between two rules in the outline color.
+        self.assertEqual(options["status"], "3")
         self.assertEqual(options["status-position"], "bottom")
         self.assertEqual(options["status-style"], "fg=#7d828c,bg=#15171c")
+        self.assertEqual(options["status-format[0]"], options["status-format[2]"])
+        self.assertTrue(options["status-format[0]"].startswith("#[align=left]#[fg=#2a2e36"))
+        # The line beside the panel sits on the panel; the others on the surface.
+        self.assertIn(
+            ["set-option", "-p", "-t", "%0", "pane-border-style", "fg=#2a2e36,bg=#15171c"],
+            commands,
+        )
         # The sidebar's own cells are curses'; its ground is the panel.
         for option in ("window-style", "window-active-style"):
             self.assertIn(["set-option", "-p", "-t", "%0", option, "bg=#15171c"], commands)
@@ -267,11 +277,15 @@ class PanelColorTests(unittest.TestCase):
         display.tmux.reset_mock()
         display._content_panes = {"%3"}
         display.style_panel("default")
+        rule = "#[align=left]#[fg=default,bg=default]" + "─" * 23 + "#[bg=default]"
         display.tmux.batch.assert_called_once_with(
             [
                 ["set-window-option", "-g", "pane-border-style", "fg=default,bg=default"],
                 ["set-window-option", "-g", "pane-active-border-style", "fg=default,bg=default"],
+                ["set-option", "-p", "-t", "%0", "pane-border-style", "fg=default,bg=default"],
                 ["set-option", "-g", "status-style", "fg=default,bg=default"],
+                ["set-option", "-g", "status-format[0]", rule],
+                ["set-option", "-g", "status-format[2]", rule],
                 ["set-option", "-p", "-t", "%0", "window-style", "default"],
                 ["set-option", "-p", "-t", "%0", "window-active-style", "default"],
                 ["set-option", "-p", "-t", "%3", "window-style", "default"],
@@ -290,13 +304,25 @@ class PanelColorTests(unittest.TestCase):
             command for call in display.tmux.batch.call_args_list for command in call.args[0]
         ]
         self.assertIn(
-            ["set-option", "-g", "status-format[0]", "#[align=left]before setup"], commands
+            ["set-option", "-g", "status-format[1]", "#[align=left]before setup"], commands
         )
         display.set_status("#[align=left]before setup")
         display.tmux.run.assert_not_called()
         display.set_status("#[align=left]after")
         display.tmux.run.assert_called_once_with(
-            "set-option", "-g", "status-format[0]", "#[align=left]after"
+            "set-option", "-g", "status-format[1]", "#[align=left]after"
+        )
+
+    def test_the_rules_follow_the_window_width(self):
+        display = self.display()
+        display.tmux = Mock()
+        display.style_panel("#15171c", "#1b1e24", "#2a2e36", {"outline": "#2a2e36"})
+        display.setup()
+        display._rule_columns = 100
+        rule = display._rule_format()
+        self.assertEqual(
+            rule,
+            "#[align=left]#[fg=#2a2e36,bg=#15171c]" + "─" * 23 + "#[bg=#1b1e24]" + "─" * 77,
         )
 
     def test_every_content_pane_sits_on_the_surface(self):

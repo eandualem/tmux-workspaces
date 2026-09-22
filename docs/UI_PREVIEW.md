@@ -43,7 +43,7 @@ Menus take the place of the tab list, headed by ‹ Back, with each row's prefix
 key at its right end. Double-click the active tab name or the workspace name to
 edit it in place; the hint takes the blank row under the heading.
 
-The status row along the bottom of the window names the workspace, tab and
+The status row along the bottom of the window, between two rules, names the workspace, tab and
 pane on the left, the keys for the current mode in the centre, and the agents
 toggle and the saved-state light on the right. Content panes sit on the surface
 color beside the panel; split panes are separated by one thin line in the

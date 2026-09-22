@@ -162,7 +162,8 @@ changes apply to the running viewer. [THEMES.md](THEMES.md) describes every
 role. **Edit shortcuts…** uses the same editor, while **View shortcuts…** opens
 a read-only reference to the active keys in the same popup frame.
 
-The status row along the bottom of the window has three parts. On the left,
+The status row along the bottom of the window, set off by a rule above and
+below, has three parts. On the left,
 where you are: the workspace, the tab and the focused pane, or the selected menu
 row and its keys, or the open popup. In the centre, the few keys that matter in
 the current mode. On the right, the agents toggle when an agent source is
@@ -292,20 +293,22 @@ when the connection fails the section says *Roster unavailable* rather than
 showing old states as current. Names keep one alphabetical order as states
 change. At most six rows are shown, with scrolling and a count when there are
 more, and on short windows the roster gives rows back to the tab list first.
-The roster appears when a state-reporting source is connected (`--backbone`,
-or the demo) and can be hidden with **Show agents** in Configure…, with
+The roster appears when a state-reporting source is connected (Backbone, found
+on its own, or the demo) and can be hidden with **Show agents** in Configure…, with
 **Ctrl-g A**, or by clicking **agents shown** in the status row; the choice is
 saved with the layout, applies before the first frame, and hides the whole
 section.
 Nothing in the panel names the session attached to the focused pane; name the
 tab for that.
 
-The optional adapter requires `--backbone`; it polls the existing `/api/agents`
+The adapter runs on its own when Backbone's data directory holds its database
+(`~/.local/share/agent-backbone`, or `BACKBONE_DATA_DIR`); `--no-backbone`
+keeps it off, and `--backbone` asks for it. It polls the existing `/api/agents`
 endpoint every five seconds and uses Backbone's state decisions. Generic tmux
 sessions remain available beside configured agents, including offline entries.
 It reads the API address from Backbone's settings database in read-only mode and
 the API key from its `.env`; it never changes those files. Use
-`--backbone --backbone-data-dir /path/to/data` or `BACKBONE_DATA_DIR` for another
+`--backbone-data-dir /path/to/data` for another
 installation, and `--url http://127.0.0.1:PORT` for an explicit address (required
 when it cannot be read from SQLite, including PostgreSQL setups). Keep the API
 key in the adapter data directory's `.env`; launcher environment secrets are
