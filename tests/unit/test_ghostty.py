@@ -48,7 +48,7 @@ class GhosttyLauncherTests(unittest.TestCase):
         self.assertFalse(any("config-default-files" in value for value in command))
         self.assertIn("--mouse-reporting=true", command)
         self.assertIn("--window-padding-x=0", command)
-        self.assertIn("--window-padding-y=2", command)
+        self.assertIn("--window-padding-y=0", command)
         self.assertIn("--window-padding-balance=false", command)
         self.assertIn("--window-padding-color=extend-always", command)
         self.assertIn("--working-directory=" + str(Path("/tmp").resolve()), command)

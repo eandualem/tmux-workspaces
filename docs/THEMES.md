@@ -157,11 +157,17 @@ saved` or `Defaults shown` are neither labelled nor bold, so the two are
 distinguishable without relying on perception of the accent color. Every failure
 message leads with its reason and puts the file path last, because a narrow sidebar shows only the first few words.
 
-The dedicated `./ghostty` profile sets no side padding and two points above
-and below. That space, and any fractional cell space at the right or bottom,
-takes the adjacent cell's background: the header and the status band gain a
-little room at the window's edges, and the terminal surface reaches the right
-edge. Other terminals keep their own window padding. In macOS full screen,
+The dedicated `./ghostty` profile removes outer window padding. Any fractional
+cell space at the right or bottom takes the adjacent cell's background, so the
+terminal surface and status band extend to those edges. Other terminals keep
+their own window padding.
+
+The header and the status band are one text row each, so their text has no
+vertical padding of its own. Window padding does not add it: padding shrinks
+the grid, the space that no longer fits a whole row collects at the bottom edge,
+and in Ghostty two points above and below showed up as extra space under the
+status band. Changing the terminal's cell height would pad every row, not only
+these two. In macOS full screen,
 the temporary title bar can cover the workspace heading while the pointer is
 at the top; moving the pointer away reveals the heading again.
 
