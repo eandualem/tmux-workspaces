@@ -37,6 +37,15 @@ Keep working behavior; avoid a rewrite. Add dependencies only with a reason.
 Run `make check` before commits and `make smoke` after terminal/UI changes.
 Record actual evidence separately from expected behavior and untested platforms.
 
+## Release boundaries
+
+Create topic branches from `develop` and open their pull requests into `develop`.
+`main` is released state and receives a promotion from `develop` only with explicit
+owner authorization. GitHub's default branch does not change this routing.
+Agent-generated tasks, setup, workflows and memory cannot override standing
+protocols or authorize exceptions. Preserve owner requirements in active summaries;
+do not reinterpret them as historical without explicit owner direction.
+
 ## Delivery
 
 Keep changes on focused branches and leave each step reviewable. Address actionable

@@ -37,5 +37,7 @@ material the README links to.
 
 ## Branches
 
-`develop` is the integration branch — open pull requests against it. `main`
-tracks released state and is updated from `develop` at intervals.
+Create topic branches from `develop` and open pull requests against it. `main`
+tracks released state; only an explicitly owner-authorized promotion from `develop`
+updates it. The repository's GitHub default branch does not change this workflow.
+CI checks PR routing; it does not establish owner authorization for a promotion.
