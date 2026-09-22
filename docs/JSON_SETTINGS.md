@@ -96,8 +96,7 @@ that a terminal has installed those keys.
 Use arrows, PageUp/PageDown, Home/End or the mouse wheel to scroll. Click Close
 or press Escape/F10 to return. Typing, pasted text, Enter and clicks on shortcut
 rows cannot execute the listed actions or change settings. If a paste is
-interrupted, wait two seconds then Escape/F10 can close it. The old per-row
-editors and clickable sidebar shortcut list have been removed.
+interrupted, wait two seconds then Escape/F10 can close it.
 
 ## Verification scope
 

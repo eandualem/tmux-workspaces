@@ -1,5 +1,4 @@
-"""Named presets: the file key, the editor row, and the pane borders and chooser
-that now follow the viewer's colors."""
+"""Named presets, configuration inheritance, pane borders and chooser colors."""
 
 from __future__ import annotations
 
@@ -18,7 +17,6 @@ from tmux_workspaces.display import Display
 from tmux_workspaces.model import Model
 from tmux_workspaces.theme import (
     DEFAULT_THEME,
-    PRESET_DETAILS,
     PRESET_NAMES,
     ROLES,
     Theme,
@@ -65,7 +63,6 @@ class PresetThemeTests(unittest.TestCase):
         self.assertEqual(PRESET_NAMES[0], "default")
         self.assertEqual(DEFAULT_THEME, preset_theme("default"))
         self.assertEqual(DEFAULT_THEME.preset_name(), "default")
-        self.assertEqual(set(PRESET_DETAILS), set(PRESET_NAMES))
 
     def test_every_preset_resolves_legibly_on_every_palette_size(self):
         for name in PRESET_NAMES:
@@ -73,8 +70,6 @@ class PresetThemeTests(unittest.TestCase):
             self.assertEqual(theme.preset_name(), name)
             for colors in (8, 16, 256):
                 palette = theme.resolve(colors)
-                # No role fell back to the shipped one for being invisible.
-                self.assertEqual(palette.fallbacks, (), (name, colors))
                 for role in ROLES:
                     foreground, background, _ = palette.entries[role]
                     self.assertTrue(
@@ -107,7 +102,7 @@ class PresetThemeTests(unittest.TestCase):
             self.assertIn(f'preset = "{name}"', text)
             self.assertNotIn("[active]", text)
             self.assertEqual(parse_theme(text.encode()), preset_theme(name))
-        custom = DEFAULT_THEME.with_role("accent", foreground=["red"])
+        custom = Theme.from_dict({"accent": {"foreground": ["red"]}})
         text = custom.to_toml()
         self.assertIn('preset = "default"', text)
         self.assertIn("[accent]", text)
@@ -159,7 +154,13 @@ class PresetThemeTests(unittest.TestCase):
                 restored = parse_theme(theme.to_toml().encode())
                 self.assertEqual(restored, theme)
                 self.assertEqual(restored.with_surface("red").roles["outline"].background, ("red",))
-                fixed = theme.with_role("outline", background=["bright-green"])
+                fixed = Theme.from_dict(
+                    {
+                        "preset": preset,
+                        "surface": "brightgreen",
+                        "outline": {"background": ["bright-green"]},
+                    }
+                )
                 self.assertEqual(
                     parse_theme(fixed.to_toml().encode())
                     .with_surface("red")
@@ -191,11 +192,10 @@ class PresetThemeTests(unittest.TestCase):
         self.assertEqual(changed.roles["accent"].background, ("red",))
 
     def test_an_rgb_slot_never_takes_a_number_a_role_already_uses(self):
-        theme = DEFAULT_THEME.with_role("muted", foreground=["16"])
+        theme = Theme.from_dict({"muted": {"foreground": ["16"]}})
         palette = theme.resolve(256)
         self.assertEqual(palette.entries["muted"][:2], (16, 18))
         self.assertNotIn(16, palette.rgb)
-        self.assertEqual(palette.describe("muted"), "color 16 on #22252b")
         # Every remaining exact color still has a slot, from 17 upward.
         self.assertEqual(sorted(palette.rgb), [17, 18, 19, 20, 21, 22])
 
@@ -204,7 +204,7 @@ class PresetThemeTests(unittest.TestCase):
         first = DEFAULT_THEME.resolve(256)
         first.install(fake, writes.append)
         self.assertIn(16, first.rgb)
-        second = DEFAULT_THEME.with_role("muted", foreground=[16]).resolve(256)
+        second = Theme.from_dict({"muted": {"foreground": [16]}}).resolve(256)
         second.install(fake, writes.append, previous_rgb=first.rgb)
         self.assertTrue(writes[-1].startswith("\x1b]104;16\x1b\\"))
         self.assertEqual(second.installed("muted")[0], 16)
@@ -236,9 +236,10 @@ class PanelColorTests(unittest.TestCase):
         display.tmux.batch.assert_not_called()
         display.setup()
         options = {
-            call.args[2]: call.args[3]
-            for call in display.tmux.run.call_args_list
-            if call.args[:2] == ("set-window-option", "-g")
+            command[2]: command[3]
+            for call in display.tmux.batch.call_args_list
+            for command in call.args[0]
+            if command[:2] == ["set-window-option", "-g"]
         }
         # With a surface of its own the border glyphs vanish into it, so the
         # padding beside each pane reads as blank and no border is marked.
@@ -246,12 +247,11 @@ class PanelColorTests(unittest.TestCase):
         self.assertEqual(options["pane-active-border-style"], "fg=#292c33,bg=#292c33")
         # The sidebar's own cells are curses'; its ground is the surface, which
         # shows only where curses leaves a cell alone.
-        display.tmux.batch.assert_called_once_with(
-            [
-                ["set-option", "-p", "-t", "%0", "window-style", "bg=#292c33"],
-                ["set-option", "-p", "-t", "%0", "window-active-style", "bg=#292c33"],
-            ]
-        )
+        commands = [
+            command for call in display.tmux.batch.call_args_list for command in call.args[0]
+        ]
+        for option in ("window-style", "window-active-style"):
+            self.assertIn(["set-option", "-p", "-t", "%0", option, "bg=#292c33"], commands)
         self.assertTrue(display.padded)
 
     def test_the_panel_alone_makes_a_band_and_no_padding(self):
@@ -260,9 +260,10 @@ class PanelColorTests(unittest.TestCase):
         display.style_panel("#22252b")
         display.setup()
         options = {
-            call.args[2]: call.args[3]
-            for call in display.tmux.run.call_args_list
-            if call.args[:2] == ("set-window-option", "-g")
+            command[2]: command[3]
+            for call in display.tmux.batch.call_args_list
+            for command in call.args[0]
+            if command[:2] == ["set-window-option", "-g"]
         }
         self.assertEqual(options["pane-border-style"], "fg=#22252b,bg=#22252b")
         self.assertFalse(display.padded)

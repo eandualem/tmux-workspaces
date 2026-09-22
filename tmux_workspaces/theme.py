@@ -1,6 +1,6 @@
 """Validated semantic viewer colors resolved against real terminal capability.
 
-Files are TOML data naming four semantic roles and a panel color, never terminal
+Files are TOML data naming five semantic roles and two grounds, never terminal
 escape sequences. A file may start from a named preset and override any part of
 it. The panel is painted by tmux rather than curses, so it may be an RGB value.
 This module never imports curses: the caller injects the module, as
@@ -33,43 +33,17 @@ SUBSTITUTE_FOREGROUND = 7
 SUBSTITUTE_BACKGROUND = 0
 
 # Order is the curses pair number minus one, matching the pairs the viewer has
-# always installed: normal=1, active=2, accent=3, muted=4.
+# always installed: normal=1, active=2, accent=3, muted=4, outline=5.
 ROLES = ("normal", "active", "accent", "muted", "outline")
-ROLE_LABELS = MappingProxyType(
-    {
-        "normal": "Normal",
-        "active": "Selected",
-        "accent": "Accent",
-        "muted": "Muted",
-        "outline": "Outline",
-    }
-)
-ROLE_DETAILS = MappingProxyType(
-    {
-        "normal": "Body text and buttons, drawn over the panel.",
-        "active": "The selected tab and the inline name editor.",
-        "accent": (
-            "Hints, the tab detail row, the selection marker and error text. Error text "
-            "shares this pair, so it always adds bold: the colour alone cannot "
-            "distinguish it."
-        ),
-        "muted": "Section labels, tab numbers and counts.",
-        "outline": (
-            "The panel's perimeter, drawn on the surface, and the separators between split panes."
-        ),
-    }
-)
 ATTRIBUTES = ("bold", "dim", "reverse", "standout", "underline")
 _BASIC_NAMES = ("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white")
 COLOR_NAMES = ("default", *_BASIC_NAMES, *(f"bright-{name}" for name in _BASIC_NAMES))
-COLOR_CHOICES = COLOR_NAMES
 DEFAULT_COLOR = "default"
 
 _HEX_COLOR = re.compile(r"#[0-9a-f]{6}")
 _NAME_TO_INDEX = MappingProxyType(
     {DEFAULT_COLOR: -1} | {name: index for index, name in enumerate(COLOR_NAMES[1:])}
 )
-_INDEX_TO_NAME = MappingProxyType({index: name for name, index in _NAME_TO_INDEX.items()})
 
 # xterm's first sixteen entries. Used only to pick a nearest basic color when a
 # configured value and every configured fallback exceed the terminal's palette.
@@ -147,28 +121,6 @@ def color_index(name: str) -> int:
 
 def _hex_rgb(name: str) -> tuple[int, int, int]:
     return int(name[1:3], 16), int(name[3:5], 16), int(name[5:7], 16)
-
-
-def color_label(name: str) -> str:
-    return name if name in _NAME_TO_INDEX else f"color {name}"
-
-
-def color_error(value, colors: int | None = None) -> str | None:
-    """Non-raising validation for an editor field. Capability is advisory only."""
-    try:
-        name = canonical_color(value)
-    except ValueError as error:
-        return str(error)
-    if colors is None:
-        return None
-    if is_rgb(name):
-        if colors < 256:
-            return f"{name} needs a 256-color terminal; this terminal reports {colors}"
-        return None
-    index = color_index(name)
-    if index >= colors:
-        return f"{color_label(name)} needs {index + 1} colors; this terminal reports {colors}"
-    return None
 
 
 def _canonical_list(value, *, what: str) -> tuple[str, ...]:
@@ -283,16 +235,15 @@ def tmux_spelling(name: str) -> str:
 # basic-palette choice: nearest-color approximation would pick black for 238 and
 # green for 108, silently changing the look on an eight-color terminal. Every
 # preset keeps the terminal's font and the colors shell programs print.
-# Each preset: name, description, panel (the sidebar's ground), surface (the
+# Each preset: name, panel (the sidebar's ground), surface (the
 # terminals' ground) and the roles. The shipped palette is the one the owner
 # specified from VS Code: surface #292c33, panel #22252b, outline #31343b,
 # selection #343841, text #cccccc, secondary #999999, accent #608af7.
 _DARK_PANEL, _DARK_SURFACE = "#22252b", "#292c33"
 _LIGHT_PANEL, _LIGHT_SURFACE = "#f8f8f8", "#ffffff"
-_PRESETS: tuple[tuple[str, str, str, str, dict[str, Role]], ...] = (
+_PRESETS: tuple[tuple[str, str, str, dict[str, Role]], ...] = (
     (
         "default",
-        "A slate panel inset in a slightly lighter surface, grey text, blue accent",
         _DARK_PANEL,
         _DARK_SURFACE,
         {
@@ -305,7 +256,6 @@ _PRESETS: tuple[tuple[str, str, str, str, dict[str, Role]], ...] = (
     ),
     (
         "plain",
-        "The same colors on the terminal's own background, no panel or padding",
         DEFAULT_PANEL,
         DEFAULT_PANEL,
         {
@@ -318,7 +268,6 @@ _PRESETS: tuple[tuple[str, str, str, str, dict[str, Role]], ...] = (
     ),
     (
         "forest",
-        "Terminal background with a sage-green accent",
         DEFAULT_PANEL,
         DEFAULT_PANEL,
         {
@@ -331,7 +280,6 @@ _PRESETS: tuple[tuple[str, str, str, str, dict[str, Role]], ...] = (
     ),
     (
         "paper",
-        "VS Code Light Modern: a pale panel on white, dark text, a blue accent",
         _LIGHT_PANEL,
         _LIGHT_SURFACE,
         {
@@ -344,7 +292,6 @@ _PRESETS: tuple[tuple[str, str, str, str, dict[str, Role]], ...] = (
     ),
     (
         "mono",
-        "The terminal's own two colors, with bold, dim and reverse only",
         DEFAULT_PANEL,
         DEFAULT_PANEL,
         {
@@ -357,10 +304,9 @@ _PRESETS: tuple[tuple[str, str, str, str, dict[str, Role]], ...] = (
     ),
 )
 PRESET_NAMES: tuple[str, ...] = tuple(name for name, *_ in _PRESETS)
-PRESET_DETAILS = MappingProxyType({name: detail for name, detail, *_ in _PRESETS})
-_PRESET_ROLES = MappingProxyType({name: roles for name, _, _, _, roles in _PRESETS})
-_PRESET_PANELS = MappingProxyType({name: panel for name, _, panel, _, _ in _PRESETS})
-_PRESET_SURFACES = MappingProxyType({name: surface for name, _, _, surface, _ in _PRESETS})
+_PRESET_ROLES = MappingProxyType({name: roles for name, _, _, roles in _PRESETS})
+_PRESET_PANELS = MappingProxyType({name: panel for name, panel, _, _ in _PRESETS})
+_PRESET_SURFACES = MappingProxyType({name: surface for name, _, surface, _ in _PRESETS})
 DEFAULT_PRESET = PRESET_NAMES[0]
 
 
@@ -400,14 +346,11 @@ def tmux_color(index: int) -> str:
 class Palette:
     """Colors resolved for one terminal. Built once; never recomputed per frame."""
 
-    colors: int
     entries: Mapping[str, tuple[int, int, tuple[str, ...]]]
-    fallbacks: tuple[str, ...] = ()
     # RGB colors by the palette slot each takes in the pane.
     rgb: Mapping[int, str] = field(default_factory=dict)
     _styles: dict[str, int] = field(default_factory=dict, compare=False, repr=False)
     _installed: dict[str, tuple[int, int]] = field(default_factory=dict, compare=False, repr=False)
-    _repaired: set[str] = field(default_factory=set, compare=False, repr=False)
 
     def pair(self, role: str) -> int:
         return ROLES.index(role) + 1
@@ -428,24 +371,8 @@ class Palette:
             raise ThemeError(f"palette role {role!r} is not installed")
         return self._installed[role]
 
-    def describe_color(self, index: int) -> str:
-        return self.rgb.get(index) or _describe_color(index)
-
-    def describe(self, role: str) -> str:
-        foreground, background, attributes = self.entries[role]
-        text = f"{self.describe_color(foreground)} on {self.describe_color(background)}"
-        if attributes:
-            text += " " + "+".join(attributes)
-        if role in self.fallbacks:
-            text += " (shipped fallback; configured colors were identical)"
-        elif role in self._repaired:
-            text += " (adjusted; this terminal has no default-color support)"
-        elif self.colors < 256:
-            text += f" ({self.colors}-color fallback)"
-        return text
-
     def install(self, curses, write=None, *, previous_rgb=()) -> None:
-        """Install pairs 1-4 once. On failure, restore the pairs already in use.
+        """Install pairs 1-5 once. On failure, restore the pairs already in use.
 
         ``write`` sends text to the pane's terminal; it receives the palette
         definitions for any RGB colors. Without it, such colors show as
@@ -463,7 +390,6 @@ class Palette:
             with_default = False
         applied: dict[str, int] = {}
         installed: dict[str, tuple[int, int]] = {}
-        repaired: set[str] = set()
         try:
             for role in ROLES:
                 foreground, background, attributes = self.entries[role]
@@ -493,7 +419,6 @@ class Palette:
                         else:
                             foreground = SUBSTITUTE_FOREGROUND
                             background = SUBSTITUTE_BACKGROUND
-                        repaired.add(role)
                 curses.init_pair(self.pair(role), foreground, background)
                 installed[role] = (foreground, background)
                 style = curses.color_pair(self.pair(role))
@@ -511,8 +436,6 @@ class Palette:
         self._styles.update(applied)
         self._installed.clear()
         self._installed.update(installed)
-        self._repaired.clear()
-        self._repaired.update(repaired)
         _INSTALLED.clear()
         _INSTALLED.update(installed)
         if write is not None:
@@ -525,12 +448,6 @@ class Palette:
 
 # The pairs currently installed in this process, so a failed apply can roll back.
 _INSTALLED: dict[str, tuple[int, int]] = {}
-
-
-def _describe_color(index: int) -> str:
-    if index < 0:
-        return "terminal default"
-    return _INDEX_TO_NAME.get(index, f"color {index}")
 
 
 def _supported(name: str, colors: int) -> bool:
@@ -656,37 +573,6 @@ class Theme:
         name = self.roles["outline"].foreground[0]
         return self.panel if name == DEFAULT_COLOR else tmux_spelling(name)
 
-    def with_role(self, role: str, **changes) -> Theme:
-        """Return a copy for preview or editing. Pure; the original is unchanged."""
-        if role not in ROLES:
-            raise ValueError(f"unknown role {role!r}; use {', '.join(ROLES)}")
-        unknown = set(changes) - {"foreground", "background", "attributes"}
-        if unknown:
-            raise ValueError(f"{role}: unknown option {sorted(unknown)[0]!r}")
-        current = self.roles[role]
-        updated = Role(
-            _canonical_list(
-                changes.get("foreground", list(current.foreground)), what=f"{role}.foreground"
-            ),
-            _canonical_list(
-                changes.get("background", list(current.background)), what=f"{role}.background"
-            ),
-            _canonical_attributes(
-                list(changes.get("attributes", list(current.attributes))),
-                what=f"{role}.attributes",
-            ),
-        )
-        inherited = self._panel_roles - {role} if "background" in changes else self._panel_roles
-        surface_inherited = (
-            self._surface_roles - {role} if "background" in changes else self._surface_roles
-        )
-        return replace(
-            self,
-            roles=MappingProxyType(dict(self.roles) | {role: updated}),
-            _panel_roles=inherited,
-            _surface_roles=surface_inherited,
-        )
-
     def preset_name(self) -> str | None:
         """The preset this theme equals exactly, or None for custom colors."""
         return next((name for name in PRESET_NAMES if preset_theme(name) == self), None)
@@ -728,7 +614,6 @@ class Theme:
         """Resolve against a real palette size. Never raises: colors always render."""
         colors = max(int(colors), 0)
         entries: dict[str, tuple[int, int, tuple[str, ...]]] = {}
-        fallbacks: list[str] = []
         slots: dict[str, int] = {}
         shipped = _shipped()
         reserved = frozenset(
@@ -752,10 +637,9 @@ class Theme:
                 foreground, _ = _resolve_color(safe.foreground, colors, slots, reserved)
                 background, _ = _resolve_color(safe.background, colors, slots, reserved)
                 attributes = safe.attributes
-                fallbacks.append(role)
             entries[role] = (foreground, background, attributes)
         rgb = MappingProxyType({slot: name for name, slot in slots.items()})
-        return Palette(colors, MappingProxyType(entries), tuple(fallbacks), rgb)
+        return Palette(MappingProxyType(entries), rgb)
 
 
 # Palette slots an RGB role color may take in the viewer's own pane. tmux keeps
@@ -799,10 +683,6 @@ def palette_sequence(slots: Mapping[str, int]) -> str:
 
 
 DEFAULT_THEME = preset_theme(DEFAULT_PRESET)
-
-
-def _read_file(path: Path) -> bytes:
-    return read_file(path, MAX_THEME_BYTES)
 
 
 class ThemeError(ConfigError):
@@ -881,7 +761,7 @@ def load_theme(
     selected = theme_path(path, environ=environ, cwd=cwd)
     base = DEFAULT_THEME if working is None else working
     try:
-        payload = _read_file(selected)
+        payload = read_file(selected, MAX_THEME_BYTES)
     except FileNotFoundError:
         return ThemeLoad(base, selected)
     except OSError as error:
@@ -913,23 +793,6 @@ class ThemeFile(ConfigFile):
             error=ThemeError,
             conflict=ThemeConflict,
         )
-
-    def read(self) -> ThemeLoad:
-        """Record the bytes seen even when they are invalid, so Apply can repair them."""
-        payload, diagnostic = self.read_bytes()
-        if payload is None:
-            return ThemeLoad(DEFAULT_THEME, self.path, diagnostic)
-        try:
-            return ThemeLoad(parse_theme(payload), self.path)
-        except (ValueError, UnicodeDecodeError) as error:
-            # A file too large to digest safely cannot be replaced either, so
-            # promise a repair only where write() can actually perform one.
-            repair = (
-                "shrink it below the size limit before saving"
-                if self.oversized(payload)
-                else "saving will replace it"
-            )
-            return ThemeLoad(DEFAULT_THEME, self.path, f"{error}; {repair} ({self.path})")
 
     def write(self, theme: Theme) -> None:
         """Replace the file atomically, refusing unsafe targets and concurrent edits."""

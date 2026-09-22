@@ -7,17 +7,14 @@ from pathlib import Path
 from tmux_workspaces import theme as theme_module
 from tmux_workspaces.theme import (
     ATTRIBUTES,
-    COLOR_CHOICES,
     DEFAULT_THEME,
     MAX_THEME_BYTES,
-    ROLE_LABELS,
     ROLES,
     Theme,
     ThemeConflict,
     ThemeError,
     ThemeFile,
     canonical_color,
-    color_error,
     load_theme,
     parse_theme_state,
     preset_theme,
@@ -82,26 +79,11 @@ class ColorValueTests(unittest.TestCase):
             with self.assertRaises(ValueError) as caught:
                 canonical_color(raw)
             self.assertIn("not a color", str(caught.exception))
-        self.assertIsNone(color_error("#8ab4f8"))
-        self.assertIsNone(color_error("#8ab4f8", 256))
-        self.assertIn("256-color", color_error("#8ab4f8", 8))
 
     def test_out_of_range_unknown_and_wrong_types_are_errors(self):
         for raw in (300, -1, "puce", "", True, None, 3.5, "1" * 40):
             with self.assertRaises(ValueError):
                 canonical_color(raw)
-
-    def test_color_error_is_non_raising_and_capability_aware(self):
-        self.assertIsNone(color_error("blue"))
-        self.assertIsNone(color_error(238))
-        self.assertIsNone(color_error(238, 256))
-        self.assertIsNone(color_error("default", 8))
-        self.assertIn("this terminal reports 8", color_error(245, 8))
-        self.assertIsNotNone(color_error("puce", 256))
-
-    def test_every_offered_choice_is_accepted(self):
-        for choice in COLOR_CHOICES:
-            self.assertEqual(canonical_color(choice), choice)
 
 
 class ShippedAppearanceTests(unittest.TestCase):
@@ -127,8 +109,6 @@ class ShippedAppearanceTests(unittest.TestCase):
                 22: "#292c33",
             },
         )
-        self.assertEqual(palette.describe("active"), "#cccccc on #343841")
-        self.assertEqual(palette.fallbacks, ())
 
     def test_defaults_reproduce_todays_basic_palette_exactly(self):
         # White on blue, cyan and white; the values sidebar.run has always used
@@ -152,7 +132,6 @@ class ShippedAppearanceTests(unittest.TestCase):
         palette = DEFAULT_THEME.resolve(256)
         self.assertEqual(ROLES, ("normal", "active", "accent", "muted", "outline"))
         self.assertEqual([palette.pair(role) for role in ROLES], [1, 2, 3, 4, 5])
-        self.assertEqual(set(ROLE_LABELS), set(ROLES))
 
     def test_roles_are_immutable(self):
         with self.assertRaises(TypeError):
@@ -188,7 +167,6 @@ class ResolutionTests(unittest.TestCase):
         # sidebar refuses to go there; resolution reports what it was asked.
         theme = Theme.from_dict({"accent": {"foreground": 200}})
         palette = theme.resolve(0)
-        self.assertEqual(palette.colors, 0)
         self.assertEqual(palette.entries["accent"][0], -1)
         self.assertEqual(theme.resolve(8).entries["accent"][0], 5)
 
@@ -197,33 +175,24 @@ class ResolutionTests(unittest.TestCase):
         # yields the same invisible pair. The repair must be a real fallback.
         theme = Theme.from_dict({"active": {"foreground": "red", "background": "red"}})
         palette = theme.resolve(256)
-        self.assertEqual(palette.fallbacks, ("active",))
         self.assertEqual(palette.entries["active"][:2], (16, 18))
         self.assertNotIn("reverse", palette.entries["active"][2])
-        self.assertIn("shipped fallback", palette.describe("active"))
 
     def test_a_collision_created_only_by_a_reduced_palette_is_repaired_too(self):
         theme = Theme.from_dict(
             {"active": {"foreground": [231, "white"], "background": [238, "white"]}}
         )
-        self.assertEqual(theme.resolve(256).fallbacks, ())
-        self.assertEqual(theme.resolve(8).fallbacks, ("active",))
+        self.assertEqual(theme.resolve(256).entries["active"][:2], (231, 238))
+        self.assertEqual(theme.resolve(8).entries["active"][:2], (7, 4))
 
     def test_terminal_defaults_on_both_sides_are_not_treated_as_a_collision(self):
         palette = preset_theme("forest").resolve(256)
         self.assertEqual(palette.entries["normal"][:2], (-1, -1))
-        self.assertEqual(palette.fallbacks, ())
 
     def test_attributes_are_preserved_and_ordered(self):
         theme = Theme.from_dict({"muted": {"attributes": ["underline", "bold", "bold"]}})
         self.assertEqual(theme.roles["muted"].attributes, ("bold", "underline"))
         self.assertEqual(theme.resolve(256).entries["muted"][2], ("bold", "underline"))
-
-    def test_describe_reports_the_reduced_palette(self):
-        self.assertEqual(
-            DEFAULT_THEME.resolve(8).describe("active"), "white on blue (8-color fallback)"
-        )
-        self.assertIn("terminal default", preset_theme("plain").resolve(256).describe("normal"))
 
 
 class ParsingTests(unittest.TestCase):
@@ -257,21 +226,6 @@ class ParsingTests(unittest.TestCase):
         )
         self.assertEqual(Theme.from_dict(tomllib.loads(theme.to_toml())), theme)
         self.assertEqual(Theme.from_dict(tomllib.loads(DEFAULT_THEME.to_toml())), DEFAULT_THEME)
-
-    def test_with_role_is_pure_and_validates(self):
-        edited = DEFAULT_THEME.with_role("accent", foreground="red")
-        self.assertEqual(edited.roles["accent"].foreground, ("red",))
-        self.assertEqual(
-            edited.roles["accent"].background, DEFAULT_THEME.roles["accent"].background
-        )
-        self.assertEqual(DEFAULT_THEME.roles["accent"].foreground, ("#608af7", "69", "cyan"))
-        self.assertEqual(edited.roles["muted"], DEFAULT_THEME.roles["muted"])
-        with self.assertRaises(ValueError):
-            DEFAULT_THEME.with_role("accent", foreground="#fff")
-        with self.assertRaises(ValueError):
-            DEFAULT_THEME.with_role("nope", foreground="red")
-        with self.assertRaisesRegex(ValueError, "unknown option.*foregound"):
-            DEFAULT_THEME.with_role("accent", foregound="red")
 
 
 class PathTests(unittest.TestCase):
@@ -339,7 +293,7 @@ class LoadTests(unittest.TestCase):
             self.assertIn(str(self.path), result.diagnostic)
 
     def test_invalid_content_keeps_the_working_theme_rather_than_the_shipped_one(self):
-        working = DEFAULT_THEME.with_role("accent", foreground="red")
+        working = Theme.from_dict({"accent": {"foreground": "red"}})
         self.path.write_text("garbage ===")
         result = load_theme(self.path, working=working)
         self.assertEqual(result.theme, working)
@@ -368,7 +322,7 @@ class ThemeFileTests(unittest.TestCase):
         self.path = self.directory / "theme.toml"
 
     def test_write_creates_the_file_atomically_and_leaves_no_temporary(self):
-        edited = DEFAULT_THEME.with_role("accent", foreground="red")
+        edited = Theme.from_dict({"accent": {"foreground": "red"}})
         ThemeFile(self.path).write(edited)
         self.assertEqual(load_theme(self.path).theme, edited)
         names = sorted(p.name for p in self.directory.iterdir())
@@ -380,9 +334,9 @@ class ThemeFileTests(unittest.TestCase):
     def test_a_concurrent_edit_is_refused_and_the_working_theme_survives(self):
         self.path.write_text('[accent]\nforeground = "red"\n')
         handle = ThemeFile(self.path)
-        loaded = handle.read().theme
+        handle.read_bytes()
         self.path.write_text('[accent]\nforeground = "green"\n')
-        edited = loaded.with_role("muted", foreground="blue")
+        edited = Theme.from_dict({"accent": {"foreground": "red"}, "muted": {"foreground": "blue"}})
         with self.assertRaises(ThemeConflict) as caught:
             handle.write(edited)
         self.assertIn("changed on disk", str(caught.exception))
@@ -390,18 +344,17 @@ class ThemeFileTests(unittest.TestCase):
         self.assertEqual(load_theme(self.path).theme.roles["accent"].foreground, ("green",))
 
     def test_an_unchanged_invalid_file_can_be_repaired_by_an_explicit_apply(self):
-        # read() keeps the digest of bytes it could not parse, so the user who
-        # opens the editor over a broken file can still save over it.
+        # Reading bytes retains their digest independently of parsing, so an
+        # explicit repair can replace invalid content without losing another edit.
         self.path.write_text("this is not toml ===")
         handle = ThemeFile(self.path)
-        result = handle.read()
-        self.assertIsNotNone(result.diagnostic)
+        self.assertEqual(handle.read_bytes(), (b"this is not toml ===", None))
         handle.write(DEFAULT_THEME)
         self.assertEqual(load_theme(self.path).theme, DEFAULT_THEME)
 
     def test_writing_a_file_that_appeared_after_a_missing_read_is_a_conflict(self):
         handle = ThemeFile(self.path)
-        handle.read()
+        handle.read_bytes()
         self.path.write_text('[accent]\nforeground = "green"\n')
         with self.assertRaises(ThemeConflict):
             handle.write(DEFAULT_THEME)
@@ -433,7 +386,7 @@ class ThemeFileTests(unittest.TestCase):
             path.write_text(original)
             os.chmod(path, 0o200)
             colors = ThemeFile(path)
-            self.assertIsNotNone(colors.read().diagnostic)
+            self.assertIsNotNone(colors.read_bytes()[1])
             os.chmod(path, permission)
             with self.assertRaises(ThemeError) as caught:
                 colors.write(DEFAULT_THEME)
@@ -446,7 +399,7 @@ class ThemeFileTests(unittest.TestCase):
         readable = self.directory / "readable.toml"
         readable.write_text(original)
         colors = ThemeFile(readable)
-        colors.read()
+        colors.read_bytes()
         readable.write_text('[muted]\nforeground = "green"\n')
         with self.assertRaises(ThemeConflict):
             colors.write(DEFAULT_THEME)
@@ -460,23 +413,17 @@ class ThemeFileTests(unittest.TestCase):
         self.path.chmod(0o400)
         self.addCleanup(self.path.chmod, 0o600)
         handle = ThemeFile(self.path)
-        handle.read()
+        handle.read_bytes()
         with self.assertRaises(ThemeError) as caught:
             handle.write(DEFAULT_THEME)
         self.assertIn("read-only", str(caught.exception))
-        self.assertFalse(handle.writable())
         self.assertEqual(load_theme(self.path).theme.roles["accent"].foreground, ("red",))
-
-    def test_writable_reports_a_creatable_path_and_a_missing_parent(self):
-        self.assertTrue(ThemeFile(self.path).writable())
-        self.assertTrue(ThemeFile(self.directory / "new" / "theme.toml").writable())
-        self.assertFalse(ThemeFile(self.directory).writable())
 
     def test_a_second_write_after_a_successful_one_is_not_a_conflict(self):
         handle = ThemeFile(self.path)
-        handle.read()
+        handle.read_bytes()
         handle.write(DEFAULT_THEME)
-        handle.write(DEFAULT_THEME.with_role("accent", foreground="red"))
+        handle.write(Theme.from_dict({"accent": {"foreground": "red"}}))
         self.assertEqual(load_theme(self.path).theme.roles["accent"].foreground, ("red",))
 
     def test_the_parent_directory_is_created_privately(self):
@@ -494,7 +441,7 @@ class ConcurrencyTests(unittest.TestCase):
 
     def _themes(self, count):
         colors = ("red", "green", "blue", "yellow", "magenta", "cyan")
-        return [DEFAULT_THEME.with_role("accent", foreground=[colors[n]]) for n in range(count)]
+        return [Theme.from_dict({"accent": {"foreground": [colors[n]]}}) for n in range(count)]
 
     def test_concurrent_writers_never_leave_a_torn_or_unparsable_file(self):
         import threading
@@ -504,7 +451,7 @@ class ConcurrencyTests(unittest.TestCase):
         handles = []
         for _ in themes:
             handle = ThemeFile(self.path)
-            handle.read()
+            handle.read_bytes()
             handles.append(handle)
         errors, done = [], []
         start = threading.Barrier(len(themes))
@@ -543,7 +490,7 @@ class ConcurrencyTests(unittest.TestCase):
         handles = []
         for _ in themes:
             handle = ThemeFile(self.path)
-            handle.read()
+            handle.read_bytes()
             handles.append(handle)
         done, errors = [], []
         start = threading.Barrier(len(themes))
@@ -570,11 +517,11 @@ class ConcurrencyTests(unittest.TestCase):
 
     def test_the_lock_is_a_stable_sibling_that_survives_replacement(self):
         handle = ThemeFile(self.path)
-        handle.read()
+        handle.read_bytes()
         handle.write(DEFAULT_THEME)
         lock = self.directory / ".theme.toml.lock"
         first = lock.stat().st_ino
-        handle.write(DEFAULT_THEME.with_role("accent", foreground=["red"]))
+        handle.write(Theme.from_dict({"accent": {"foreground": ["red"]}}))
         self.assertEqual(lock.stat().st_ino, first)
 
 
@@ -591,7 +538,7 @@ class NonRegularInputTests(unittest.TestCase):
         result = load_theme(path)
         self.assertEqual(result.theme, DEFAULT_THEME)
         self.assertIn("regular file", result.diagnostic)
-        self.assertIsNotNone(ThemeFile(path).read().diagnostic)
+        self.assertIsNotNone(ThemeFile(path).read_bytes()[1])
 
     def test_a_directory_config_is_refused_on_read_too(self):
         path = self.directory / "adirectory"
@@ -617,7 +564,7 @@ class OversizeTests(unittest.TestCase):
         # detected. Refuse the save instead of overwriting someone's work.
         self.path.write_text("# padding\n" * MAX_THEME_BYTES)
         handle = ThemeFile(self.path)
-        self.assertIsNotNone(handle.read().diagnostic)
+        self.assertEqual(len(handle.read_bytes()[0]), MAX_THEME_BYTES + 1)
         with self.assertRaises(ThemeError) as caught:
             handle.write(DEFAULT_THEME)
         self.assertIn("larger than", str(caught.exception))
@@ -627,7 +574,7 @@ class OversizeTests(unittest.TestCase):
     def test_the_digest_covers_length_so_a_truncating_edit_is_still_a_conflict(self):
         self.path.write_text('[accent]\nforeground = "red"\n')
         handle = ThemeFile(self.path)
-        handle.read()
+        handle.read_bytes()
         self.path.write_text('[accent]\nforeground = "red"')
         with self.assertRaises(ThemeConflict):
             handle.write(DEFAULT_THEME)
@@ -638,7 +585,7 @@ class InstallTests(unittest.TestCase):
         theme_module._INSTALLED.clear()
         self.addCleanup(theme_module._INSTALLED.clear)
 
-    def test_install_sets_the_four_pairs_and_precomputes_styles(self):
+    def test_install_sets_the_five_pairs_and_precomputes_styles(self):
         curses = Curses()
         palette = DEFAULT_THEME.resolve(256)
         palette.install(curses)
@@ -673,7 +620,7 @@ class InstallTests(unittest.TestCase):
     def test_substituting_defaults_cannot_collapse_a_pair_into_one_color(self):
         # Root's repro: (0, -1) resolves legibly, but without default-color
         # support the background becomes 0 and the pair installs black on black.
-        theme = DEFAULT_THEME.with_role("normal", foreground=["black"], background=["default"])
+        theme = Theme.from_dict({"normal": {"foreground": ["black"], "background": ["default"]}})
         palette = theme.resolve(8)
         self.assertEqual(palette.entries["normal"][:2], (0, -1))
         curses = Curses(default_colors=False)
@@ -681,7 +628,6 @@ class InstallTests(unittest.TestCase):
         self.assertNotEqual(curses.pairs[1][0], curses.pairs[1][1])
         self.assertEqual(curses.pairs[1], (0, 7))
         self.assertEqual(palette.installed("normal"), (0, 7))
-        self.assertIn("no default-color support", palette.describe("normal"))
 
     def test_the_repair_moves_the_substituted_side_and_keeps_the_users_choice(self):
         for foreground, background, expected in (
@@ -690,7 +636,9 @@ class InstallTests(unittest.TestCase):
             (["white"], ["default"], (7, 0)),
             (["default"], ["black"], (7, 0)),
         ):
-            theme = DEFAULT_THEME.with_role("normal", foreground=foreground, background=background)
+            theme = Theme.from_dict(
+                {"normal": {"foreground": foreground, "background": background}}
+            )
             curses = Curses(default_colors=False)
             theme.resolve(8).install(curses)
             self.assertEqual(curses.pairs[1], expected, (foreground, background))
@@ -704,7 +652,9 @@ class InstallTests(unittest.TestCase):
                 (["default"], ["white"]),
                 (["default"], ["default"]),
             ):
-                theme = DEFAULT_THEME.with_role(role, foreground=foreground, background=background)
+                theme = Theme.from_dict(
+                    {role: {"foreground": foreground, "background": background}}
+                )
                 curses = Curses(default_colors=False)
                 theme.resolve(8).install(curses)
                 for number, pair in curses.pairs.items():
@@ -716,14 +666,14 @@ class InstallTests(unittest.TestCase):
         # then a later install fails partway. The restored pairs must be the
         # substituted numbers, never the unresolved -1.
         curses = Curses(default_colors=False)
-        first = DEFAULT_THEME.with_role("normal", foreground=["black"], background=["default"])
+        first = Theme.from_dict({"normal": {"foreground": ["black"], "background": ["default"]}})
         first.resolve(8).install(curses)
         installed = dict(curses.pairs)
         self.assertEqual(installed[1], (0, 7))
         curses.pairs.clear()
         curses._fail_on = 3
         with self.assertRaises(ThemeError) as caught:
-            DEFAULT_THEME.with_role("accent", foreground=["red"]).resolve(8).install(curses)
+            Theme.from_dict({"accent": {"foreground": ["red"]}}).resolve(8).install(curses)
         self.assertIn("previous colors were kept", str(caught.exception))
         self.assertEqual(curses.pairs, installed)
         self.assertTrue(all(min(pair) >= 0 for pair in curses.pairs.values()))
@@ -765,63 +715,11 @@ class InstallTests(unittest.TestCase):
         self.assertLessEqual(max(curses.pairs), 5)
 
 
-class EditorContractTests(unittest.TestCase):
-    """Theme value operations shared by configuration validation and rendering."""
-
-    def test_roles_expose_the_three_fields_as_tuples_in_role_order(self):
-        self.assertEqual(tuple(DEFAULT_THEME.roles), ROLES)
-        for role in ROLES:
-            value = DEFAULT_THEME.roles[role]
-            for name in ("foreground", "background", "attributes"):
-                self.assertIsInstance(getattr(value, name), tuple, (role, name))
-
-    def test_with_role_accepts_lists_for_every_field(self):
-        edited = DEFAULT_THEME.with_role(
-            "active", foreground=["231", "white"], background=["blue"], attributes=["bold"]
-        )
-        self.assertEqual(edited.roles["active"].foreground, ("231", "white"))
-        self.assertEqual(edited.roles["active"].background, ("blue",))
-        self.assertEqual(edited.roles["active"].attributes, ("bold",))
-
-    def test_an_empty_attribute_list_clears_attributes_but_an_empty_color_list_is_refused(self):
-        cleared = DEFAULT_THEME.with_role("muted", attributes=[]).with_role("muted", attributes=[])
-        self.assertEqual(cleared.roles["muted"].attributes, ())
-        with self.assertRaises(ValueError):
-            DEFAULT_THEME.with_role("muted", foreground=[])
-
-    def test_errors_name_the_role_and_field_so_the_status_row_can_show_them_raw(self):
-        for changes, fragment in (
-            ({"foreground": ["#fff"]}, "active.foreground:"),
-            ({"background": []}, "active.background:"),
-            ({"attributes": ["blink"]}, "active.attributes:"),
-        ):
-            with self.assertRaises(ValueError) as caught:
-                DEFAULT_THEME.with_role("active", **changes)
-            self.assertTrue(str(caught.exception).startswith(fragment), caught.exception)
-
-    def test_themes_compare_equal_by_value_despite_the_mapping_proxy(self):
-        self.assertEqual(Theme.from_dict({}), DEFAULT_THEME)
-        self.assertEqual(
-            DEFAULT_THEME.with_role("accent", foreground=["red"]),
-            DEFAULT_THEME.with_role("accent", foreground=["red"]),
-        )
-        self.assertNotEqual(DEFAULT_THEME.with_role("accent", foreground=["red"]), DEFAULT_THEME)
-
-    def test_role_labels_stay_short_enough_for_a_narrow_sidebar(self):
-        self.assertEqual(tuple(ROLE_LABELS), ROLES)
-        for role, label in ROLE_LABELS.items():
-            self.assertLessEqual(len(label), 10, role)
-
-    def test_color_choices_are_canonical_and_ordered(self):
-        self.assertEqual(COLOR_CHOICES[0], "default")
-        self.assertEqual(len(set(COLOR_CHOICES)), len(COLOR_CHOICES))
-
-
 class StateTransportTests(unittest.TestCase):
     """The launcher validates once and transports the result to the viewer."""
 
     def test_a_snapshot_round_trips_without_touching_the_file(self):
-        theme = DEFAULT_THEME.with_role("accent", foreground=["red"])
+        theme = Theme.from_dict({"accent": {"foreground": ["red"]}})
         self.assertEqual(parse_theme_state(theme.to_toml()), theme)
         self.assertEqual(parse_theme_state(DEFAULT_THEME.to_toml()), DEFAULT_THEME)
 

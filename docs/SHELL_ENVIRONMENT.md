@@ -1,7 +1,7 @@
 # Ordinary shell environment
 
-New tabs and splits start normal interactive login shells. The launcher forwards
-an explicit set of environment variables instead of inheriting every variable
+Choosing **Open terminal** in a new tab or split starts a normal interactive
+login shell. The launcher forwards an explicit set of environment variables instead of inheriting every variable
 from the process that opened it. This keeps agent-launcher identity and unrelated
 API keys out of ordinary terminals while retaining normal Unix session paths.
 The user's shell startup files still run and may set their own environment.

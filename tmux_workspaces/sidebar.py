@@ -230,10 +230,6 @@ class Sidebar:
         """Attributes for a semantic role. Pairs are installed, never per frame."""
         return self.palette.style(role) if self.palette else 0
 
-    def describe(self, role: str) -> str:
-        """What a role will actually render as; empty until a palette installs."""
-        return self.palette.describe(role) if self.palette else ""
-
     def message_style(self, message: str, notice: bool) -> int:
         """Failures add bold, so severity survives a reduced or reversed palette."""
         return self.style("accent" if notice else "muted") | (
@@ -296,7 +292,9 @@ class Sidebar:
             if focused:
                 tab["focus"] = focused
             self.display.remember_ratios(tab["tree"])
-            self.display.shells.remember_many(leaves(tab["tree"]))
+            self.display.shells.remember_many(
+                [pane for pane in leaves(tab["tree"]) if not is_empty(pane)]
+            )
 
     def clear_inline(self, *, focus: bool = False) -> None:
         if self.inline_editor and self.message in {"Enter a tab name", "Enter a workspace name"}:

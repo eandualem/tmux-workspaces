@@ -13,7 +13,7 @@ from .entrypoints import script_command
 from .keymap import DEFAULT_KEYMAP, Keymap, direct_sequence
 from .model import is_empty, leaves, minimum_size
 from .shells import Shells
-from .tmux import Tmux
+from .tmux import Tmux, command_args
 
 
 @dataclass(frozen=True)
@@ -123,6 +123,7 @@ class Display:
         self._split_drag = None
 
     def setup(self) -> None:
+        commands = []
         for name, value in {
             "mouse": "on",
             "status": "off",
@@ -140,7 +141,7 @@ class Display:
             "exit-unattached": "on",
             "@viewer_padded": "1" if self.padded else "0",
         }.items():
-            self.tmux.run("set-option", "-g", name, value)
+            commands.append(["set-option", "-g", name, value])
         for name, value in {
             "pane-border-status": "off",
             "pane-border-style": self._band_style(),
@@ -151,20 +152,22 @@ class Display:
             "remain-on-exit": "on",
             "pane-border-format": "",
         }.items():
-            self.tmux.run("set-window-option", "-g", name, value)
-        self.tmux.run("set-option", "-p", "-t", self.sidebar, "@viewer_agent", "Workspaces")
-        self.tmux.batch(self._ground_commands(self.sidebar, "surface" if self.padded else "panel"))
+            commands.append(["set-window-option", "-g", name, value])
+        commands.append(["set-option", "-p", "-t", self.sidebar, "@viewer_agent", "Workspaces"])
+        commands.extend(self._ground_commands(self.sidebar, "surface" if self.padded else "panel"))
         # A click lands focus on a gutter as on any pane; send it straight
         # back to the pane that had it, so typing never goes nowhere.
-        self.tmux.run(
-            "set-hook",
-            "-g",
-            "after-select-pane",
-            'if-shell -F "#{@viewer_gutter}" "select-pane -l" "copy-mode -q -t \'{last}\'"',
+        commands.append(
+            [
+                "set-hook",
+                "-g",
+                "after-select-pane",
+                'if-shell -F "#{@viewer_gutter}" "select-pane -l" "copy-mode -q -t \'{last}\'"',
+            ]
         )
         # Forward wheel events to nested tmux, whose copy-mode owns agent scrollback.
         for key in ("WheelUpPane", "WheelDownPane"):
-            self.tmux.run("bind-key", "-n", key, "send-keys", "-M")
+            commands.append(["bind-key", "-n", key, "send-keys", "-M"])
         # Hold this client's command queue until sidebar clicks have applied
         # their action and focus. Raw forwarding races text from the same read
         # into the sidebar before it has handled navigation.
@@ -206,65 +209,75 @@ class Display:
         # Selection belongs to the viewer, including when a nested application
         # requests mouse events. Its frozen pane buffer cannot include a sibling
         # pane, and background output cannot erase the user's highlight.
-        self.tmux.run(
-            "bind-key",
-            "-n",
-            "MouseDrag1Pane",
-            "if-shell",
-            "-F",
-            drag_target,
-            resize_command("move"),
-            f"if-shell -F '#{{==:#{{mouse_pane}},{self.sidebar}}}' 'send-keys -M' "
-            "'select-pane -t = ; copy-mode -M'",
+        commands.append(
+            [
+                "bind-key",
+                "-n",
+                "MouseDrag1Pane",
+                "if-shell",
+                "-F",
+                drag_target,
+                resize_command("move"),
+                f"if-shell -F '#{{==:#{{mouse_pane}},{self.sidebar}}}' 'send-keys -M' "
+                "'select-pane -t = ; copy-mode -M'",
+            ]
         )
         for key, phase, native in (
             ("MouseDown1Border", "start", "select-pane -M"),
             ("MouseDrag1Border", "move", "resize-pane -M"),
         ):
-            self.tmux.run(
-                "bind-key",
-                "-n",
-                key,
-                "if-shell",
-                "-F",
-                "#{==:#{@viewer_padded},1}",
-                resize_command(phase),
-                native,
+            commands.append(
+                [
+                    "bind-key",
+                    "-n",
+                    key,
+                    "if-shell",
+                    "-F",
+                    "#{==:#{@viewer_padded},1}",
+                    resize_command(phase),
+                    native,
+                ]
             )
         for key in ("MouseDragEnd1Pane", "MouseDragEnd1Border", "MouseUp1Pane", "MouseUp1Border"):
-            self.tmux.run(
-                "bind-key",
-                "-n",
-                key,
-                "if-shell",
-                "-F",
-                drag_active,
-                resize_command("end"),
-                "send-keys -M",
+            commands.append(
+                [
+                    "bind-key",
+                    "-n",
+                    key,
+                    "if-shell",
+                    "-F",
+                    drag_active,
+                    resize_command("end"),
+                    "send-keys -M",
+                ]
             )
         for table in ("copy-mode", "copy-mode-vi"):
-            self.tmux.run(
-                "bind-key",
-                "-T",
-                table,
-                "MouseDragEnd1Pane",
-                "send-keys",
-                "-X",
-                "stop-selection",
+            commands.append(
+                [
+                    "bind-key",
+                    "-T",
+                    table,
+                    "MouseDragEnd1Pane",
+                    "send-keys",
+                    "-X",
+                    "stop-selection",
+                ]
             )
-            self.tmux.run(
-                "bind-key",
-                "-T",
-                table,
-                "MouseDown1Pane",
-                "copy-mode -q ; select-pane -t = ; send-keys -M",
+            commands.append(
+                [
+                    "bind-key",
+                    "-T",
+                    table,
+                    "MouseDown1Pane",
+                    "copy-mode -q ; select-pane -t = ; send-keys -M",
+                ]
             )
             for key, selection in (
                 ("DoubleClick1Pane", "select-word"),
                 ("TripleClick1Pane", "select-line"),
             ):
-                self.tmux.run("bind-key", "-T", table, key, "send-keys", "-X", selection)
-            self.tmux.run("bind-key", "-T", table, "Escape", "send-keys", "-X", "cancel")
+                commands.append(["bind-key", "-T", table, key, "send-keys", "-X", selection])
+            commands.append(["bind-key", "-T", table, "Escape", "send-keys", "-X", "cancel"])
         for key, native in (
             (
                 "MouseDown1Pane",
@@ -287,66 +300,86 @@ class Display:
                 "mouse:left:#{mouse_x}:#{mouse_y}",
                 "--wait-action",
             )
-            self.tmux.run(
-                "bind-key",
-                "-n",
-                key,
-                "if-shell",
-                "-F",
-                f"#{{==:#{{mouse_pane}},{self.sidebar}}}",
-                "select-pane -t = ; run-shell " + shlex.quote(command),
-                native,
+            commands.append(
+                [
+                    "bind-key",
+                    "-n",
+                    key,
+                    "if-shell",
+                    "-F",
+                    f"#{{==:#{{mouse_pane}},{self.sidebar}}}",
+                    "select-pane -t = ; run-shell " + shlex.quote(command),
+                    native,
+                ]
             )
         # tmux's DoubleClick is a delayed duplicate of SecondClick. The
         # sidebar already handles double clicks on the physical downs above;
         # processing this notification again can reopen a just-accepted editor.
-        self.tmux.run(
-            "bind-key",
-            "-n",
-            "DoubleClick1Pane",
-            "if-shell",
-            "-F",
-            f"#{{!=:#{{mouse_pane}},{self.sidebar}}}",
-            native_double,
+        commands.append(
+            [
+                "bind-key",
+                "-n",
+                "DoubleClick1Pane",
+                "if-shell",
+                "-F",
+                f"#{{!=:#{{mouse_pane}},{self.sidebar}}}",
+                native_double,
+            ]
         )
         # Remove native prefix commands on this private server too: an unbound
         # viewer new-tab key must not create an unmanaged tmux window instead.
-        self.tmux.run("unbind-key", "-a", "-T", "prefix")
-        self.tmux.run("bind-key", self.keymap.prefix, "send-prefix")
-        self.tmux.run("bind-key", "Escape", "switch-client", "-T", "root")
-        self._setup_done = True
+        commands.append(["unbind-key", "-a", "-T", "prefix"])
+        commands.append(["bind-key", self.keymap.prefix, "send-prefix"])
+        commands.append(["bind-key", "Escape", "switch-client", "-T", "root"])
         for key, action in self.keymap.prefix_items():
-            self.tmux.run(
-                "bind-key",
-                key,
-                "run-shell",
-                script_command(
-                    "_action",
-                    "--action-socket",
-                    self.action_socket,
-                    "--action",
-                    action,
-                    "--wait-action",
-                ),
+            commands.append(
+                [
+                    "bind-key",
+                    key,
+                    "run-shell",
+                    script_command(
+                        "_action",
+                        "--action-socket",
+                        self.action_socket,
+                        "--action",
+                        action,
+                        "--wait-action",
+                    ),
+                ]
             )
         for index, action in enumerate(
             action for action, keys in self.keymap.direct.items() if keys
         ):
-            self.tmux.run("set-option", "-s", f"user-keys[{index}]", direct_sequence(action))
-            self.tmux.run(
-                "bind-key",
-                "-n",
-                f"User{index}",
-                "run-shell",
-                script_command(
-                    "_action",
-                    "--action-socket",
-                    self.action_socket,
-                    "--action",
-                    action,
-                    "--wait-action",
-                ),
+            commands.append(["set-option", "-s", f"user-keys[{index}]", direct_sequence(action)])
+            commands.append(
+                [
+                    "bind-key",
+                    "-n",
+                    f"User{index}",
+                    "run-shell",
+                    script_command(
+                        "_action",
+                        "--action-socket",
+                        self.action_socket,
+                        "--action",
+                        action,
+                        "--wait-action",
+                    ),
+                ]
             )
+
+        # tmux's command IPC message is limited to 16 KiB, including metadata.
+        # Only setup may span queues; focus-sensitive rendering batches stay whole.
+        batch, size = [], 0
+        for command in commands:
+            length = sum(len(os.fsencode(arg)) + 1 for arg in command_args([command]))
+            if batch and size + 2 + length > 8192:
+                self.tmux.batch(batch)
+                batch, size = [], 0
+            size += length + (2 if batch else 0)  # Separator argument and its NUL.
+            batch.append(command)
+        self.tmux.batch(batch)
+        self._setup_done = True
 
     @property
     def padded(self) -> bool:
