@@ -208,6 +208,9 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
     original = identities()
     assert len(original) == 4 * pane_count
     expected = []
+    sidebar = viewer.run("capture-pane", "-p", "-t", "%0").splitlines()
+    workspace_row = len(sidebar) - 3
+    workspace_columns = [sidebar[workspace_row].index(f" {index + 1} ") + 2 for index in (0, 1)]
 
     def routed():
         observed = contents()
@@ -240,10 +243,6 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
 
     for method in ("click", "shortcut"):
         for kind in ("tab", "workspace"):
-            if method == "click" and kind == "workspace":
-                # Workspaces are switched from the heading's chooser menu, two
-                # clicks apart; there is no single click to route in a burst.
-                continue
             for burst in (False, True):
                 command, marker = packet()
                 client.type(
@@ -267,10 +266,13 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
                     if method == "shortcut":
                         navigation = direct_sequence(f"select-{kind}-{index + 1}")
                     else:
-                        # Tab rows start under the outline, the heading, its
-                        # blank row and the label, one row per tab; the
-                        # sequence is 1-based, so the first tab is row 5.
-                        row, column = (5 if index else 4), 4
+                        if kind == "workspace":
+                            row, column = workspace_row, workspace_columns[index]
+                        else:
+                            # Tab rows start under the outline, the heading, its
+                            # blank row and the label, one row per tab; the
+                            # sequence is 1-based, so the first tab is row 5.
+                            row, column = (5 if index else 4), 4
                         navigation = f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m"
                     command, marker = packet()
                     expected.append((marker, terminal(tab)))

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from tmux_workspaces.model import LayoutConflict, Model, leaves
 from tmux_workspaces.persistence import Store
@@ -154,6 +155,30 @@ class LayoutTests(unittest.TestCase):
             one.refresh(a)
             self.assertEqual([t["name"] for t in a.space["tabs"]], ["researcher"])
             self.assertEqual(len(a.state["workspaces"]), 2)
+
+    def test_refresh_observes_a_peer_commit_during_the_previous_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            one, two = Store(Path(directory)), Store(Path(directory))
+            self.addCleanup(one.close)
+            self.addCleanup(two.close)
+            a, b = one.load(), two.load()
+            self.assertFalse(one.refresh(a))
+            b.space["name"] = "First edit"
+            two.save(b)
+            read = one._current
+
+            def read_then_commit():
+                state = read()
+                b.space["name"] = "Second edit"
+                two.save(b)
+                return state
+
+            with patch.object(one, "_current", side_effect=read_then_commit):
+                self.assertTrue(one.refresh(a))
+            self.assertEqual(a.space["name"], "First edit")
+            self.assertTrue(one.refresh(a))
+            self.assertEqual(a.space["name"], "Second edit")
+            self.assertFalse(one.refresh(a))
 
     def test_conflicting_split_edits_do_not_overwrite_each_other(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -24,13 +24,14 @@ class PaneControlTests(unittest.TestCase):
         display = Display("/viewer", "/source", "%0", "/shells", "/actions")
         display.tmux = Mock()
         display.setup()
-        display.tmux.run.assert_any_call("set-window-option", "-g", "pane-border-status", "off")
-        self.assertFalse(
-            any("MouseDown1Control0" in call.args for call in display.tmux.run.call_args_list)
-        )
-        self.assertTrue(
-            any(call.args[:2] == ("bind-key", "a") for call in display.tmux.run.call_args_list)
-        )
+        display.tmux.batch.assert_called()
+        display.tmux.run.assert_not_called()
+        commands = [
+            command for call in display.tmux.batch.call_args_list for command in call.args[0]
+        ]
+        self.assertIn(["set-window-option", "-g", "pane-border-status", "off"], commands)
+        self.assertFalse(any("MouseDown1Control0" in command for command in commands))
+        self.assertTrue(any(command[:2] == ["bind-key", "a"] for command in commands))
 
     def test_targeted_actions_require_complete_stable_identifiers(self):
         self.assertTrue(valid_action("attach-pane:0123456789ab:abcdef012345"))

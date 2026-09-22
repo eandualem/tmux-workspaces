@@ -71,18 +71,6 @@ class Shells:
             ]
         )
 
-    def remember(self, pane: dict) -> None:
-        cwd = self.tmux.run(
-            "display-message",
-            "-p",
-            "-t",
-            "=" + self.name(pane) + ":",
-            "#{pane_current_path}",
-            check=False,
-        )
-        if cwd:
-            pane["cwd"] = cwd
-
     def remember_many(self, panes: list[dict]) -> None:
         if not panes:
             return
@@ -101,8 +89,10 @@ class Shells:
         ]
         parts = self.tmux.batch(commands, check=False).split(marker)
         if len(parts) != len(panes) + 1 or parts[-1]:
-            for pane in panes:
-                self.remember(pane)
+            for pane, command in zip(panes, commands, strict=True):
+                cwd = self.tmux.run(*command, check=False).removesuffix(marker)
+                if cwd:
+                    pane["cwd"] = cwd
             return
         for index, pane in enumerate(panes):
             cwd = parts[index].removeprefix("\n") if index else parts[index]
