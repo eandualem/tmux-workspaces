@@ -13,8 +13,10 @@ The [CI workflow](../.github/workflows/ci.yml) runs `make check`, `make smoke` a
 skips SSH. The workflow installs tmux from each platform's package manager rather
 than testing every supported tmux release.
 
-A [recorded CI run](https://github.com/eandualem/tmux-workspaces/actions/runs/35690654042)
-on 2026-09-22 passed all three jobs. The Ubuntu/Python 3.14 job passed on retry
+A [historical CI run](https://github.com/eandualem/tmux-workspaces/actions/runs/35690654042)
+for revision `403466fc7e661d81183d6e508fc247561953da40` in
+[PR #80](https://github.com/eandualem/tmux-workspaces/pull/80) passed all three jobs
+on 2026-09-22. The Ubuntu/Python 3.14 job passed on retry
 after a sidebar-exit timeout in the Ghostty launch fixture; this is not evidence
 of a retry-free run. Consult the [current CI results](https://github.com/eandualem/tmux-workspaces/actions/workflows/ci.yml)
 for later revisions instead of treating this snapshot as a permanent guarantee.
