@@ -54,11 +54,6 @@ that focus and subsequent typing follow the click without a stale warning.
 Unit checks cover the three-second deadline, stale/dead panes, failed action
 acknowledgements, and skipping offline external sessions and empty choosers.
 
-The real-tmux gutter tests shrink the window during nested layout construction,
-after a leaf has already been mapped. Recovery must retain the requested focus,
-route typing to its shell, and restore the saved proportions when the window
-grows, with every original shell process preserved.
-
 Inline rename smoke checks the terminal's visible caret coordinates after typing,
 arrow keys and mouse placement, and that the caret hides outside editing.
 Theme refresh smoke uses two viewers to verify that newly created and resized

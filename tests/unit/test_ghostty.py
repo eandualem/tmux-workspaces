@@ -47,6 +47,10 @@ class GhosttyLauncherTests(unittest.TestCase):
         self.assertFalse(any("window-save-state" in value for value in command))
         self.assertFalse(any("config-default-files" in value for value in command))
         self.assertIn("--mouse-reporting=true", command)
+        self.assertIn("--window-padding-x=0", command)
+        self.assertIn("--window-padding-y=0", command)
+        self.assertIn("--window-padding-balance=false", command)
+        self.assertIn("--window-padding-color=extend-always", command)
         self.assertIn("--working-directory=" + str(Path("/tmp").resolve()), command)
         app_command = next(value for value in command if value.startswith("--command="))
         args = shlex.split(app_command.removeprefix("--command=shell:"))
@@ -67,6 +71,8 @@ class GhosttyLauncherTests(unittest.TestCase):
                 # can offer the same selection back without this environment.
                 "--keymap-source",
                 str(home / ".config/tmux-workspaces/keymap.toml"),
+                # Backbone is settled here: this home holds no database.
+                "--no-backbone",
             ],
         )
 
@@ -130,6 +136,7 @@ class GhosttyLauncherTests(unittest.TestCase):
                     str(theme_path(cwd=root)),
                     "--keymap-source",
                     str(keymap_source(None)[0]),
+                    "--backbone",
                     "--backbone-data-dir",
                     str((root / "adapter config").resolve()),
                 ],
@@ -154,17 +161,24 @@ class GhosttyLauncherTests(unittest.TestCase):
             self.assertTrue(options.backbone)
             self.assertEqual(options.backbone_data_dir, cwd / (explicit or "environment adapter"))
 
-    def test_normal_launch_does_not_read_backbone_environment_defaults(self):
-        class IndependentEnvironment(dict):
-            def get(self, key, default=None):
-                if key.startswith("BACKBONE_"):
-                    raise AssertionError("normal launch read adapter environment")
-                return super().get(key, default)
-
-        with patch.object(os, "environ", IndependentEnvironment()):
-            command = launcher.launch_command([])
-        shell_command = next(value for value in command if value.startswith("--command="))
-        self.assertNotIn("--backbone-data-dir", shell_command)
+    def test_normal_launch_settles_backbone_from_its_directory(self):
+        """The application runs without this environment, so the launcher
+        looks for Backbone's database once and names the answer either way."""
+        with tempfile.TemporaryDirectory(prefix="tw-backbone-", dir="/tmp") as directory:
+            with patch.dict(os.environ, {"BACKBONE_DATA_DIR": directory}):
+                command = launcher.launch_command([])
+            shell_command = next(value for value in command if value.startswith("--command="))
+            self.assertIn("--no-backbone", shell_command)
+            self.assertNotIn("--backbone-data-dir", shell_command)
+            (Path(directory) / "backbone.db").touch()
+            with patch.dict(os.environ, {"BACKBONE_DATA_DIR": directory}):
+                command = launcher.launch_command([])
+            shell_command = next(value for value in command if value.startswith("--command="))
+            argv = shlex.split(shell_command.removeprefix("--command=shell:"))[2:]
+            with patch.dict(os.environ, {}, clear=True):
+                options = launcher.viewer_parser().parse_args(argv)
+            self.assertTrue(options.backbone)
+            self.assertEqual(options.backbone_data_dir, Path(directory).resolve())
 
     def test_a_viewer_in_this_profile_reopens_through_the_same_launcher(self):
         """Its keys are fixed here, so refreshing offers the dedicated launcher."""

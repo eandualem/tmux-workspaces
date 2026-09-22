@@ -144,7 +144,7 @@ def raw_prefix(directory: Path, library: Path, client: Client, viewer: Tmux, she
         lambda: recording.read_bytes() == b"\x01" + disabled_sequence.encode(),
         "disabled direct rename was not delivered intact to the raw application",
     )
-    assert "Type a name" not in sidebar(viewer), "disabled direct rename still runs"
+    assert "RENAME TAB" not in sidebar(viewer), "disabled direct rename still runs"
     assert viewer.run("display-message", "-p", "#{pane_id}") != "%0"
     client.type("\x03")
 
@@ -184,7 +184,7 @@ def _standalone(resources: FixtureResources) -> None:
     wait(client, lambda: saved(library).tab["name"] == "Custom name", "custom rename failed")
     wait(client, lambda: ready(library, viewer, shells), "rename did not return shell focus")
     client.type("\x01eCancelled draft\x1b")
-    wait(client, lambda: "Type a name" not in sidebar(viewer), "rename Escape did not cancel")
+    wait(client, lambda: "RENAME TAB" not in sidebar(viewer), "rename Escape did not cancel")
     assert saved(library).tab["name"] == "Custom name"
     assert "Cancelled draft" not in shells.run("capture-pane", "-p", "-t", second_target)
 

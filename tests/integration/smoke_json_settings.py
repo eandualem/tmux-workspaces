@@ -12,6 +12,7 @@ from tests.integration.support import (
     saved,
     shell_attached,
     sidebar,
+    status_row,
     wait,
 )
 from tmux_workspaces.application import socket_path
@@ -54,11 +55,11 @@ def standalone(resources):
     client.resize(100, 24)
     # Save is a real mouse hit in the footer (one-based terminal coordinates).
     if re.search(rb"\x1b\[\?(?:[0-9]+;)*1006(?:;[0-9]+)*h", client.output):
-        client.click(3, 23)
+        client.click(3, 24)
     else:
         # macOS system curses requests X10 mouse reports, not SGR. tmux normally
         # translates those for a popup; this standalone PTY has no translator.
-        client.type("\x1b[M" + chr(32) + chr(35) + chr(55) + "\x1b[M" + chr(35) * 2 + chr(55))
+        client.type("\x1b[M" + chr(32) + chr(35) + chr(56) + "\x1b[M" + chr(35) * 2 + chr(56))
     wait(client, lambda: result.exists(), "mouse Save did not finish")
     assert json.loads(result.read_text())["saved"]
     assert parse_theme(path.read_bytes()).preset_name() == "paper"
@@ -103,7 +104,7 @@ def popup(resources):
     client.output = b""
     click_button(client, viewer, "View shortcuts…")
     wait(client, lambda: b"read-only" in client.output, "shortcut reference missing")
-    assert b"Ctrl-g" in client.output, "reference did not use the running keymap"
+    assert b"prefix ^g" in client.output, "reference did not use the running keymap"
     client.type("\x1b[200~REFERENCE_SENTINEL\x13\x03\x07t\x1b[201~\x1b[9001~\r")
     client.type("\x1b[6~\x1b[F")
     wait(client, lambda: b"PREFIX CONTROLS" in client.output, "reference did not scroll")
@@ -113,7 +114,7 @@ def popup(resources):
     client.pump(0.2)
     # tmux retains the popup's own geometry after resize. Use the visible Close
     # row from its terminal output, rather than assume the terminal's dimensions.
-    positions = re.findall(rb"\x1b\[(\d+);(\d+)H", client.output.rsplit(b"Close", 1)[0])
+    positions = re.findall(rb"\x1b\[(\d+);(\d+)H", client.output.rsplit(b"close", 1)[0])
     close_row, close_column = map(int, positions[-1])
     client.click(close_column + 3, close_row)
     wait(client, lambda: "Configure…" in sidebar(viewer), "mouse Close did not restore viewer")
@@ -145,9 +146,10 @@ def popup(resources):
     open_editor("Edit theme…")
     replace(client, '{"preset":"paper"}')
     client.type("\x13")
-    wait(client, lambda: "Colors saved and applied" in sidebar(viewer), "colors did not apply")
+    wait(client, lambda: "Colors saved and applied" in status_row(viewer), "colors did not apply")
     assert parse_theme(colors.read_bytes()).preset_name() == "paper"
-    expected_panel = "bg=" + preset_theme("paper").surface
+    # The sidebar sits on the panel; the terminals sit on the surface.
+    expected_panel = "bg=" + preset_theme("paper").panel
     wait(
         client,
         lambda: viewer.run("show-options", "-pv", "-t", "%0", "window-style") == expected_panel,
@@ -169,7 +171,9 @@ def popup(resources):
     replace(client, '{"prefix":"C-a"}')
     client.type("\x13")
     wait(
-        client, lambda: "Shortcuts saved" in sidebar(viewer), "shortcut save did not offer refresh"
+        client,
+        lambda: "Shortcuts saved" in status_row(viewer),
+        "shortcut save did not offer refresh",
     )
     assert parse_keymap(keys.read_bytes()).prefix == "C-a"
     click_button(client, viewer, "Refresh viewer now")

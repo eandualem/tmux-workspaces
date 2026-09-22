@@ -60,7 +60,7 @@ def _standalone(resources: FixtureResources) -> None:
     def content_ready() -> bool:
         model = saved(library)
         if not model.pane:
-            return "No tabs yet" in sidebar(viewer)
+            return "no tabs yet" in sidebar(viewer)
         terminal_name = Shells.name(model.pane)
         return any(
             line.startswith("1 ") and terminal_name in line
@@ -71,7 +71,8 @@ def _standalone(resources: FixtureResources) -> None:
 
     def rename(action: str, name: str) -> None:
         key(action)
-        check(lambda: "Type a name" in sidebar(viewer), "rename action did not open")
+        title = "RENAME TAB" if action == "rename-tab" else "RENAME WORKSPACE"
+        check(lambda: title in sidebar(viewer), "rename action did not open")
         client.type(name + "\r")
         # No Ctrl-u/backspace: the first typed character must replace the
         # previously selected name rather than append to it.
@@ -97,7 +98,7 @@ def _standalone(resources: FixtureResources) -> None:
         check(
             lambda: (
                 saved(library).space["name"] == expected
-                and expected in sidebar(viewer).splitlines()[1]
+                and expected in sidebar(viewer).splitlines()[0]
                 and content_ready()
             ),
             "direct workspace selection failed",
@@ -168,12 +169,12 @@ def _standalone(resources: FixtureResources) -> None:
         "direct sidebar key failed",
     )
     key("attach")
-    check(lambda: "Attach to selected pane" in sidebar(viewer), "direct attach key failed")
+    check(lambda: "ATTACH SESSION" in sidebar(viewer), "direct attach key failed")
     client.type("\x1b")
 
     for count, space_name, tab_name in ((2, "Research", "Delta"), (3, "Archive", "Epsilon")):
         key("new-workspace")
-        check(lambda: "Type a name" in sidebar(viewer), "direct new workspace failed")
+        check(lambda: "NEW WORKSPACE" in sidebar(viewer), "direct new workspace failed")
         client.type(space_name + "\r")
         check(
             lambda count=count: len(saved(library).state["workspaces"]) == count,
@@ -213,8 +214,8 @@ def _standalone(resources: FixtureResources) -> None:
             lambda previous_name=previous_name: previous_name in sidebar(viewer),
             "inactive tab missing",
         )
-        right_click(client, viewer, tab_row(viewer, previous_name), column=25 if status_line else 3)
-        check(lambda: "Tab options" in sidebar(viewer), "tab right-click menu missing")
+        right_click(client, viewer, tab_row(viewer, previous_name), column=21 if status_line else 3)
+        check(lambda: "TAB ·" in sidebar(viewer), "tab right-click menu missing")
         assert saved(library).tab["id"] == first_tab, (
             "right-click context selected " + saved(library).tab["name"]
         )
@@ -227,17 +228,17 @@ def _standalone(resources: FixtureResources) -> None:
         assert any(tab["name"] == "Beta" for tab in saved(library).space["tabs"])
         assert shell_pid == shells.run("display-message", "-p", "-t", first_terminal, "#{pane_pid}")
 
-    right_click(client, viewer, 1)
-    check(lambda: "Workspace options" in sidebar(viewer), "workspace header menu missing")
-    button("Rename workspace")
+    right_click(client, viewer, 0)
+    check(lambda: "WORKSPACES" in sidebar(viewer), "workspace header menu missing")
+    button("Rename")
     client.type("Main\r")
     check(lambda: saved(library).space["name"] == "Main", "workspace context rename failed")
     choose_space(3, "Archive")
     # Another workspace's options: switch to it first, then the heading again.
     choose_space(1, "Main")
-    right_click(client, viewer, 1)
-    check(lambda: "Workspace options" in sidebar(viewer), "workspace heading menu missing")
-    button("Rename workspace")
+    right_click(client, viewer, 0)
+    check(lambda: "WORKSPACES" in sidebar(viewer), "workspace heading menu missing")
+    button("Rename")
     client.type("Primary\r")
     check(
         lambda: saved(library).state["workspaces"][0]["name"] == "Primary",
@@ -348,7 +349,7 @@ def _nested(resources: FixtureResources) -> None:
     assert len(saved(library).space["tabs"]) == 2
     open_terminal(client, viewer, library)
     client.type(direct_sequence("rename-tab"))
-    wait(client, lambda: "Type a name" in sidebar(viewer), "nested direct rename failed")
+    wait(client, lambda: "RENAME TAB" in sidebar(viewer), "nested direct rename failed")
     client.type("Nested\r")
     wait(client, lambda: saved(library).tab["name"] == "Nested", "nested rename appended name")
     wait(client, content_ready, "nested rename did not finish rendering")
@@ -366,7 +367,7 @@ def _nested(resources: FixtureResources) -> None:
         "nested sidebar did not finish drawing the inactive tab",
     )
     right_click(client, viewer, tab_row(viewer, original.tab["name"]))
-    wait(client, lambda: "Tab options" in sidebar(viewer), "right-click lost in outer tmux")
+    wait(client, lambda: "TAB ·" in sidebar(viewer), "right-click lost in outer tmux")
     assert saved(library).tab["id"] == original.tab["id"]
     click_button(client, viewer, "Rename tab")
     client.type("Nested first\r")

@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .cli import default_source_socket, effective_keymap
+from .cli import default_source_socket, effective_keymap, resolve_backbone
 from .cli import parser as viewer_parser
 from .keymap import keymap_source
 
@@ -25,7 +25,7 @@ def launch_command(
     cwd: Path | None = None,
 ) -> list[str]:
     """Build a reviewable launch command without opening apps or changing files."""
-    from .theme import theme_path
+    from .theme import load_theme, theme_path
 
     cwd = (cwd or Path.cwd()).resolve()
     options = viewer_parser().parse_args(arguments)
@@ -62,14 +62,14 @@ def launch_command(
         viewer_args += ["--keymap" if explicit else "--keymap-source", str(selected)]
     if app.expanduser().resolve() != DEFAULT_APP:
         viewer_args += ["--ghostty-app", str(app.expanduser().resolve())]
-    if options.backbone:
-        backbone_dir = (
-            options.backbone_data_dir
-            or Path(os.environ.get("BACKBONE_DATA_DIR") or "~/.local/share/agent-backbone")
-        ).expanduser()
-        if not backbone_dir.is_absolute():
-            backbone_dir = cwd / backbone_dir
-        viewer_args += ["--backbone-data-dir", str(backbone_dir.resolve())]
+    panel = load_theme(options.theme, cwd=cwd).theme.panel
+    # The application started this way does not inherit the environment that
+    # names Backbone's directory, so the answer is settled here and named.
+    backbone, backbone_dir = resolve_backbone(options, cwd)
+    if backbone:
+        viewer_args += ["--backbone", "--backbone-data-dir", str(backbone_dir)]
+    else:
+        viewer_args.append("--no-backbone")
     # Ghostty wraps shell commands in its own exec ("exec -l" on macOS).
     # Supplying another exec makes bash try to execute a program named "exec".
     command = "shell:" + shlex.join([sys.executable, str(root / "run"), *viewer_args])
@@ -91,11 +91,16 @@ def launch_command(
         "--working-directory=" + str(cwd),
         "--mouse-reporting=true",
         "--shell-integration=none",
-        # The window height is rarely a whole number of rows; extending each
-        # edge cell's color into that remainder lets the panel and the
-        # terminals reach the window edge instead of leaving a bare strip.
-        # "extend" alone applies heuristics that skip some rows on macOS.
+        # The viewer owns the edge-to-edge grid. Leave cell remainders at
+        # the right/bottom, extending the adjacent cell's ground: header and
+        # surface stay flush at the top, and the footer reaches the bottom.
+        # Explicit values also prevent ordinary terminal padding from becoming
+        # a gutter around this dedicated workspace window.
+        "--window-padding-x=0",
+        "--window-padding-y=0",
+        "--window-padding-balance=false",
         "--window-padding-color=extend-always",
+        *([f"--background={panel}"] if panel.startswith("#") else []),
         "--quit-after-last-window-closed=true",
         "--command=" + command,
     ]

@@ -13,6 +13,7 @@ from tests.integration.support import (
     OUTLINE,
     Client,
     FixtureResources,
+    pane_text,
     wait,
 )
 from tmux_workspaces.application import socket_path
@@ -208,8 +209,8 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
     original = identities()
     assert len(original) == 4 * pane_count
     expected = []
-    sidebar = viewer.run("capture-pane", "-p", "-t", "%0").splitlines()
-    workspace_row = len(sidebar) - 3
+    sidebar = pane_text(viewer).splitlines()
+    workspace_row = len(sidebar) - 1
     workspace_columns = [sidebar[workspace_row].index(f" {index + 1} ") + 2 for index in (0, 1)]
 
     def routed():
@@ -269,10 +270,10 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
                         if kind == "workspace":
                             row, column = workspace_row, workspace_columns[index]
                         else:
-                            # Tab rows start under the outline, the heading, its
-                            # blank row and the label, one row per tab; the
-                            # sequence is 1-based, so the first tab is row 5.
-                            row, column = (5 if index else 4), 4
+                            # Tab rows start under the heading, its blank row
+                            # and the label, one row per tab; the sequence is
+                            # 1-based, so the first tab is row 4.
+                            row, column = (4 if index else 3), 4
                         navigation = f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m"
                     command, marker = packet()
                     expected.append((marker, terminal(tab)))

@@ -1,8 +1,9 @@
 # Edit settings
 
 Open **Configure… → Edit theme…** or **Edit shortcuts…**. The built-in
-editor opens over the workspace, using most of the terminal. It needs no external
-editor or extra Python package. Existing shells and attached sessions keep running.
+editor opens in a popup 88 columns wide, centred over the panes, so the
+workspace stays visible around it. It needs no external editor or extra Python
+package. Existing shells and attached sessions keep running.
 
 Use the visible **Save**, **Cancel** and **Help** buttons with the mouse, or:
 
@@ -28,7 +29,7 @@ Save until its controls are visible again.
 ## Saving and applying
 
 The editor shows JSON, but saves through the existing TOML configuration system.
-The destination is shown above the text: the file selected by the launch options
+The destination is shown in the footer: the file selected by the launch options
 or environment, otherwise the default `keymap.toml` or `theme.toml`. Existing
 files remain compatible with older versions; no JSON file lookup or automatic
 migration is introduced. A missing file is created only when Save succeeds.

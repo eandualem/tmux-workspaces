@@ -18,7 +18,9 @@ from .support import (
     click_button,
     content_panes,
     open_terminal,
+    pane_text,
     saved,
+    status_row,
     wait,
 )
 
@@ -38,7 +40,7 @@ def _exercise(resources: FixtureResources):
     viewer, source = Tmux(runtime["viewer_socket"]), Tmux(runtime["source_socket"])
 
     def sidebar():
-        return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
+        return pane_text(viewer).translate(OUTLINE)
 
     def panes():
         # The sidebar and the content panes; the gutters padding them are not counted.
@@ -70,24 +72,28 @@ def _exercise(resources: FixtureResources):
     # No attachment yet: the tab list names no agent. The roster below it does,
     # one row per active demo agent with its state's symbol; the offline one
     # takes no row.
-    panel = sidebar()
-    tabs_part = panel.split("Agents", 1)[0]
-    assert "manager" not in tabs_part and "builder" not in tabs_part, panel
-    # Rows are alphabetical; a short terminal shows the first few and counts
-    # the rest on the label row.
     expected = ["○ builder", "▶ manager", "? researcher", "! reviewer", "○ tester"]
-    shown = [line for line in expected if line in panel]
-    assert shown == expected[: len(shown)] and len(shown) >= 2, panel
-    if len(shown) < len(expected):
-        label = next(line for line in panel.splitlines() if "Agents" in line)
-        assert str(len(expected)) in label and "↓" in label, panel
+    panel = ""
+
+    def roster_ready():
+        nonlocal panel
+        panel = sidebar()
+        # This fixture starts at 38 rows, enough for the complete roster.
+        # Configure can appear during an earlier paint before resize settles.
+        return all(text in panel for text in ("TABS", "AGENTS", "Configure…", *expected))
+
+    wait(client, roster_ready, "initial sidebar roster did not finish painting")
+    tabs_part = panel.split("AGENTS", 1)[0]
+    assert "manager" not in tabs_part and "builder" not in tabs_part, panel
+    shown = [line.strip() for line in panel.splitlines() if line.strip() in expected]
+    assert shown == expected, panel
     assert "notes" not in panel, "an offline agent took a roster row\n" + panel
     # The roster hides on request, the choice is saved, and it comes back.
-    button("[x] Show agent status")
+    button("Show agents")
     wait(client, lambda: saved(library).state.get("show_agents") is False, "toggle not saved")
     button("‹ Back")
-    wait(client, lambda: "Agents" not in sidebar() and "manager" not in sidebar(), "roster shown")
-    button("[ ] Show agent status")
+    wait(client, lambda: "AGENTS" not in sidebar() and "manager" not in sidebar(), "roster shown")
+    button("Show agents")
     wait(client, lambda: saved(library).state.get("show_agents") is True, "toggle not saved")
     button("‹ Back")
     wait(client, lambda: "▶ manager" in sidebar(), "roster did not return")
@@ -133,7 +139,7 @@ def _exercise(resources: FixtureResources):
     )
     client.type("q")
     button("Tab actions…")
-    button("Return pane to shell")
+    button("Return to shell")
     wait(client, lambda: attached(terminal), "return to original shell failed")
     assert shell_pid == shells.run("display-message", "-p", "-t", terminal, "#{pane_pid}")
     # Click and keyboard splits open choosers inside the same tab; each is
@@ -173,13 +179,13 @@ def _exercise(resources: FixtureResources):
     ]
     button("Focus")
     wait(client, lambda: len(panes()) == 2, "focus failed")
-    button("Next →")
+    key("o")
     button("Layout")
     wait(client, lambda: len(panes()) == 5, "layout restore failed")
     client.resize(80, 24)
     wait(
         client,
-        lambda: "Narrow: focus" in sidebar() and len(panes()) == 2,
+        lambda: "Narrow: focus" in status_row(viewer) and len(panes()) == 2,
         "laptop focus failed",
     )
     client.resize(160, 38)
@@ -194,7 +200,7 @@ def _exercise(resources: FixtureResources):
     button("New workspace")
     client.type("Research")
     button("Save name")
-    wait(client, lambda: "No tabs yet" in sidebar(), "new workspace failed")
+    wait(client, lambda: "no tabs yet" in sidebar(), "new workspace failed")
     key("t")
     wait(client, lambda: saved(library).tab is not None, "new-tab shortcut failed")
     open_terminal(client, viewer, library)
@@ -250,7 +256,7 @@ def _exercise(resources: FixtureResources):
     assert saved(library).tab["name"] == "Notebook"
     button("Tab actions…")
     button("Close tab")
-    wait(client, lambda: "No tabs yet" in sidebar(), "close-tab failed")
+    wait(client, lambda: "no tabs yet" in sidebar(), "close-tab failed")
     assert Shells.name(
         {"id": note_terminal.removeprefix("=terminal-").removesuffix(":")}
     ) not in shells.run("list-sessions", "-F", "#{session_name}")

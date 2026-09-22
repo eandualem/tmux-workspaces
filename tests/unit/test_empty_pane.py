@@ -160,7 +160,7 @@ class SidebarTests(unittest.TestCase):
         screen = Mock()
         # The panel draws its interior into a subwindow; the tests read one mock.
         screen.derwin.return_value = screen
-        screen.getmaxyx.return_value = (38, 28)
+        screen.getmaxyx.return_value = (38, 29)
         self.source = Mock(socket="/tmp/source.sock", persistent_socket=True)
         self.source.snapshot.return_value = ({}, "")
         self.display = Mock(

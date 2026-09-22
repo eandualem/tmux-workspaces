@@ -6,30 +6,32 @@
 a split layout in each one, and come back to the same arrangement tomorrow.
 
 ```text
-┌────────────────────────────┬───────────────────────────────────┐
-│ ╭────────────────────────╮ │ $ pytest -q                       │
-│ │ ◆ Development        ▾ │ │ ......................            │
-│ │                        │ │                                   │
-│ │ tabs                 + │ ├───────────────────────────────────┤
-│ │   1 api              2 │ │ $ npm run dev                     │
-│ │ ▶ 2 web            1 ⋯ │ │ ready on http://localhost:3000    │
-│ │                        │ │                                   │
-│ │ Agents                 │ │                                   │
-│ │ ▶ builder              │ │                                   │
-│ │ ! reviewer             │ │                                   │
-│ │ ○ tester               │ │                                   │
-│ │                        │ │                                   │
-│ │ Configure…             │ │                                   │
-│ │                        │ │                                   │
-│ │  ◆   2                 │ │                                   │
-│ │                        │ │                                   │
-│ ╰────────────────────────╯ │                                   │
-└────────────────────────────┴───────────────────────────────────┘
+┌──────────────────────┬────────────────────────────────────────┐
+│ ◆ Development      ▾ │ $ pytest -q                            │
+│                      │ ......................                 │
+│ TABS               + │                                        │
+│ 1 api             ▮▮ ├────────────────────────────────────────┤
+│ 2 web           ▮▮ ⋯ │ $ npm run dev                          │
+│                      │ ready on http://localhost:3000         │
+│                      │                                        │
+│ AGENTS             3 │                                        │
+│ ▶ builder            │                                        │
+│ ! reviewer           │                                        │
+│ ○ tester             │                                        │
+│                      │                                        │
+│ Configure…           │                                        │
+│  ◆   2               │                                        │
+├──────────────────────┴────────────────────────────────────────┤
+│ Development · web · pane 1/2   ^g t new · ^g v split   agents shown ^g A  ● │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 Use it for shells, editors, development servers or sessions you already run in
-tmux. The optional Agents section shown above reads state from Backbone; the
-workspace viewer works without it and adds no notifications.
+tmux. The Agents section shown above reads state from Backbone when its data
+directory is on this host; the workspace viewer works without it and adds no
+notifications. The status row
+along the bottom names where you are, the keys that matter in the current
+mode, and whether the saved arrangement is current.
 
 ## Try it
 
@@ -85,6 +87,7 @@ Press **Ctrl-g**, release it, then:
 | `r` / `R` | rename tab / workspace |
 | `a` | attach an existing tmux session |
 | `z` | focus one pane, or restore the layout |
+| `A` | show or hide the agents section |
 | `d` | detach — your shells keep running |
 
 With `./ghostty`: **⌘T** new tab, **⌘D** / **⌘⇧D** split, **⌘⇧[** / **⌘⇧]** move
@@ -108,8 +111,9 @@ name to rename it, right-click for options.
   shortcuts, from inside the viewer or from a TOML file. The panel sits beside
   your terminals in a color of its own, and the new-tab chooser matches it.
   **Configure… → Edit theme… / Edit shortcuts…** opens the
-  [built-in text editor](docs/JSON_SETTINGS.md) with Save, Cancel and undo.
-  **View shortcuts…** opens a read-only reference to the keys active in this viewer.
+  [built-in text editor](docs/JSON_SETTINGS.md) in a popup over the panes, with
+  Save, Cancel and undo. **View shortcuts…** opens a read-only reference to the
+  keys active in this viewer in the same popup frame.
 
 ## Install
 

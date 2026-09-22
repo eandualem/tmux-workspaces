@@ -21,12 +21,15 @@ or edit tmux configuration.
   sets/unsets the creating viewer's SSH-agent and XDG context, preventing stale
   server-global paths from leaking across reconnects or concurrent viewers.
 - `display.py`: split geometry, focus and disposable attachment clients on one
-  viewer's private display server. It never moves or owns external panes.
+  viewer's private display server, the status row it paints and where a popup
+  goes. It never moves or owns external panes.
 - `attachments.py`: external attachment clients and recursive-host protection;
   the leaf helper imports no curses controller, SQLite store or metadata adapter.
   Attachment uses tmux's `-E` flag to preserve external session environments.
 - `sidebar.py`: curses UI controller, menu state, drawing and user actions. It
   composes the model, store, source and display; it does not launch the application.
+  `popup.py` gives the settings editor and the shortcut reference their shared
+  frame: the sidebar's colors, the title bar and the footer.
 - `controls.py`: stable action identifiers/default codes and acknowledged action
   transport. `keymap.py` validates optional TOML maps and generates effective
   shortcut labels and terminal profiles. `name_editor.py` owns inline name input;
@@ -43,10 +46,11 @@ or edit tmux configuration.
   imports, configuration reads or provider-specific branches. The UI receives
   independent copies of the current observation.
 - `adapters/tmux.py`: generic session discovery on one explicit socket.
-  `adapters/backbone.py`: opt-in loopback HTTP/config metadata and stale cache.
+  `adapters/backbone.py`: read-only loopback HTTP/config metadata and stale cache,
+  loaded when Backbone's data directory holds a database or when asked for.
   `adapters/demo.py`: isolated fixture reads and stale cache. `application.make_source`
-  selects these providers with lazy imports; ordinary launch never imports the
-  Backbone or demo provider.
+  selects these providers with lazy imports; a launch without Backbone's
+  database or the demo imports neither provider.
 - `entrypoints.py`: quoted helper commands that work after tmux clears launcher
   environment variables. `ghostty_launcher.py`, `tmux_plugin.py` and `ui_preview.py`
   are optional entry-point integrations.

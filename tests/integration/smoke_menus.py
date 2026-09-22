@@ -52,11 +52,11 @@ def _exercise(resources: FixtureResources) -> None:
         """
         rows = []
         for line in styled():
-            # The selection background is the exact color in palette slot 18.
-            if "48;5;18" not in line:
+            # The selection background is the exact color in palette slot 19.
+            if "48;5;19" not in line:
                 continue
             text = ESCAPE_SEQUENCE.sub("", line).strip()
-            if text and not text.startswith(">"):
+            if text and not text.startswith("›"):
                 rows.append(text)
         return tuple(rows)
 
@@ -120,12 +120,12 @@ def _exercise(resources: FixtureResources) -> None:
         return shells.run("capture-pane", "-S", "-", "-p", "-t", terminal)
 
     # Filtering, empty results and activation, by keyboard only.
-    open_menu("a", "Attach to selected pane")
+    open_menu("a", "ATTACH SESSION")
     press("qqzz")
     wait(client, lambda: "No matching sessions" in panel(), "empty filter result missing")
     press(ENTER)
     client.pump(0.4)
-    assert "Attach to selected pane" in panel(), "Enter on an empty result closed the chooser"
+    assert "ATTACH SESSION" in panel(), "Enter on an empty result closed the chooser"
     assert saved(library).pane["agent"] is None, "empty result attached something"
     press("\x15")  # Ctrl-u clears the filter without leaving the menu.
     press("re")
@@ -144,9 +144,9 @@ def _exercise(resources: FixtureResources) -> None:
     assert "qqzz" not in shell_text(), "menu filter input leaked into the parked shell"
     assert "MENU_SENTINEL" in shell_text(), "parked shell lost its history"
 
-    # Return pane to shell, also keyboard only, keeps the parked shell and session.
-    open_menu("m", "Tab options")
-    activate("Return pane to shell")
+    # Return to shell, also keyboard only, keeps the parked shell and session.
+    open_menu("m", "TAB ·")
+    activate("Return to shell")
     wait(
         client,
         lambda: saved(library).pane["agent"] is None,
@@ -161,14 +161,14 @@ def _exercise(resources: FixtureResources) -> None:
     wait(client, lambda: "KEPT:kept" in shell_text(), "parked shell did not resume")
 
     # Escape closes the whole overlay and hands the keyboard back to the pane.
-    open_menu("m", "Tab options")
+    open_menu("m", "TAB ·")
     press(ESCAPE)
-    wait(client, lambda: "Tab options" not in panel(), "Escape did not close the menu")
+    wait(client, lambda: "TAB ·" not in panel(), "Escape did not close the menu")
     client.type("printf 'AFTER_ESCAPE\\n'\r")
     wait(client, lambda: "AFTER_ESCAPE" in shell_text(), "Escape did not restore pane focus")
 
     # A resize while a menu is open must not drop the keyboard into a shell.
-    open_menu("a", "Attach to selected pane")
+    open_menu("a", "ATTACH SESSION")
     client.resize(120, 30)
     press("qqzz")
     wait(client, lambda: "No matching sessions" in panel(), "resize lost the open chooser")
@@ -185,15 +185,15 @@ def _exercise(resources: FixtureResources) -> None:
     client.pump(0.5)
     assert saved(library).pane["agent"] is None, "a hidden row was activated"
     client.resize(160, 38)
-    wait(client, lambda: "Attach to selected pane" in panel(), "chooser did not return")
+    wait(client, lambda: "ATTACH SESSION" in panel(), "chooser did not return")
     activate("manager")
     wait(
         client,
         lambda: saved(library).pane["agent"] == "manager",
         "the restored chooser did not activate its visible row",
     )
-    open_menu("m", "Tab options")
-    activate("Return pane to shell")
+    open_menu("m", "TAB ·")
+    activate("Return to shell")
     wait(client, lambda: saved(library).pane["agent"] is None, "return to shell failed")
     wait(client, lambda: "Configure…" in panel(), "sidebar did not settle after resize")
 
@@ -204,10 +204,9 @@ def _exercise(resources: FixtureResources) -> None:
     open_terminal(client, viewer, library)
 
     # Tab navigation changes complete layouts, while pane navigation changes
-    # the input destination within one layout. Both close the menu on activation.
-    for label, target in (("Previous tab", tab_id), ("Next tab", second)):
-        open_menu("m", "Tab options")
-        activate(label)
+    # the input destination within one layout. Both are prefix keys.
+    for label, target in (("p", tab_id), ("n", second)):
+        key(label)
         wait(
             client,
             lambda target=target: saved(library).tab["id"] == target,
@@ -219,7 +218,7 @@ def _exercise(resources: FixtureResources) -> None:
             label + " did not focus the selected tab's pane",
         )
     for label in ("Split right", "Split below", "Split right"):
-        open_menu("m", "Tab options")
+        open_menu("m", "TAB ·")
         activate(label)
         open_terminal(client, viewer, library)
     original_focus = saved(library).tab["focus"]
@@ -227,20 +226,19 @@ def _exercise(resources: FixtureResources) -> None:
     assert len(pane_ids) == 4
     # Exercise the complete layout first, then the scrolling menu and temporary
     # focus layout used by a short/narrow terminal, with explicit focus on/off.
-    for columns, rows in ((160, 38), (72, 16)):
+    for columns, rows in ((160, 38), (72, 18)):
         client.resize(columns, rows)
         wait(client, lambda: "Configure…" in panel(), "resized panel did not settle")
         for focus_mode in (False, True):
             if focus_mode:
-                open_menu("m", "Tab options")
+                open_menu("m", "TAB ·")
                 activate("Focus one pane")
                 wait(client, lambda: saved(library).state["focus"], "focus-one-pane did not apply")
             for label, target in (
-                ("Previous pane", pane_ids[(pane_ids.index(original_focus) - 1) % 4]),
-                ("Next pane", original_focus),
+                ("O", pane_ids[(pane_ids.index(original_focus) - 1) % 4]),
+                ("o", original_focus),
             ):
-                open_menu("m", "Tab options")
-                activate(label)
+                key(label)
                 wait(
                     client,
                     lambda target=target: saved(library).tab["focus"] == target,
@@ -253,7 +251,7 @@ def _exercise(resources: FixtureResources) -> None:
                 )
                 assert saved(library).tab["id"] == second
                 assert saved(library).state["focus"] == focus_mode
-        open_menu("m", "Tab options")
+        open_menu("m", "TAB ·")
         activate("Restore layout")
         wait(client, lambda: not saved(library).state["focus"], "restore-layout did not apply")
     client.resize(160, 38)
@@ -264,22 +262,22 @@ def _exercise(resources: FixtureResources) -> None:
         "PASS: separate tab/pane menu navigation in four-pane, focus and narrow views", flush=True
     )
 
-    open_menu("m", "Tab options")
-    activate("Move tab up")
+    open_menu("m", "TAB ·")
+    activate("Move up")
     wait(
         client,
         lambda: next(tab["id"] for tab in saved(library).space["tabs"]) == second,
         "keyboard tab reordering failed",
     )
     key("W")
-    wait(client, lambda: "Type a name" in panel(), "new workspace prompt missing")
+    wait(client, lambda: "NEW WORKSPACE" in panel(), "new workspace prompt missing")
     press("Shelf" + ENTER)
-    wait(client, lambda: "No tabs yet" in panel(), "keyboard workspace creation failed")
+    wait(client, lambda: "no tabs yet" in panel(), "keyboard workspace creation failed")
     key("[")
-    wait(client, lambda: "No tabs yet" not in panel(), "did not return to the first workspace")
-    open_menu("m", "Tab options")
+    wait(client, lambda: "no tabs yet" not in panel(), "did not return to the first workspace")
+    open_menu("m", "TAB ·")
     activate("Move to workspace")
-    wait(client, lambda: "Move tab to" in panel(), "transfer list did not open")
+    wait(client, lambda: "MOVE TO WORKSPACE" in panel(), "transfer list did not open")
     activate("Shelf")
     wait(
         client,
@@ -291,11 +289,11 @@ def _exercise(resources: FixtureResources) -> None:
     )
 
     # Workspace options: an empty workspace can be deleted without the mouse.
-    open_menu("m", "Tab options")
+    open_menu("m", "TAB ·")
     activate("Close tab")
-    wait(client, lambda: "No tabs yet" in panel(), "close tab failed")
-    open_menu("M", "Workspace options")
-    activate("Delete empty workspace")
+    wait(client, lambda: "no tabs yet" in panel(), "close tab failed")
+    open_menu("M", "WORKSPACES")
+    activate("Delete")
     wait(
         client,
         lambda: all(space["name"] != "Shelf" for space in saved(library).state["workspaces"]),
@@ -311,16 +309,17 @@ def _exercise(resources: FixtureResources) -> None:
     # Overflow: the selection scrolls with the window and stays activatable.
     for index in range(9):
         key("W")
-        wait(client, lambda: "Type a name" in panel(), "workspace prompt missing")
+        wait(client, lambda: "NEW WORKSPACE" in panel(), "workspace prompt missing")
         press(f"Space {index + 2}" + ENTER)
         wait(
             client,
             lambda index=index: len(saved(library).state["workspaces"]) == index + 2,
             "workspace creation failed",
         )
-    client.resize(160, 16)
+    # Seventeen rows: fourteen for the panel above the status row and its rules.
+    client.resize(160, 17)
     wait(client, lambda: "Space 10" in panel() or "Configure…" in panel(), "resize failed")
-    open_menu("w", "Workspaces")
+    open_menu("w", "WORKSPACES")
     assert "Space 10" not in panel(), "the overflowing list already showed its last row"
     activate("Space 10")
     wait(

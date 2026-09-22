@@ -12,6 +12,7 @@ from tests.integration.support import (
     FixtureResources,
     click_button,
     open_terminal,
+    pane_text,
     saved,
     session_in_use,
     wait,
@@ -168,8 +169,8 @@ def exercise(resources: FixtureResources) -> None:
         lambda: "external" in other_viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE),
         "external session missing",
     )
-    lines = other_viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE).splitlines()
-    row = next(i for i, line in enumerate(lines) if line.strip() == "external")
+    lines = pane_text(other_viewer).translate(OUTLINE).splitlines()
+    row = next(i for i, line in enumerate(lines) if line.strip().lstrip("▶ ") == "external")
     other.click(3, row + 1)
     wait(
         other,

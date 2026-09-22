@@ -23,7 +23,9 @@ untracked. Development orchestration is optional; it is not a product dependency
 - Preserve shells/cwd/history through navigation, resize and viewer close.
 - Closing a pane/tab may end its own shells; never stop an attached external session.
 - Keep the core useful without Backbone, Ghostty, a browser or notifications.
-- Backbone remains an explicitly enabled, read-only adapter with no default imports.
+- Backbone is a read-only adapter that runs only when its data directory holds a
+  database (or when asked for); `--no-backbone` keeps it off. Importing the package
+  never loads it.
 
 ## Isolation and verification
 

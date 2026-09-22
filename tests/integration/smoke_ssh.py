@@ -154,7 +154,8 @@ def exercise() -> None:
                             "=viewer:",
                             "#{window_width} #{window_height}",
                         )
-                        == f"{cols} {rows}"
+                        # The viewer keeps two rows for its status footer.
+                        == f"{cols} {rows - 2}"
                     ),
                     "SSH window-change did not resize the remote viewer",
                 )

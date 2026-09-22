@@ -17,6 +17,41 @@ def default_data_dir() -> Path:
     return root / "tmux-workspaces"
 
 
+DEFAULT_BACKBONE_DIR = "~/.local/share/agent-backbone"
+
+
+def backbone_directory(explicit=None, cwd: Path | None = None) -> Path:
+    """Backbone's data directory: the option, the environment, or the default."""
+    directory = Path(explicit or os.environ.get("BACKBONE_DATA_DIR") or DEFAULT_BACKBONE_DIR)
+    directory = directory.expanduser()
+    if not directory.is_absolute():
+        directory = (cwd or Path.cwd()) / directory
+    return directory.resolve()
+
+
+def resolve_backbone(args, cwd: Path | None = None) -> tuple[bool, Path | None]:
+    """Whether the read-only Backbone adapter runs, and from which directory.
+
+    Unasked, the adapter runs when Backbone's directory holds its database, so a
+    host with Backbone shows its agents without a flag. ``--no-backbone`` keeps
+    it off; naming a directory or URL turns it on.
+    """
+    if args.backbone is False:
+        if args.backbone_data_dir is not None or args.url is not None:
+            raise ValueError("--no-backbone contradicts --backbone-data-dir and --url")
+        return False, None
+    if getattr(args, "demo", False):
+        # The demo brings its own fixture roster in place of Backbone's.
+        if args.backbone:
+            raise ValueError("--demo and --backbone are exclusive")
+        return False, None
+    directory = backbone_directory(args.backbone_data_dir, cwd)
+    unasked = args.backbone is None and args.backbone_data_dir is None and args.url is None
+    if unasked and not (directory / "backbone.db").exists():
+        return False, None
+    return True, directory
+
+
 def default_source_socket() -> str:
     # Capture the invoking tmux server before private child environments clear TMUX.
     identity = os.environ.get("TMUX", "").rsplit(",", 2)
@@ -34,15 +69,18 @@ def parser() -> argparse.ArgumentParser:
         choices=["_window", "_sidebar", "_leaf", "_action", "_config-editor"],
         help=argparse.SUPPRESS,
     )
-    adapters = result.add_mutually_exclusive_group()
     result.add_argument(
         "--config-kind", choices=["shortcuts", "colors", "reference"], help=argparse.SUPPRESS
     )
     result.add_argument("--config-path", type=Path, help=argparse.SUPPRESS)
     result.add_argument("--config-result", type=Path, help=argparse.SUPPRESS)
-    adapters.add_argument("--demo", action="store_true", help="use disposable demo shells")
-    adapters.add_argument(
-        "--backbone", action="store_true", help="enable the read-only local Backbone adapter"
+    result.add_argument("--demo", action="store_true", help="use disposable demo shells")
+    result.add_argument(
+        "--backbone",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="the read-only local Backbone adapter (default: on when Backbone's data "
+        "directory holds its database; --no-backbone turns it off)",
     )
     result.add_argument(
         "--data-dir",
@@ -54,9 +92,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--backbone-data-dir",
         type=Path,
-        help="Backbone config directory; requires --backbone",
+        help="Backbone config directory (default: $BACKBONE_DATA_DIR or "
+        "~/.local/share/agent-backbone)",
     )
-    result.add_argument("--url", help="local Backbone API URL; requires --backbone")
+    result.add_argument("--url", help="local Backbone API URL")
     result.add_argument(
         "--source-socket",
         help="tmux socket for attachment chooser (default: invoking server or default)",
@@ -85,9 +124,8 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--terminal-colors", type=int, help=argparse.SUPPRESS)
     # A separator pane between stacked panes: one thin rule in this color.
-    result.add_argument("--rule", action="store_true", help=argparse.SUPPRESS)
-    result.add_argument("--vertical", action="store_true", help=argparse.SUPPRESS)
-    result.add_argument("--color", default="default", help=argparse.SUPPRESS)
+    result.add_argument("--label", default="", help=argparse.SUPPRESS)
+    result.add_argument("--cwd", default="", help=argparse.SUPPRESS)
     # A refresh re-reads the selected file before it replaces the viewer, so the
     # running instance validates exactly what the launcher will load next.
     result.add_argument("--keymap-source", type=Path, help=argparse.SUPPRESS)
@@ -210,10 +248,6 @@ def main() -> int:
                 from .chooser import chooser_main
 
                 return chooser_main(args)
-            if args.rule:
-                from .attachments import rule_main
-
-                return rule_main(args)
             from .attachments import leaf_main
 
             return leaf_main(args)

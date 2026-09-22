@@ -39,6 +39,7 @@ def fake_curses(keys):
         KEY_DOWN=258,
         KEY_ENTER=343,
         KEY_MOUSE=409,
+        KEY_BACKSPACE=263,
         ALL_MOUSE_EVENTS=1,
         BUTTON1_PRESSED=2,
         BUTTON1_CLICKED=4,
@@ -89,14 +90,82 @@ class ChooserDrawTests(unittest.TestCase):
         chooser.update({"work": {"online": True, "state": "idle"}}, "")
         chooser.select(1)
         hits = draw(screen, chooser, curses)
-        texts = [(call.args[0], call.args[2]) for call in screen.addnstr.call_args_list]
-        self.assertIn((1, module.TITLE), texts)
-        self.assertIn((4, "  " + module.TERMINAL), texts)
-        self.assertIn((5, module.ROSTER_HEADING), texts)
-        # The selected row is padded to the width so it reads as one bar.
-        self.assertIn((6, "▸ work"), [(row, text.rstrip()) for row, text in texts])
-        self.assertEqual(hits, {4: 0, 6: 1})
+        texts = [
+            (call.args[0], call.args[1], call.args[2]) for call in screen.addnstr.call_args_list
+        ]
+        self.assertIn((0, 1, module.TITLE), texts)
+        self.assertIn((2, 3, module.TERMINAL), texts)
+        self.assertIn((4, 1, module.ROSTER_HEADING), texts)
+        # The selected row is one bar across the pane, marked at its left end;
+        # the state glyph sits in its own column before the name.
+        self.assertIn((5, 0, " " * 60), texts)
+        self.assertIn((5, 1, "▶"), texts)
+        self.assertIn((5, 3, "○"), texts)
+        self.assertIn((5, 5, "work"), texts)
+        self.assertIn("idle", [text for _row, _column, text in texts])
+        self.assertEqual(hits, {2: 0, 5: 1})
         self.assertIn(module.HINT, [call.args[2] for call in screen.addnstr.call_args_list])
+
+    def test_typing_filters_the_roster_and_backspace_widens_it_again(self):
+        screen, curses = fake_curses([])
+        chooser = Chooser(TAB, LEAF)
+        sessions = {name: {"online": True, "state": "idle"} for name in ("alpha", "beta", "gamma")}
+        chooser.update(sessions, "")
+        chooser.select(3)
+        for char in "AM":
+            chooser.filter(char)
+        chooser.update(sessions, "")
+        self.assertEqual([name for name, _ in chooser.sessions], ["gamma"])
+        self.assertEqual(chooser.selected_name(), "gamma")
+        draw(screen, chooser, curses)
+        texts = [call.args[2] for call in screen.addnstr.call_args_list]
+        self.assertIn(module.FILTER_LABEL + "AM", texts)
+        chooser.filter("\x7f")
+        chooser.update(sessions, "")
+        self.assertEqual(len(chooser.sessions), 3)
+        chooser.filter("l")
+        chooser.update(sessions, "")
+        self.assertEqual([name for name, _ in chooser.sessions], ["alpha"])
+        chooser.filter("\x15")
+        chooser.update(sessions, "")
+        self.assertEqual(len(chooser.sessions), 3)
+        chooser.filter("zzz")
+        chooser.update(sessions, "")
+        self.assertEqual(chooser.sessions, [])
+        self.assertEqual(chooser.index, 0)
+        draw(screen, chooser, curses)
+        self.assertIn(module.NO_MATCH, [call.args[2] for call in screen.addnstr.call_args_list])
+
+    def test_states_have_glyphs_and_words_and_the_directory_is_shown(self):
+        screen, curses = fake_curses([])
+        chooser = Chooser(TAB, LEAF, "/home/me/ws/project")
+        chooser.update(
+            {
+                "busy": {"online": True, "state": "busy"},
+                "held": {"online": True, "state": "waiting_for_human"},
+                "gone": {"online": False},
+                "plain": {"online": True, "state": "running"},
+            },
+            "",
+        )
+        draw(screen, chooser, curses)
+        texts = [(call.args[0], call.args[2]) for call in screen.addnstr.call_args_list]
+        self.assertIn((5, "▶"), texts)
+        self.assertIn((5, "working"), texts)
+        self.assertIn((6, "·"), texts)
+        self.assertIn((6, "offline"), texts)
+        self.assertIn((7, "!"), texts)
+        self.assertIn((7, "needs you"), texts)
+        self.assertIn((8, "○"), texts)
+        self.assertIn((8, "running"), texts)
+        self.assertIn((2, "/home/me/ws/project"), texts)
+
+    def test_a_pane_too_narrow_for_the_directory_leaves_it_out(self):
+        screen, curses = fake_curses([])
+        screen.getmaxyx.return_value = (20, 12)
+        draw(screen, Chooser(TAB, LEAF, "/home/me/ws/project"), curses)
+        drawn = [call.args[2] for call in screen.addnstr.call_args_list]
+        self.assertFalse(any("project" in text for text in drawn), drawn)
 
     def test_a_roster_taller_than_the_pane_scrolls_with_the_selection(self):
         """Keyboard and mouse agree: only drawn rows are clickable, and the
@@ -105,8 +174,9 @@ class ChooserDrawTests(unittest.TestCase):
         chooser = Chooser(TAB, LEAF)
         chooser.update({f"s{index:02d}": {"online": True} for index in range(30)}, "")
         hits = draw(screen, chooser, curses)
-        # Twenty rows: fourteen list rows (4..17), terminal, heading, twelve sessions.
-        self.assertEqual(hits, {4: 0, **{row: row - 5 for row in range(6, 18)}})
+        # Twenty rows: sixteen list rows (2..17): terminal, a blank row, the
+        # heading, thirteen sessions.
+        self.assertEqual(hits, {2: 0, **{row: row - 4 for row in range(5, 18)}})
         texts = [call.args[2] for call in screen.addnstr.call_args_list]
         self.assertIn(module.MORE_BELOW, texts)
         self.assertNotIn(module.MORE_ABOVE, texts)
@@ -119,17 +189,17 @@ class ChooserDrawTests(unittest.TestCase):
         # Moving back up scrolls only as far as needed; the last row stays clickable.
         chooser.move(-1)
         hits = draw(screen, chooser, curses)
-        self.assertEqual(min(hits.values()), 12)
+        self.assertEqual(min(hits.values()), 10)
         chooser.select(30)
         hits = draw(screen, chooser, curses)
         self.assertEqual(max(hits.values()), 30)
         chooser.select(0)
         hits = draw(screen, chooser, curses)
-        self.assertEqual(hits[4], 0)
+        self.assertEqual(hits[2], 0)
         # A tiny pane still keeps the selection on screen.
         screen.getmaxyx.return_value = (7, 40)
         chooser.select(3)
-        self.assertEqual(draw(screen, chooser, curses), {4: 3})
+        self.assertEqual(draw(screen, chooser, curses), {2: 1, 3: 2, 4: 3})
 
     def test_an_empty_roster_says_so_and_a_narrow_pane_never_raises(self):
         screen, curses = fake_curses([])
@@ -166,8 +236,8 @@ class ChooserRunTests(unittest.TestCase):
 
     def test_a_click_on_a_session_row_chooses_it(self):
         """Both mouse routes: a curses event, and a raw SGR press the pane asked for."""
-        raw = [27, *(ord(c) for c in "[<0;5;7M")]
-        for name, keys, mouse in (("curses", [409], (0, 3, 6, 0, 2)), ("sgr", raw, None)):
+        raw = [27, *(ord(c) for c in "[<0;5;6M")]
+        for name, keys, mouse in (("curses", [409], (0, 3, 5, 0, 2)), ("sgr", raw, None)):
             with self.subTest(route=name):
                 screen, curses = fake_curses(keys)
                 if mouse:

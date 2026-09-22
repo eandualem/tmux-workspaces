@@ -120,7 +120,13 @@ def _exercise(resources: FixtureResources) -> None:
     wait(client, chooser_shown, "second chooser missing")
     expected = sorted([*online, "notes"])[0]
     client.type(DOWN)
-    wait(client, lambda: "▸ " + expected in content(), "Down did not move the selection")
+    wait(
+        client,
+        lambda: any(
+            line.strip().startswith("▶") and expected in line for line in content().splitlines()
+        ),
+        "Down did not move the selection",
+    )
     attached_leaf = saved(library).pane["id"]
     client.type(ENTER)
     wait(
@@ -148,13 +154,16 @@ def _exercise(resources: FixtureResources) -> None:
     wait(client, chooser_shown, "third chooser missing")
     pane = content_pane()
     left, top = pane_geometry(pane)
-    # The capture helper strips leading blank lines, so rows are counted from
-    # the title, which the chooser paints on its second line.
+    # Rows are counted from the title, which the chooser paints on its first line.
     lines = viewer.run("capture-pane", "-p", "-t", pane).splitlines()
     target = online[-1]
-    title = next(index for index, line in enumerate(lines) if line.strip() == TITLE)
-    found = next(index for index, line in enumerate(lines) if line.strip(" ▸").startswith(target))
-    row = found - title + 1
+    title = next(index for index, line in enumerate(lines) if line.strip().startswith(TITLE))
+    found = next(
+        index
+        for index, line in enumerate(lines)
+        if line.strip(" ▶").lstrip("○!·? ").startswith(target)
+    )
+    row = found - title
     client.click(left + 4, top + row + 1)
     wait(
         client,

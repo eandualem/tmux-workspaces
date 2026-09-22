@@ -10,19 +10,24 @@ from pathlib import Path
 from .entrypoints import script_command
 from .tmux import clean_env
 
+# Rows a popup takes beyond its content: the title bar, a blank row, the
+# footer and, for the editor, the cursor row.
+EDITOR_ROWS = 30
+
 
 class ConfigPopup:
-    def __init__(self, display, kind, path, *, keymap=None):
+    def __init__(self, display, kind, path, *, keymap=None, theme_state=None, colors=None):
         self.display, self.kind = display, kind
         self.resources = contextlib.ExitStack()
         directory = self.resources.enter_context(tempfile.TemporaryDirectory(prefix="tw-json-"))
         self.result = Path(directory) / "result.json"
+        source = path
         if kind == "reference":
             path = Path(directory) / "keymap.json"
             path.write_text(json.dumps(keymap.to_dict()))
         self.stderr = self.resources.enter_context(tempfile.TemporaryFile())  # noqa: SIM115
         self.started = time.monotonic()
-        command = script_command(
+        arguments = [
             "_config-editor",
             "--config-kind",
             kind,
@@ -30,7 +35,35 @@ class ConfigPopup:
             str(path),
             "--config-result",
             str(self.result),
-        )
+        ]
+        if theme_state:
+            arguments += ["--chooser-theme", theme_state]
+        if colors:
+            arguments += ["--terminal-colors", str(colors)]
+        if kind == "reference" and source is not None:
+            arguments += ["--keymap-source", str(source)]
+        command = script_command(*arguments)
+        rows = EDITOR_ROWS
+        if kind == "reference":
+            from .shortcut_reference import reference_rows
+
+            rows = len(reference_rows(keymap)) + 4
+        left, bottom, width, height = display.popup_geometry(rows)
+        options = [
+            "-E",
+            "-b",
+            "rounded",
+            "-x",
+            str(left),
+            "-y",
+            str(bottom),
+            "-w",
+            str(width),
+            "-h",
+            str(height),
+        ]
+        if theme_state:
+            options += self._styles(theme_state, colors)
         try:
             self.process = subprocess.Popen(
                 [
@@ -38,11 +71,7 @@ class ConfigPopup:
                     "-S",
                     display.tmux.socket,
                     "display-popup",
-                    "-E",
-                    "-w",
-                    "95%",
-                    "-h",
-                    "95%",
+                    *options,
                     "-t",
                     display.sidebar,
                     command,
@@ -54,6 +83,24 @@ class ConfigPopup:
         except BaseException:
             self.resources.close()
             raise
+
+    @staticmethod
+    def _styles(theme_state: str, colors: int | None) -> list[str]:
+        """The popup's own ground and its dim border, in the theme's colors."""
+        from .theme import ThemeError, extra_color, parse_theme_state
+
+        try:
+            theme = parse_theme_state(theme_state)
+        except (ThemeError, ValueError):
+            return []
+        palette = colors or 256
+        text = theme.tmux_role("normal", palette)[0]
+        return [
+            "-s",
+            f"fg={text},bg={theme.panel}",
+            "-S",
+            f"fg={extra_color('dim', palette)},bg={theme.panel}",
+        ]
 
     def poll(self):
         """None means still open; an explicit saved result is required for success."""

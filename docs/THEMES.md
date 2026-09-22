@@ -16,9 +16,9 @@ the viewer does not offer one, and it never edits Ghostty, terminal profiles or
 operating-system settings to get one. If a glyph such as `▶` or `─` renders as a
 box, that is the terminal's font, not the theme.
 
-Colors may be exact `#rrggbb` values. The five roles are curses color
+Colors may be exact `#rrggbb` values. The roles are curses color
 pairs, and curses cannot name an RGB color, so the viewer defines each such
-value in one of its own pane's palette slots (16 to 23) through tmux, which
+value in one of its own pane's palette slots (16 to 47) through tmux, which
 keeps a palette per pane: nothing outside the viewer is recolored. That needs
 a 256-color pane, so an RGB value is always written with a 256-color and a
 basic fallback after it. The panel — the sidebar's background and the gap
@@ -51,7 +51,7 @@ do not change a running viewer while idle; use **Refresh viewer…** to load the
 
 ## Presets
 
-The quickest way to change the look is a preset: a complete set of the five
+The quickest way to change the look is a preset: a complete set of the seven
 roles below plus the two grounds, chosen for a particular kind of terminal. A
 one-line file selects one:
 
@@ -61,11 +61,12 @@ preset = "plain"
 
 | Preset | Look |
 | --- | --- |
-| `default` | A `#22252b` panel inset in a `#292c33` surface, outlined in `#31343b`; `#cccccc` text, `#999999` secondary text, a `#608af7` accent and a `#343841` selection |
-| `plain` | The same colors on the terminal's own background: no panel, no padding |
+| `default` | A `#15171c` panel beside a `#1b1e24` surface, separated by `#2a2e36` lines; `#d4d6db` text, `#7d828c` secondary text, an amber `#e0a458` accent, a `#e06c75` danger color, a `#1e2128` header bar and a `#262a33` selection |
+| `plain` | The same colors on the terminal's own background: no panel |
 | `forest` | The terminal's background with a sage-green accent — the look shipped before presets |
 | `paper` | The light counterpart: a `#f8f8f8` panel on white, `#3b3b3b` text, a `#005fb8` accent and an `#e8e8e8` selection |
 | `mono` | The terminal's two colors only, using bold, dim and reverse |
+| `debug` | A diagnostic look: purple panel, blue surface, amber header bar, red lines, green selection. Every region a different color, so a gap or a misplaced edge shows at a glance |
 
 A `panel` or `surface` value, or a role table, after the `preset` line
 overrides that part of the preset, so `preset = "plain"` followed by
@@ -85,44 +86,46 @@ inherited backgrounds into explicit overrides.
 Every preset carries an explicit basic-palette fallback for each role color, so
 an eight-color terminal gets a deliberate choice rather than an approximation.
 On `plain`, `forest` and `mono` both grounds are `default`: the sidebar keeps
-the terminal's background, there is no padding, and the borders between panes
-form a band of the panel color.
+the terminal's background, and the separators are drawn in the outline color
+on that background.
 
 ## The grounds
 
 ```toml
-panel = "#22252b"
-surface = "#292c33"
+panel = "#15171c"
+surface = "#1b1e24"
 ```
 
 Two colors tmux paints behind everything else. The **panel** is the ground of
-the sidebar. The **surface** is the ground of the terminals: every content
-pane, the padding beside it and the corners the sidebar's rounded outline
-leaves open. Each is one value: `default` (the terminal's background), a color
-name, a number from 0 to 255, or `#rrggbb`; being tmux's, an RGB value reaches
-it directly, whereas an RGB role color takes a palette slot in the viewer's
-pane. The roles are drawn over the panel; a role given a `background` of its
-own covers the panel where that role is drawn, which is how the selected tab
-gets its bar.
-
-Giving the terminals a surface of the theme's own is what makes padding
-possible: tmux's border glyphs are painted in the surface so they vanish, and
-one blank column then sits on each side of every pane. With `surface =
-"default"` there is no padding, because a border cannot be hidden on a ground
-the viewer does not know.
+the sidebar, the status row and the popups. The **surface** is the ground of
+the terminals: every content pane, the new-pane chooser included, and the
+separator lines between them. Each is one value: `default` (the terminal's
+background), a color name, a number from 0 to 255, or `#rrggbb`; being tmux's,
+an RGB value reaches it directly, whereas an RGB role color takes a palette
+slot in the viewer's pane. The roles are drawn over the panel; a role given a
+`background` of its own covers the panel where that role is drawn, which is
+how the selected tab gets its bar and the heading its header bar.
 
 ## Roles
 
-Five semantic roles map onto the five color pairs the viewer installs. Every role accepts `foreground`, `background` and `attributes`, and
-every key is optional — anything you leave out keeps its preset's value.
+Seven semantic roles map onto the color pairs the viewer installs. Every role
+accepts `foreground`, `background` and `attributes`, and every key is optional
+— anything you leave out keeps its preset's value.
 
 | Role | Where it is drawn |
 | --- | --- |
-| `normal` | Body text, buttons and the sidebar's own background |
-| `active` | The selected tab, the selected workspace, the inline name editor and the chooser's selected row |
-| `accent` | Hints, the add button and error text |
-| `muted` | Section labels, tab numbers and counts, the chevron |
-| `outline` | The panel's rounded perimeter, drawn on the surface, and the separators between split panes |
+| `normal` | Body text and the sidebar's own background |
+| `active` | The selected tab, the selected menu row, the current workspace slot, the inline name editor and the chooser's selected row |
+| `accent` | The ▶ marker on selected rows, the add glyph, tab numbers on the selected row, working agents, toggle values and error text |
+| `muted` | Section labels, tab numbers, pane glyphs, shortcut keys at the end of menu rows, hints and paths |
+| `outline` | The separators between the panel and the panes and between split panes, and the rules inside menus |
+| `header` | The heading row of the panel, the ‹ Back row of a menu, and the footer of a popup |
+| `danger` | Agents that need you and the Close tab row |
+
+Text of one role drawn on the ground of another — the accent marker on the
+selected row, the muted chevron on the header bar — takes a pair of its own.
+The first five roles are required; on a terminal that refuses more color pairs,
+`header` draws as `normal` and `danger` as `accent` with `bold`.
 
 ```toml
 [active]
@@ -147,35 +150,49 @@ are what keeps selection, focus and errors distinguishable when color is not
 available or not perceived, alongside the `▶` marker on the selected row, which
 is never removed.
 
-Failures share the `accent` pair, because five roles mean five color pairs and
-the startup floor allows no more. A failure is therefore labelled `Error:` and
+Failures share the `accent` pair, so that the five required roles fit the
+startup floor of six color pairs. A failure is therefore labelled `Error:` and
 drawn with `bold`, and never by color alone; progress messages such as `Colors
 saved` or `Defaults shown` are neither labelled nor bold, so the two are
 distinguishable without relying on perception of the accent color. Every failure
 message leads with its reason and puts the file path last, because a narrow sidebar shows only the first few words.
 
+The dedicated `./ghostty` profile removes outer window padding. Any fractional
+cell space at the right or bottom takes the adjacent cell's background, so the
+terminal surface and status band extend to those edges. In macOS full screen,
+the temporary title bar can cover the workspace heading while the pointer is
+at the top; moving the pointer away reveals the heading again.
+
 ## Beyond the sidebar
 
 The following parts are drawn in these colors, so the window reads as one layer:
 
-- **The separators between split panes.** One thin rule in the `outline`
-  foreground, drawn on the surface: down a column between panes side by side,
-  across a row between stacked ones, so both directions weigh the same. On
-  each side of a separator sits one blank column (or row) of surface, the
-  padding of the pane beside it. No border marks the focused pane. Everything
-  here changes the moment a theme installs, including after saving in the
-  editor.
-- **The padding inside panes.** Each content pane is a tmux pane with a
-  one-cell gutter pane on either side, drawn in the surface, and tmux's
-  border glyphs are painted in the surface too so they vanish. Padding
-  therefore exists only on a surface of the theme's own; `plain` has none.
-- **The new-tab chooser.** Each empty pane runs its own chooser using the
-  viewer's installed theme snapshot and palette size. Its title is the accent,
-  hints are muted, the selected row uses `active`, and the panel shows behind it.
-  Editing the file from another viewer does not change these colors until this
-  viewer applies or reloads the theme. If the terminal refuses the palette,
-  the chooser falls back to bold, dim and reverse attributes. `--no-keymap`
-  affects shortcuts, not colors.
+- **The separators.** The 22-column navigation panel is followed by one tmux
+  border column, with a thin line in the `outline` foreground on the surface.
+  Content starts in the next column; there is no additional hidden border or
+  padding column. Split panes use the same line, down a column between panes
+  side by side or across a row between stacked ones. No border marks the focused
+  pane. Everything here changes the moment a theme installs, including after
+  saving in the editor.
+- **The status band.** Two rows across the bottom of the window on the panel:
+  a line in the `outline` color along the bottom edge of the first, the text
+  in the second, painted by tmux in the `muted`
+  foreground, with the `normal` and `accent` foregrounds for its emphasised
+  words and a green light for the saved state. Text has a one-cell inset on
+  both sides. The separate rule requires a full terminal row; the header and
+  footer use no blank padding rows.
+- **The new-pane chooser.** Each empty pane runs its own chooser using the
+  viewer's installed theme snapshot and palette size, on the surface. Its
+  title is the accent, hints are muted, the selected row uses `active`, and
+  agent states use the accent, `danger` and `muted` colors. Editing the file
+  from another viewer does not change these colors until this viewer applies
+  or reloads the theme. If the terminal refuses the palette, the chooser falls
+  back to bold, dim and reverse attributes. `--no-keymap` affects shortcuts,
+  not colors.
+- **The popups.** The settings editor and the shortcut reference open in a
+  rounded popup on the panel with a dim border, their title bar shaded from a
+  warm dark amber to the header color, their footer on the `header` ground.
+  JSON keys and strings in the editor have fixed colors of their own.
 
 ## Editing the theme
 
@@ -185,8 +202,8 @@ Cancel, paste, undo/redo and formatting. Saved colors apply immediately to this
 viewer; editing a draft does not preview it. Cancel leaves the file and current
 appearance unchanged.
 
-Set `preset` to `default`, `plain`, `forest`, `paper` or `mono`; explicit role or
-ground values override it. To use just a preset, replace the draft with, for
+Set `preset` to `default`, `plain`, `forest`, `paper`, `mono` or `debug`; explicit
+role or ground values override it. To use just a preset, replace the draft with, for
 example, `{"preset":"paper"}`. See [editing controls](JSON_SETTINGS.md).
 
 Saving uses the existing TOML file and conflict-checked atomic writer. It asks
@@ -292,7 +309,7 @@ problem. See
 Everything above about which color codes are emitted is verified; nothing above
 is a claim about how those colors are rendered to a human eye.
 
-Live theme saves refresh existing chooser colors and add or remove padding for the
-selected theme. Terminal clients may redraw, while their underlying shells and
+Live theme saves refresh existing chooser colors and recolor the separators for
+the selected theme. Terminal clients may redraw, while their underlying shells and
 attached sessions keep running. Switching from RGB to indexed colors restores
 released palette slots, and named outline colors apply to split separators too.

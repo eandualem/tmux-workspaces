@@ -168,7 +168,7 @@ def exercise(resources):
         seeded = json.loads(seed.read_text())
         wait(
             client,
-            lambda: painted_color(client.output, "PALETTE_seed_16") == (204, 204, 204),
+            lambda: painted_color(client.output, "PALETTE_seed_16") == (212, 214, 219),
             "chooser RGB color was not rendered",
         )
         result = resources.root / (kind + ".json")
@@ -177,7 +177,7 @@ def exercise(resources):
             client,
             lambda result=result, kind=kind: (
                 result.with_suffix(".before").exists()
-                and painted_color(client.output, f"PALETTE_{kind}_before_16") == (204, 204, 204)
+                and painted_color(client.output, f"PALETTE_{kind}_before_16") == (212, 214, 219)
             ),
             "respawn did not retain the rendered chooser color",
         )

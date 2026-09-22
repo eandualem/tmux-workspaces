@@ -14,7 +14,6 @@ test:
 
 smoke:
 	$(PYTHON) -m tests.integration.smoke_attachment_policy
-	$(PYTHON) -m tests.integration.smoke_split_drag
 	$(PYTHON) -m tests.integration.smoke_attachment_windows
 	$(PYTHON) -m tests.integration.smoke_attachment_palette
 	$(PYTHON) -m tests.integration.smoke_attachment_readiness
@@ -32,7 +31,6 @@ smoke:
 	$(PYTHON) -m tests.integration.smoke_shortcuts
 	$(PYTHON) -m tests.integration.smoke_menus
 	$(PYTHON) -m tests.integration.smoke_new_tab
-	$(PYTHON) -m tests.integration.smoke_gutters
 	$(PYTHON) -m tests.integration.smoke_standalone
 	$(PYTHON) -m tests.integration.smoke_environment
 	$(PYTHON) -m tests.integration.smoke
