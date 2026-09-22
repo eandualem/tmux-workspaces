@@ -419,7 +419,11 @@ def exercise_recovery(resources: FixtureResources) -> None:
     assert client.manifest(library).parent == instance, "broken launcher replaced the viewer"
     assert client.process.poll() is None, "a refused refresh closed the launcher"
     client.type("\x1b")
-    wait(client, lambda: "Esc close" not in sidebar_of(client), "Escape did not close the refusal")
+    wait(
+        client,
+        lambda: "REFRESH VIEWER" not in sidebar_of(client),
+        "Escape did not close the refusal",
+    )
     (checkout / "tmux_workspaces" / "keymap.py").write_text(original)
     client.type("\x07t")
     wait(client, lambda: len(saved(library).space["tabs"]) == 2, "refusal left an unusable viewer")
@@ -558,7 +562,11 @@ def exercise_supervision(resources: FixtureResources) -> None:
     pinned.viewer_socket = runtime(pinned, library)["viewer_socket"]
     pinned_instance = pinned.manifest(library).parent
     confirmation(pinned)
-    wait(pinned, lambda: "Esc close" in sidebar_of(pinned), "manual reopen was not offered")
+    wait(
+        pinned,
+        lambda: "esc close" in status_row(Tmux(pinned.viewer_socket)),
+        "manual reopen was not offered",
+    )
     assert "Refresh viewer now" not in sidebar_of(pinned), "a fixed-key window offered to close"
     command = runtime(pinned, library)["reopen_command"]
     assert command.startswith(sys.executable), command

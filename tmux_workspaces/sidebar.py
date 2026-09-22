@@ -1236,8 +1236,14 @@ class Sidebar:
         return tuple(wrapped[: max(1, self.size()[0] - 8)])
 
     def status_text(self) -> str:
-        """What the status row's right slot says instead of the light, or nothing."""
+        """What the status row's right slot says instead of the light, or nothing.
+
+        A notice about the open menu outranks an older general message, since
+        it is about what the user is looking at.
+        """
         error = self.source.snapshot()[1] if self.source else ""
+        if self.menu and self.menu_message:
+            return self.menu_message
         if error or self.message:
             return error or self.message
         if self.menu_message:

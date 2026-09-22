@@ -148,7 +148,8 @@ def popup(resources):
     client.type("\x13")
     wait(client, lambda: "Colors saved and applied" in status_row(viewer), "colors did not apply")
     assert parse_theme(colors.read_bytes()).preset_name() == "paper"
-    expected_panel = "bg=" + preset_theme("paper").surface
+    # The sidebar sits on the panel; the terminals sit on the surface.
+    expected_panel = "bg=" + preset_theme("paper").panel
     wait(
         client,
         lambda: viewer.run("show-options", "-pv", "-t", "%0", "window-style") == expected_panel,
