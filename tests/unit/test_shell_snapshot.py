@@ -14,7 +14,7 @@ class ShellSnapshotTests(unittest.TestCase):
     def test_batch_discovery_retains_processes_and_snapshots_active_directories(self):
         with tempfile.TemporaryDirectory(prefix="tw-shell-snapshot-", dir="/tmp") as directory:
             root = Path(directory)
-            other = root / "directory with spaces\nand __tw_cwd_collision__"
+            other = root / "directory with spaces\nand __tw_cwd_collision__ \n"
             other.mkdir()
             shells = Shells(str(root / "shells.sock"))
             model = Model.initial()

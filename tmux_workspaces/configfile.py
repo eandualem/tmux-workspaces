@@ -171,21 +171,6 @@ class ConfigFile:
         """Whether these bytes exceed what this file type accepts."""
         return len(payload) > self.limit
 
-    def writable(self) -> bool:
-        """Whether a Save can be offered; a race still surfaces as the error type."""
-        try:
-            info = self.path.lstat()
-        except FileNotFoundError:
-            parent = self.path.parent
-            while not parent.exists() and parent != parent.parent:
-                parent = parent.parent
-            return os.access(parent, os.W_OK | os.X_OK)
-        except OSError:
-            return False
-        if not stat.S_ISREG(info.st_mode):
-            return False
-        return os.access(self.path, os.W_OK)
-
     def _check_target(self) -> None:
         words = self.words
         try:

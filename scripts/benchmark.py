@@ -64,6 +64,18 @@ def assert_unique_ack(capture, target, marker, targets):
             raise RuntimeError("Input acknowledgement also reached another fixture shell")
 
 
+def navigation_click(lines, kind, index, tab):
+    if kind == "workspace":
+        # The fixture's workspaces have numeric icons in the footer. Restrict
+        # the lookup to that row so tab numbers/counts cannot become targets.
+        row = len(lines) - 3
+        column = lines[row].index(f" {index + 1} ") + 2
+    else:
+        row = next(i for i, line in enumerate(lines) if tab["name"] in line)
+        column = lines[row].index(tab["name"]) + 1
+    return f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m"
+
+
 def summary(values):
     """Nearest-rank p95, retaining counts so small samples cannot masquerade as tails."""
     ordered = sorted(values)
@@ -371,11 +383,12 @@ class Fixture:
             self.views[view_index],
             "list-panes",
             "-F",
-            "#{@viewer_tab_id}|#{@viewer_leaf_id}|#{pane_tty}",
+            "#{@viewer_tab_id}|#{@viewer_leaf_id}|#{pane_tty}|#{?@viewer_gutter,1,0}",
         ).splitlines()
-        actual = {tuple(row.split("|")[:2]): row.split("|")[2] for row in rows}
+        content = [row.split("|") for row in rows if row.split("|")[-1] != "1"]
+        actual = {tuple(parts[:2]): parts[2] for parts in content}
         expected = {(tab["id"], pane["id"]) for pane in self.leaves(tab)}
-        if not expected <= actual.keys() or len(rows) != len(expected) + 1:
+        if not expected <= actual.keys() or len(content) != len(expected) + 1:
             return False
         # Match the source client tty to this display pane, not another viewer
         # that happens to be attached to the same ordinary shell.
@@ -395,10 +408,7 @@ class Fixture:
             event = controls.direct_sequence(f"select-{kind}-{index + 1}")
         else:
             lines = self.tmux(view, "capture-pane", "-p", "-t", "%0").splitlines()
-            label = tab["name"] if kind == "tab" else f"[ {index + 1} ]"
-            row = next(i for i, line in enumerate(lines) if label in line)
-            column = lines[row].index(label) + 1
-            event = f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m"
+            event = navigation_click(lines, kind, index, tab)
         self.drain(0.02)
         client.first_output = None
         initial_bytes = client.received
@@ -532,6 +542,19 @@ class Fixture:
         create_source()
         client.send(controls.direct_sequence("attach"))
 
+        def source_attached():
+            # External clients may attach through a viewer-owned grouped
+            # session. This source belongs only to this diagnostic fixture.
+            counts = self.tmux(
+                str(self.source),
+                "display-message",
+                "-p",
+                "-t",
+                "=bench-source:",
+                "#{session_attached} #{session_group_attached}",
+            ).split()
+            return any(int(count) > 0 for count in counts if count.isdigit())
+
         def chooser_row():
             lines = self.tmux(view, "capture-pane", "-p", "-t", "%0").splitlines()
             return next(
@@ -546,20 +569,7 @@ class Fixture:
         self.wait(chooser_row, "disposable attachment was not listed")
         x, y = chooser_row()
         client.send(f"\x1b[<0;{x};{y}M\x1b[<0;{x};{y}m")
-        self.wait(
-            lambda: (
-                self.tmux(
-                    str(self.source),
-                    "display-message",
-                    "-p",
-                    "-t",
-                    "=bench-source:",
-                    "#{session_attached}",
-                )
-                != "0"
-            ),
-            "disposable session was not attached",
-        )
+        self.wait(source_attached, "disposable session was not attached")
         attached_pane = next(
             line.split("|")[0]
             for line in self.tmux(
@@ -576,23 +586,7 @@ class Fixture:
         )
         before_online = time.monotonic()
         create_source()
-        online = self.wait(
-            lambda: (
-                int(
-                    self.tmux(
-                        str(self.source),
-                        "display-message",
-                        "-p",
-                        "-t",
-                        "=bench-source:",
-                        "#{session_attached}",
-                    )
-                    or "0"
-                )
-                > 0
-            ),
-            "recreated disposable session did not reconnect",
-        )
+        online = self.wait(source_attached, "recreated disposable session did not reconnect")
         return {
             "resize": resize,
             "attachment_status": {

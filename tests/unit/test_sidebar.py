@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 from tmux_workspaces.keymap import DEFAULT_KEYMAP, Keymap
 from tmux_workspaces.model import LayoutConflict, Model, leaves
 from tmux_workspaces.sidebar import Sidebar, terminal_text
-from tmux_workspaces.theme import DEFAULT_THEME
+from tmux_workspaces.theme import DEFAULT_THEME, Theme
 
 
 class FakeRelaunch:
@@ -1293,7 +1293,7 @@ class ThemeMenuTests(unittest.TestCase):
         )
 
     def test_the_sidebar_base_takes_the_normal_role(self):
-        configured = DEFAULT_THEME.with_role("normal", background=["blue"])
+        configured = Theme.from_dict({"normal": {"background": ["blue"]}})
         self.path.write_text(configured.to_toml())
         self.sidebar.setup_theme()
         self.assertEqual(self.init_pair.call_args_list[-5].args, (1, 16, 4))
