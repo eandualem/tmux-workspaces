@@ -306,6 +306,43 @@ class PanelColorTests(unittest.TestCase):
             "set-option", "-g", "status-format[1]", "#[align=left]after"
         )
 
+    def test_a_terminal_that_draws_overlines_gets_a_one_row_footer(self):
+        display = self.display()
+        display.tmux = Mock()
+        display.style_panel("#15171c", "#1b1e24", "#2a2e36", {"muted": "#7d828c"})
+        display.setup()
+        display.set_status("#[align=left]text")
+        display.tmux.reset_mock()
+        display.tmux.run.return_value = "bpaste,overline,RGB\n"
+        display._detect_overline()
+        self.assertIs(display.overline, True)
+        display.tmux.batch.assert_called_once_with(
+            [
+                ["set-option", "-g", "status", "on"],
+                ["set-option", "-g", "status-style", "fg=#7d828c,bg=#15171c,overline"],
+                ["set-option", "-g", "status-format[0]", "#[align=left]text"],
+            ]
+        )
+        self.assertEqual(display._rule_commands(), [])
+        display.set_status("#[align=left]after")
+        display.tmux.run.assert_called_with(
+            "set-option", "-g", "status-format[0]", "#[align=left]after"
+        )
+
+    def test_other_terminals_keep_the_rule_row_and_no_client_decides_nothing(self):
+        display = self.display()
+        display.tmux = Mock()
+        display.setup()
+        display.tmux.reset_mock()
+        display.tmux.run.return_value = ""
+        display._detect_overline()
+        self.assertIsNone(display.overline)
+        display.tmux.run.return_value = "bpaste,RGB\n"
+        display._detect_overline()
+        self.assertIs(display.overline, False)
+        display.tmux.batch.assert_not_called()
+        self.assertEqual(len(display._rule_commands()), 1)
+
     def test_the_rules_follow_the_window_width(self):
         display = self.display()
         display.tmux = Mock()

@@ -92,12 +92,12 @@ def launch_command(
         "--mouse-reporting=true",
         "--shell-integration=none",
         # The viewer owns the edge-to-edge grid. Leave cell remainders at
-        # the right/bottom, extending the adjacent cell's ground: header and
-        # surface stay flush at the top, and the footer reaches the bottom.
-        # Explicit values also prevent ordinary terminal padding from becoming
-        # a gutter around this dedicated workspace window.
+        # the right/bottom, extending the adjacent cell's ground. Two points
+        # above and below, in the header's and footer's colors, give their
+        # text room at the window's edges. Explicit values also prevent
+        # ordinary terminal padding from becoming a gutter around this window.
         "--window-padding-x=0",
-        "--window-padding-y=0",
+        "--window-padding-y=2",
         "--window-padding-balance=false",
         "--window-padding-color=extend-always",
         *([f"--background={panel}"] if panel.startswith("#") else []),

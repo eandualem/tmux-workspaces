@@ -1293,7 +1293,13 @@ class Sidebar:
         """The three slots of the status row as tmux format text: the context
         on the left, the hints for the current mode in the centre, the
         agents toggle and the saved-state light on the right."""
-        text, muted, accent = (self._tmux_fg(name) for name in ("normal", "muted", "accent"))
+        text, muted, accent, ok = (
+            self._tmux_fg(name) for name in ("normal", "muted", "accent", "ok")
+        )
+        if self.display.overline is True:
+            # A one-row footer's rule is an overline in each cell's own color;
+            # one color keeps it a single even line.
+            text = accent = ok = muted
         prefix = short_key_label(self.keymap.prefix)
         esc = self._escape
 
@@ -1381,7 +1387,7 @@ class Sidebar:
             bold = ",bold" if failed(status) else ""
             right += f"#[fg={accent}{bold}]{esc(status)}"
         else:
-            right += f"#[fg={self._tmux_fg('ok')}]●"
+            right += f"#[fg={ok}]●"
         return left, centre, right
 
     def status_line(self, rows: list[Entry] | None = None) -> str:

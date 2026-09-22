@@ -157,9 +157,11 @@ saved` or `Defaults shown` are neither labelled nor bold, so the two are
 distinguishable without relying on perception of the accent color. Every failure
 message leads with its reason and puts the file path last, because a narrow sidebar shows only the first few words.
 
-The dedicated `./ghostty` profile removes outer window padding. Any fractional
-cell space at the right or bottom takes the adjacent cell's background, so the
-terminal surface and status band extend to those edges. In macOS full screen,
+The dedicated `./ghostty` profile sets no side padding and two points above
+and below. That space, and any fractional cell space at the right or bottom,
+takes the adjacent cell's background: the header and the status band gain a
+little room at the window's edges, and the terminal surface reaches the right
+edge. Other terminals keep their own window padding. In macOS full screen,
 the temporary title bar can cover the workspace heading while the pointer is
 at the top; moving the pointer away reveals the heading again.
 
@@ -174,13 +176,21 @@ The following parts are drawn in these colors, so the window reads as one layer:
   side by side or across a row between stacked ones. No border marks the focused
   pane. Everything here changes the moment a theme installs, including after
   saving in the editor.
-- **The status band.** Two rows across the bottom of the window on the panel:
-  a line in the `outline` color along the bottom edge of the first, the text
-  in the second, painted by tmux in the `muted`
-  foreground, with the `normal` and `accent` foregrounds for its emphasised
-  words and a green light for the saved state. Text has a one-cell inset on
-  both sides. The separate rule requires a full terminal row; the header and
-  footer use no blank padding rows.
+- **The status band.** Across the bottom of the window on the panel, painted
+  by tmux, with a one-cell inset on both sides. Its form depends on whether
+  tmux reports that the terminal draws an overline (SGR 53), which the viewer
+  declares for Ghostty (`xterm-ghostty`) and tmux reads from other terminals'
+  terminfo:
+  - With an overline, one row: the line is an overline along the top of the
+    text row, so the terminal content reaches the line directly. The terminal
+    draws an overline in each cell's own text color, so the whole row uses the
+    `muted` foreground and the line is that color; failures stay bold.
+  - Otherwise, two rows: a line in the `outline` color along the bottom edge of
+    the first, and the text in the second, in the `muted` foreground with the
+    `normal` and `accent` foregrounds for its emphasised words and a green
+    light for the saved state. The separate line needs a full terminal row.
+
+  Neither form uses blank padding rows.
 - **The new-pane chooser.** Each empty pane runs its own chooser using the
   viewer's installed theme snapshot and palette size, on the surface. Its
   title is the accent, hints are muted, the selected row uses `active`, and
