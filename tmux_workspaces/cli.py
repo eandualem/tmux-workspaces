@@ -85,9 +85,8 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--terminal-colors", type=int, help=argparse.SUPPRESS)
     # A separator pane between stacked panes: one thin rule in this color.
-    result.add_argument("--rule", action="store_true", help=argparse.SUPPRESS)
-    result.add_argument("--vertical", action="store_true", help=argparse.SUPPRESS)
-    result.add_argument("--color", default="default", help=argparse.SUPPRESS)
+    result.add_argument("--label", default="", help=argparse.SUPPRESS)
+    result.add_argument("--cwd", default="", help=argparse.SUPPRESS)
     # A refresh re-reads the selected file before it replaces the viewer, so the
     # running instance validates exactly what the launcher will load next.
     result.add_argument("--keymap-source", type=Path, help=argparse.SUPPRESS)
@@ -210,10 +209,6 @@ def main() -> int:
                 from .chooser import chooser_main
 
                 return chooser_main(args)
-            if args.rule:
-                from .attachments import rule_main
-
-                return rule_main(args)
             from .attachments import leaf_main
 
             return leaf_main(args)

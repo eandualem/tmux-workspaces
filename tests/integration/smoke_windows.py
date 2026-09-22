@@ -15,6 +15,7 @@ from tests.integration.support import (
     OUTLINE,
     FixtureResources,
     click_button,
+    pane_text,
     saved,
     user_sessions,
     wait,
@@ -84,7 +85,7 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
         return client, viewer, manifest
 
     def sidebar(viewer):
-        return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
+        return pane_text(viewer).translate(OUTLINE)
 
     click = click_button
 
@@ -141,9 +142,8 @@ def exercise(resources: FixtureResources, terminfo: str | None) -> None:
     )
     assert "1 researcher" in selected(second_view)
     click(second, second_view, "▾")
-    click(second, second_view, "Switch workspace")
     click(second, second_view, "Shared research")
-    wait(second, lambda: "No tabs yet" in sidebar(second_view), "shared workspace missing")
+    wait(second, lambda: "no tabs yet" in sidebar(second_view), "shared workspace missing")
     click(second, second_view, "+ Tab")
     click(second, second_view, "Attach session…")
     click(second, second_view, "reviewer")

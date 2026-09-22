@@ -28,6 +28,7 @@ ACTION_CODES = MappingProxyType(
         "refresh-viewer": 9050,
         "tab-options": 9051,
         "workspace-options": 9052,
+        "show-agents": 9054,
     }
 )
 ACTION_LABELS = MappingProxyType(
@@ -54,6 +55,7 @@ ACTION_LABELS = MappingProxyType(
         "copy-selection": "Copy selection",
         "sidebar": "Focus navigation",
         "refresh-viewer": "Refresh viewer",
+        "show-agents": "Show / hide agents",
         "quit": "Detach viewer",
     }
     | {f"select-tab-{n}": f"Select tab {n}" for n in range(1, 10)}
@@ -66,7 +68,7 @@ _ACTION_ORDER = tuple(ACTION_LABELS)
 # that key up rather than refusing to load; anything the user assigned to these
 # actions is theirs and still collides like every other explicit binding.
 YIELDING_DEFAULTS = frozenset(
-    {"tab-options", "workspace-options", "refresh-viewer", "copy-selection"}
+    {"tab-options", "workspace-options", "refresh-viewer", "copy-selection", "show-agents"}
 )
 _NAMED_KEYS = {
     key.lower(): key
@@ -239,6 +241,11 @@ def _direct_tmux_key(trigger: str) -> str | None:
 
 def tmux_key_label(key: str) -> str:
     return key.replace("M-", "Alt-").replace("C-", "Ctrl-")
+
+
+def short_key_label(key: str) -> str:
+    """A key as the status row writes it: ``^g`` for C-g, ``alt-x`` for M-x."""
+    return key.replace("C-", "^").replace("M-", "alt-")
 
 
 def ghostty_label(trigger: str) -> str:

@@ -124,7 +124,7 @@ def exercise(resources: FixtureResources) -> None:
     )
     assert saved(library).tab["name"] == initial.tab["name"]
     click_button(client, viewer, "Tab actions…")
-    click_button(client, viewer, "Return pane to shell")
+    click_button(client, viewer, "Return to shell")
     click_button(client, viewer, "Attach session…")
     click_button(client, viewer, "host")
     wait(
@@ -137,7 +137,7 @@ def exercise(resources: FixtureResources) -> None:
     )
     assert len(source.run("list-clients").splitlines()) == 1
     click_button(client, viewer, "Tab actions…")
-    click_button(client, viewer, "Return pane to shell")
+    click_button(client, viewer, "Return to shell")
     exit_viewer(viewer)
     assert shells.run("display-message", "-p", "-t", terminal, "#{pane_pid}") == shell_pid
     viewer = open_viewer()

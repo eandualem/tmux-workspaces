@@ -4,46 +4,52 @@ from __future__ import annotations
 
 import contextlib
 import curses
+import importlib.metadata
 import locale
 import textwrap
 import time
 from collections.abc import Callable
 
 from .config_popup import ConfigPopup
-from .controls import Actions, mouse_action, pane_choice, resize_action
+from .controls import Actions, mouse_action, pane_choice
 from .discovery import Snapshot
 from .display import Display
 from .events import InputEvents
-from .keymap import tmux_key_label
-from .menu import RULE, Entry, Selection
+from .keymap import short_key_label
+from .menu import LABEL, RULE, Entry, Selection, passive, section
 from .messages import failed, failure
 from .model import LayoutConflict, Model, is_empty, leaves
 from .name_editor import NameEditor, cells
 from .persistence import Store
 from .source import Source
-from .theme import DEFAULT_THEME, ThemeError, load_theme, theme_path
+from .theme import DEFAULT_THEME, ROLES, ThemeError, extra_color, load_theme, theme_path
 
 
 def visible(text: str) -> str:
     return "".join(char for char in str(text) if char.isprintable())
 
 
-MENU_RULE = RULE
+def package_version() -> str:
+    """The installed version, or ``dev`` for a checkout."""
+    try:
+        return importlib.metadata.version("tmux-workspaces")
+    except importlib.metadata.PackageNotFoundError:
+        return "dev"
 
-TAB_SHORTCUTS = {
-    "Rename tab": "rename-tab",
-    "Previous tab": "previous-tab",
-    "Next tab": "next-tab",
-    "Split right": "split-right",
-    "Split below": "split-below",
-    "Focus one pane": "focus",
-    "Restore layout": "focus",
-    "Previous pane": "previous-pane",
-    "Next pane": "next-pane",
-    "Attach session": "attach",
-    "Close focused pane": "close-pane",
-    "Close tab": "close-tab",
-}
+
+def versions() -> str:
+    """The footer of the Configure menu: this package and the tmux in use."""
+    from .preflight import check_tmux
+
+    try:
+        tmux = check_tmux()
+    except (RuntimeError, OSError):
+        tmux = "tmux"
+    version = package_version()
+    return f"{'v' + version if version[:1].isdigit() else version} · {tmux}"
+
+
+MENU_RULE = RULE
 
 # Glyphs a workspace may carry: one cell wide in the monospace fonts terminals
 # use, and common to their box-drawing and symbol ranges. A workspace without
@@ -89,6 +95,9 @@ LEGEND = (
 # One-cell substitutes keep controls and outlines aligned in limited encodings.
 ASCII_GLYPHS = {
     "▶": ">",
+    "▮": "|",
+    "●": "*",
+    "›": ">",
     "○": "o",
     "‹": "<",
     "▾": "v",
@@ -202,6 +211,11 @@ class Sidebar:
             if isinstance(encoding, str) and encoding
             else locale.getpreferredencoding(False) or "ascii"
         )
+        # What the open menu draws beside each row, by row position.
+        self._meta: dict[int, dict[str, str]] = {}
+        # The theme's colors as tmux spells them, for the status row.
+        self.status_colors: dict[str, str] = {}
+        self._versions: str | None = None
         self.message = ""
         self.running = True
         self.last_frame = None
@@ -226,9 +240,10 @@ class Sidebar:
         """Index of the active menu row within those options."""
         return self.selection.index
 
-    def style(self, role: str) -> int:
-        """Attributes for a semantic role. Pairs are installed, never per frame."""
-        return self.palette.style(role) if self.palette else 0
+    def style(self, role: str, on: str | None = None) -> int:
+        """Attributes for a semantic role, optionally on another role's ground.
+        Pairs are installed, never per frame."""
+        return self.palette.style(role, on) if self.palette else 0
 
     def message_style(self, message: str, notice: bool) -> int:
         """Failures add bold, so severity survives a reduced or reversed palette."""
@@ -242,12 +257,16 @@ class Sidebar:
         palette.install(curses, self.emit, previous_rgb=self.palette.rgb if self.palette else ())
         self.theme, self.palette, self.last_frame = theme, palette, None
         self.display.chooser_theme_state = theme.to_toml()
-        # The panel color is tmux's to paint: the sidebar's background, empty
-        # panes and the band between panes, so the panel and the terminals are
-        # separated by a color gap rather than a line. A display that cannot
-        # be reached keeps its panel; the sidebar's own colors still apply.
+        self.status_colors = {role: theme.tmux_role(role, self.colors)[0] for role in ROLES}
+        self.status_colors["ok"] = extra_color("ok", self.colors)
+        # The grounds are tmux's to paint: the sidebar's panel, the terminals'
+        # surface, the separators between them and the status row. A display
+        # that cannot be reached keeps its grounds; the sidebar's own colors
+        # still apply.
         with contextlib.suppress(RuntimeError, OSError, ValueError):
-            self.display.style_panel(theme.panel, theme.surface, theme.separator())
+            self.display.style_panel(
+                theme.panel, theme.surface, theme.separator(), self.status_colors
+            )
         # The role names the sidebar's own base, so its empty cells and the
         # cleared frame carry the configured background rather than the
         # terminal's, which is only visible once someone configures one.
@@ -371,7 +390,6 @@ class Sidebar:
         return self.draw_field(self.inline_editor, row, x, width)
 
     def open_config_editor(self, kind: str) -> None:
-        self.display.cancel_resize()
         if self.config_popup:
             return
         path = self.keymap_path if kind == "shortcuts" else theme_path(self.theme_path)
@@ -379,11 +397,15 @@ class Sidebar:
             self.menu_message = "No keymap file; reopen without --no-keymap to edit shortcuts."
             return
         self.open_menu("json-settings")
+        look = {
+            "theme_state": self.theme.to_toml() if self.theme else None,
+            "colors": self.colors,
+        }
         try:
             self.config_popup = (
-                ConfigPopup(self.display, kind, None, keymap=self.keymap)
+                ConfigPopup(self.display, kind, None, keymap=self.keymap, **look)
                 if kind == "reference"
-                else ConfigPopup(self.display, kind, path)
+                else ConfigPopup(self.display, kind, path, **look)
             )
         except (OSError, RuntimeError) as error:
             self.close_menu()
@@ -480,12 +502,14 @@ class Sidebar:
     def open_menu(self, name: str, pending: str = "") -> None:
         self.clear_inline()
         self.remember()
+        # The workspace list and the workspace options are one menu.
+        name = "workspace" if name == "spaces" else name
         self.menu, self.pending, self.query = name, pending, ""
         self.selection.reset()
         self.menu_message = ""
         self.replace_name = False
         tab, pane = self.model.tab, self.model.pane
-        # Tab options own Return pane to shell, so they bind the same target as
+        # Tab options own Return to shell, so they bind the same target as
         # the chooser: a peer moving the pane must not redirect either command.
         self.attach_target = (
             (tab["id"], pane["id"], pane["agent"], pane.get("source_socket"))
@@ -606,14 +630,7 @@ class Sidebar:
         self.display.select_sidebar()
 
     def action(self, name: str) -> None:
-        resize = resize_action(name)
-        if not resize or self.config_popup:
-            self.display.cancel_resize()
         if self.config_popup:
-            return
-        if resize:
-            if self.display.resize_split(self.model.tab, *resize):
-                self.save()
             return
         if name == "copy-selection":
             self.display.copy_selection()
@@ -675,6 +692,7 @@ class Sidebar:
             "sidebar": self.focus_sidebar,
             "close-pane": self.close_pane,
             "close-tab": self.close_tab,
+            "show-agents": self.toggle_agents,
         }
         actions[name]()
 
@@ -829,52 +847,22 @@ class Sidebar:
         self.save()
         self.running = False
 
-    # The panel is drawn one cell inside the pane on every side: that cell is
-    # the outline, a rounded rectangle whose corners reveal the surface behind
-    # the pane. Everything else is drawn into ``body``, a window covering the
-    # interior, in the interior's own coordinates, so menus and editors keep
-    # their positions relative to the panel and only mouse input translates.
-    INSET = 1
+    # The panel fills its pane edge to edge: no inset, no outline of its own.
+    # tmux draws the one-column line between it and the content. Everything is
+    # drawn straight into the pane in its own coordinates.
+    INSET = 0
+    # Rows the bottom of the panel keeps: a blank row, Configure…, the
+    # workspace slots. Messages go to the status row under the panes.
+    FOOTER_ROWS = 3
 
     def size(self) -> tuple[int, int]:
-        """Rows and columns inside the outline: the space the panel lays out in."""
+        """Rows and columns of the pane: the space the panel lays out in."""
         height, width = self.screen.getmaxyx()
-        return max(0, height - 2 * self.INSET), max(0, width - 2 * self.INSET)
+        return max(0, height), max(0, width)
 
     def interior(self):
-        """The window the panel draws into, made anew for the current size."""
-        height, width = self.size()
-        if height < 1 or width < 1:
-            return self.screen
-        try:
-            body = self.screen.derwin(height, width, self.INSET, self.INSET)
-        except curses.error:
-            return self.screen
-        with contextlib.suppress(curses.error):
-            body.bkgdset(" ", self.style("normal"))
-        return body
-
-    def frame(self) -> None:
-        """Draw the outline: thin lines with rounded corners, on the surface.
-
-        The bottom-right cell is inserted rather than added, since curses
-        refuses to add a character in the last cell of the last row.
-        """
-        height, width = self.screen.getmaxyx()
-        if height < 2 or width < 2:
-            return
-        style = self.style("outline")
-        top = terminal_text("╭" + "─" * (width - 2), self.encoding)
-        bottom = terminal_text("╰" + "─" * (width - 2), self.encoding)
-        vertical = terminal_text("│", self.encoding)
-        with contextlib.suppress(curses.error):
-            self.screen.addnstr(0, 0, top, width - 1, style)
-            self.screen.insstr(0, width - 1, terminal_text("╮", self.encoding), style)
-            for row in range(1, height - 1):
-                self.screen.addnstr(row, 0, vertical, 1, style)
-                self.screen.insstr(row, width - 1, vertical, style)
-            self.screen.addnstr(height - 1, 0, bottom, width - 1, style)
-            self.screen.insstr(height - 1, width - 1, terminal_text("╯", self.encoding), style)
+        """The window the panel draws into: the pane itself."""
+        return self.screen
 
     def put(self, y: int, x: int, text: str, style: int = 0, width: int | None = None) -> None:
         height, columns = self.size()
@@ -887,6 +875,16 @@ class Sidebar:
                     min(width or columns, columns - x),
                     style,
                 )
+
+    def fill(self, y: int, style: int) -> None:
+        """Paint one whole row in a style, as the ground of what goes on it."""
+        self.put(y, 0, " " * self.size()[1], style)
+
+    def put_right(self, y: int, text: str, style: int, *, margin: int = 1) -> int:
+        """Text ending one cell before the right edge; returns its column."""
+        x = max(0, self.size()[1] - margin - cells(text))
+        self.put(y, x, text, style)
+        return x
 
     def button(
         self,
@@ -909,85 +907,163 @@ class Sidebar:
         if context:
             self.context_hits.append((y, x, x + width, context))
 
+    def row(
+        self,
+        label: str,
+        action: Callable,
+        *,
+        key: str | None = None,
+        kind: str | None = None,
+        right: str | None = None,
+        identity: str | None = None,
+        icon: str | None = None,
+        status: str | None = None,
+    ) -> tuple[str, Callable]:
+        """One menu row and what is drawn beside it.
+
+        ``key`` names the viewer action whose effective prefix key ends the
+        row; ``right`` is other text there, such as a toggle's value or why a
+        row is disabled; ``kind`` is ``danger``, ``disabled``, ``toggle`` or
+        ``workspace``; ``identity`` is a stable key for the selection.
+        """
+        meta: dict[str, str] = {}
+        if key:
+            meta["action"] = key
+        if kind:
+            meta["kind"] = kind
+        if right:
+            meta["right"] = right
+        if identity:
+            meta["key"] = identity
+        if icon:
+            meta["icon"] = icon
+        if status:
+            meta["status"] = status
+        self._meta[len(self._meta)] = meta
+        return label, action
+
     def _options(self, agents: dict) -> list[tuple[str, Callable]]:
         """Rows of the open menu as labels and callbacks. The menu content lives here."""
+        self._meta = {}
+        row = self.row
         if self.menu == "refresh":
             if not self.refresh_problem:
-                return [("Refresh viewer now", self.confirm_refresh)]
+                return [row("Refresh viewer now", self.confirm_refresh)]
             return []
         if self.menu == "agents":
             return [
-                (name, lambda name=name: self.attach(name))
+                row(name, lambda name=name: self.attach(name), identity="session:" + name)
                 for name in sorted(agents)
                 if self.query.casefold() in name.casefold()
             ]
-        if self.menu in {"spaces", "move"}:
+        if self.menu == "move":
             return [
-                (
+                row(
                     space["name"],
-                    lambda space=space: (
-                        self.transfer_tab(space)
-                        if self.menu == "move"
-                        else self.choose_workspace(space)
-                    ),
+                    lambda space=space: self.transfer_tab(space),
+                    kind="workspace",
+                    right=self.tab_count(space),
+                    identity="workspace:" + space["id"],
+                    icon=self.workspace_icon(space, index),
                 )
-                for space in self.workspace_options()
+                for index, space in enumerate(self.model.state["workspaces"])
+                if space != self.model.space
             ]
         if self.menu == "tab":
             # Pane actions live here rather than as sidebar buttons: the panel
             # keeps one plain list, and a split opens as a chooser anyway.
+            focused = self.model.state["focus"]
             return [
-                ("Rename tab", lambda: self.rename("rename-tab")),
-                ("Previous tab", lambda: self.next_tab(-1)),
-                ("Next tab", lambda: self.next_tab(1)),
-                ("Split right", lambda: self.split("right")),
-                ("Split below", lambda: self.split("below")),
-                (
-                    "Restore layout" if self.model.state["focus"] else "Focus one pane",
+                row("Rename tab", lambda: self.rename("rename-tab"), key="rename-tab"),
+                row("Split right", lambda: self.split("right"), key="split-right"),
+                row("Split below", lambda: self.split("below"), key="split-below"),
+                row("Attach session", lambda: self.open_menu("agents"), key="attach"),
+                row("Return to shell", lambda: self.attach(None)),
+                row(
+                    "Restore layout" if focused else "Focus one pane",
                     self.toggle_focus,
+                    key="focus",
                 ),
-                ("Previous pane", lambda: self.menu_next_pane(-1)),
-                ("Next pane", self.menu_next_pane),
-                ("Move tab up", lambda: self.move_tab(-1)),
-                ("Move tab down", lambda: self.move_tab(1)),
-                ("Move to workspace", lambda: self.open_menu("move")),
-                ("Attach session", lambda: self.open_menu("agents")),
-                ("Return pane to shell", lambda: self.attach(None)),
-                ("Close focused pane", self.close_pane),
-                ("Close tab", self.close_tab),
+                row(MENU_RULE, lambda: None),
+                row("Move up", lambda: self.move_tab(-1)),
+                row("Move down", lambda: self.move_tab(1)),
+                row("Move to workspace…", lambda: self.open_menu("move")),
+                row(MENU_RULE, lambda: None),
+                row("Close pane", self.close_pane, key="close-pane"),
+                row("Close tab", self.close_tab, key="close-tab", kind="danger"),
             ]
         if self.menu == "workspace":
+            # The chooser and the options in one menu: every workspace to
+            # switch to, then what can be done with the current one.
+            spaces = self.model.state["workspaces"]
+            rows = [
+                row(
+                    space["name"],
+                    lambda space=space: self.choose_workspace(space),
+                    kind="workspace",
+                    right=self.tab_count(space),
+                    identity="workspace:" + space["id"],
+                    icon=self.workspace_icon(space, index),
+                    status=f"Switch to {visible(space['name'])}",
+                )
+                for index, space in enumerate(spaces)
+            ]
+            current = self.model.space
+            if current["tabs"]:
+                blocked = "has tabs"
+            elif len(spaces) == 1:
+                blocked = "last one"
+            else:
+                blocked = None
             return [
-                ("Switch workspace", lambda: self.open_menu("spaces")),
-                ("New workspace", lambda: self.rename("new-workspace")),
-                ("Rename workspace", lambda: self.rename("rename-workspace")),
-                ("Set icon…", lambda: self.open_menu("icon")),
-                ("Delete empty workspace", self.delete_workspace),
+                *rows,
+                row(section("This workspace"), lambda: None),
+                row("Rename", lambda: self.rename("rename-workspace"), key="rename-workspace"),
+                row("Set icon…", lambda: self.open_menu("icon")),
+                row(
+                    "Delete",
+                    self.delete_workspace,
+                    kind="disabled" if blocked else "danger",
+                    right=blocked,
+                ),
+                row(MENU_RULE, lambda: None),
+                row(
+                    "New workspace",
+                    lambda: self.rename("new-workspace"),
+                    key="new-workspace",
+                    icon="+",
+                ),
             ]
         if self.menu == "icon":
             return [
                 *(
-                    (f"{glyph}  {label}", lambda glyph=glyph: self.set_icon(glyph))
+                    row(f"{glyph}  {label}", lambda glyph=glyph: self.set_icon(glyph))
                     for glyph, label in WORKSPACE_ICONS
                 ),
-                ("Number", lambda: self.set_icon(None)),
+                row("Number", lambda: self.set_icon(None)),
             ]
         if self.menu == "configure":
             # Everything infrequent in one place; leaving last, after a rule,
             # and named for what it does: shells and attached sessions keep running.
-            rows: list[tuple[str, Callable]] = [
-                ("Edit theme…", lambda: self.open_config_editor("colors")),
-                ("Edit shortcuts…", lambda: self.open_config_editor("shortcuts")),
-                ("View shortcuts…", lambda: self.open_config_editor("reference")),
-                ("Refresh viewer…", self.refresh_viewer),
+            rows = [
+                row("Edit theme…", lambda: self.open_config_editor("colors")),
+                row("Edit shortcuts…", lambda: self.open_config_editor("shortcuts")),
+                row("View shortcuts…", lambda: self.open_config_editor("reference")),
+                row("Refresh viewer…", self.refresh_viewer, key="refresh-viewer"),
             ]
             if self.roster(agents) is not None:
-                mark = "x" if self.show_agents else " "
                 rows += [
-                    (f"[{mark}] Show agent status", self.toggle_agents),
-                    ("Agent status…", lambda: self.open_menu("status")),
+                    row(MENU_RULE, lambda: None),
+                    row(
+                        "Show agents",
+                        self.toggle_agents,
+                        key="show-agents",
+                        kind="toggle",
+                        right="on" if self.show_agents else "off",
+                    ),
+                    row("Agent status…", lambda: self.open_menu("status")),
                 ]
-            return [*rows, (MENU_RULE, lambda: None), ("Detach", self.quit)]
+            return [*rows, row(MENU_RULE, lambda: None), row("Detach", self.quit, key="quit")]
         if self.menu == "status":
             return self.status_options()
         return []
@@ -1001,22 +1077,27 @@ class Sidebar:
 
         roster = self.roster()
         if roster is None:
-            rows = [("No agent source connected", nothing)]
+            rows = [self.row("No agent source connected", nothing)]
         elif roster.stale:
-            rows = [("Roster unavailable", nothing)]
+            rows = [self.row("Roster unavailable", nothing)]
             if roster.error:
-                rows += [(line, nothing) for line in self.wrap(roster.error)]
+                rows += [self.row(line, nothing) for line in self.wrap(roster.error)]
         else:
             entries = self.roster_entries(roster)
             rows = [
-                (f"{self.symbol(state)} {name} · {self.state_name(state)}", nothing)
+                self.row(f"{self.symbol(state)} {name} · {self.state_name(state)}", nothing)
                 for name, state in entries
-            ] or [("No active agents", nothing)]
+            ] or [self.row("No active agents", nothing)]
             offline = len(roster.sessions) - len(entries)
             if offline:
-                rows.append((f"{offline} offline", nothing))
-        legend = [(f"{self.glyph(symbol)} {text}", nothing) for symbol, text in LEGEND]
-        return [*rows, (MENU_RULE, nothing), *legend]
+                rows.append(self.row(f"{offline} offline", nothing))
+        legend = [self.row(f"{self.glyph(symbol)} {text}", nothing) for symbol, text in LEGEND]
+        return [*rows, self.row(MENU_RULE, nothing), *legend]
+
+    @staticmethod
+    def tab_count(space: dict) -> str:
+        count = len(space["tabs"])
+        return "empty" if not count else "1 tab" if count == 1 else f"{count} tabs"
 
     def wrap(self, text: str) -> list[str]:
         return textwrap.wrap(text, width=max(1, self.size()[1] - 2), break_on_hyphens=False)
@@ -1046,17 +1127,23 @@ class Sidebar:
         added rows stay selectable rather than disappearing.
         """
         options = self._options(agents)
-        spaces = self.workspace_options() if self.menu in {"spaces", "move"} else []
-        if len(spaces) == len(options) and spaces:
-            keys = ["workspace:" + space["id"] for space in spaces]
-        elif self.menu == "agents":
-            keys = ["session:" + label for label, _ in options]
-        elif self.menu in {"configure", "status"}:
-            keys = [f"row:{index}" for index in range(len(options))]
-        else:
-            keys = [f"row:{index}:{label}" for index, (label, _) in enumerate(options)]
-        rows = zip(keys, options, strict=True)
-        return [Entry(key, label, action) for key, (label, action) in rows]
+        entries = []
+        for index, (label, action) in enumerate(options):
+            meta = self._meta.get(index, {})
+            if "key" in meta:
+                key = meta["key"]
+            elif self.menu in {"configure", "status"}:
+                key = f"row:{index}"
+            else:
+                key = f"row:{index}:{label}"
+            entries.append(Entry(key, label, action, meta))
+        return entries
+
+    def menu_start(self) -> int:
+        """The first row of the open menu's options."""
+        if self.menu in {"agents", "name"}:
+            return 5
+        return 3 + len(self.notes(self.size()[1]))
 
     def menu_rows(
         self, agents: dict | None = None, *, drawn: bool = True
@@ -1069,16 +1156,15 @@ class Sidebar:
         """
         if agents is None:
             agents = self.source.snapshot()[0]
-        start = 5 if self.menu == "agents" else 4 + max(0, len(self.notes(self.size()[1])) - 1)
-        available = max(1, self.size()[0] - start - 3)
+        start = self.menu_start()
+        available = max(1, self.size()[0] - start - self.FOOTER_ROWS)
         rows = self.selection.show(self.menu_entries(agents), available, drawn=drawn)
         return rows, start
 
     def roomy(self) -> bool:
         """Whether the panel is large enough to draw a menu instead of its warning.
 
-        Measured inside the outline: a pane of sixteen rows, the floor the
-        panel has always had, leaves fourteen rows of interior.
+        Fourteen rows and sixteen columns, the floor the panel has always had.
         """
         height, width = self.size()
         return height >= 14 and width >= 16
@@ -1109,23 +1195,26 @@ class Sidebar:
             break_on_hyphens=False,
         )
 
-    def tab_shortcut_hint(self, width: int) -> str:
-        """The selected action's effective keys, never a clipped key sequence."""
-        entry = self.selection.entry() if self.menu == "tab" else None
-        action = TAB_SHORTCUTS.get(entry.label) if entry else None
-        if not action:
-            return ""
-        command = self.shortcut_hints == "command"
-        keys = self.keymap.label(action, command=command)
-        if command:
-            hint = keys or "No direct key"
-        else:
-            hint = f"{tmux_key_label(self.keymap.prefix)}, then {keys}" if keys else "No prefix key"
-        return hint if cells(hint) <= width - 2 else "View shortcuts"
+    def key_label(self, action: str) -> str:
+        """The effective prefix key of an action, as a menu row's right end shows it."""
+        keys = self.keymap.label(action)
+        return keys.split(" / ")[0] if keys else ""
+
+    def action_keys(self, action: str) -> str:
+        """Every way to reach an action, for the status row: the prefix key
+        and, when a terminal profile supplies one, the direct key."""
+        parts = []
+        prefix = self.keymap.label(action)
+        if prefix:
+            parts.append(f"{short_key_label(self.keymap.prefix)} {prefix}")
+        direct = self.keymap.label(action, command=True)
+        if direct:
+            parts.append(f"{direct} in Ghostty")
+        return " · ".join(parts)
 
     def command_rows(self, start: int) -> list[str]:
         lines = self.command_lines()
-        available = max(1, self.size()[0] - start - 3)
+        available = max(1, self.size()[0] - start - self.FOOTER_ROWS)
         self.command_offset = min(max(0, self.command_offset), max(0, len(lines) - available))
         return lines[self.command_offset : self.command_offset + available]
 
@@ -1140,27 +1229,161 @@ class Sidebar:
             lines = (self.refresh_problem, "Nothing was closed.")
         else:
             lines = self.relaunch.notes()
-        lines = (*lines, "Esc close" if self.refresh_problem else "Enter refresh · Esc cancel")
         wrapped = []
         for line in lines:
             wrapped += textwrap.wrap(line, width=max(1, width - 2), break_on_hyphens=False)
-        # Keep room for the option row and the scroll controls on short screens.
-        return tuple(wrapped[: max(1, self.size()[0] - 9)])
+        # Keep room for the option row and the footer on short screens.
+        return tuple(wrapped[: max(1, self.size()[0] - 8)])
 
     def status_text(self) -> str:
-        """What the message row shows, or nothing: saving is quiet."""
+        """What the status row's right slot says instead of the light, or nothing."""
         error = self.source.snapshot()[1] if self.source else ""
         if error or self.message:
             return error or self.message
+        if self.menu_message:
+            return self.menu_message
         if self.display.small and self.model.tab:
             return "Narrow: focus view"
         return ""
 
     def footer_rows(self) -> int:
-        """Rows the bottom of the panel keeps: a blank row that carries the
-        message when there is one, Configure…, a blank row, the workspace
-        icons, and a blank row before the outline."""
-        return 5
+        return self.FOOTER_ROWS
+
+    # -- the status row ------------------------------------------------------
+
+    MENU_TITLES = {
+        "agents": "Attach session",
+        "move": "Move to workspace",
+        "tab": "Tab",
+        "workspace": "Workspaces",
+        "icon": "Workspace icon",
+        "configure": "Configure",
+        "json-settings": "Opening window…",
+        "status": "Agent status",
+        "name": "Type a name",
+        "refresh": "Refresh viewer",
+    }
+
+    def menu_title(self) -> str:
+        if self.menu == "name":
+            return {
+                "new-workspace": "New workspace",
+                "rename-tab": "Rename tab",
+                "rename-workspace": "Rename workspace",
+            }.get(self.pending, "Type a name")
+        return self.MENU_TITLES.get(self.menu or "", "")
+
+    @staticmethod
+    def _escape(text: str) -> str:
+        """Text for a tmux format: nothing in it may start a directive."""
+        return visible(text).replace("#", "##")
+
+    def _tmux_fg(self, name: str) -> str:
+        return self.status_colors.get(name, "default")
+
+    def status_slots(self, rows: list[Entry] | None = None) -> tuple[str, str, str]:
+        """The three slots of the status row as tmux format text: the context
+        on the left, the hints for the current mode in the centre, the
+        agents toggle and the saved-state light on the right."""
+        text, muted, accent = (self._tmux_fg(name) for name in ("normal", "muted", "accent"))
+        prefix = short_key_label(self.keymap.prefix)
+        esc = self._escape
+
+        def named(label: str, detail: str = "") -> str:
+            left = f"#[fg={text}]{esc(label)}#[fg={muted}]"
+            return left + (f" · {esc(detail)}" if detail else "")
+
+        def hint(action: str, word: str) -> str:
+            keys = self.keymap.label(action)
+            return f"{prefix} {keys.split(' / ')[0]} {word}" if keys else ""
+
+        popup = self.config_popup
+        if popup is not None:
+            kind = getattr(popup, "kind", "")
+            if kind == "reference":
+                left = named("Shortcuts", "active in this viewer")
+                centre = "esc close"
+            else:
+                left = named(
+                    "Edit theme" if kind == "colors" else "Edit shortcuts",
+                    "draft, not applied until Save",
+                )
+                centre = "F2 save · F10 cancel · F1 help"
+        elif self.inline_editor:
+            left = named("Rename", "type a new name")
+            centre = "⏎ save · esc cancel"
+        elif self.menu and self.menu != "inline-name":
+            entry = self.selection.entry() if rows else None
+            if entry is not None and not passive(entry.label):
+                action = entry.meta.get("action")
+                label = entry.meta.get("status") or entry.label
+                keys = self.action_keys(action) if action else ""
+                left = named(label, keys) if keys else named(label)
+            else:
+                left = named(self.menu_title())
+            if self.menu == "agents":
+                centre = "type to filter · ↑↓ move · ⏎ open · esc back"
+            elif self.menu == "name":
+                centre = "⏎ save · esc cancel"
+            elif self.menu == "refresh":
+                centre = "esc close" if self.refresh_problem else "⏎ refresh · esc cancel"
+            else:
+                centre = "↑↓ move · ⏎ open · esc back"
+        else:
+            tab = self.model.tab
+            if tab:
+                members = leaves(tab["tree"])
+                index = next((i for i, pane in enumerate(members) if pane["id"] == tab["focus"]), 0)
+                left = named(
+                    self.model.space["name"],
+                    f"{visible(tab['name'])} · pane {index + 1}/{len(members)}",
+                )
+                hints = [
+                    hint(a, w)
+                    for a, w in (
+                        ("new-tab", "new"),
+                        ("split-right", "split"),
+                        ("attach", "attach"),
+                        ("focus", "focus"),
+                    )
+                ]
+            else:
+                left = named(self.model.space["name"], "no tabs")
+                hints = [
+                    hint(a, w)
+                    for a, w in (
+                        ("new-tab", "new"),
+                        ("workspaces", "workspaces"),
+                        ("attach", "attach"),
+                    )
+                ]
+            centre = " · ".join(h for h in hints if h)
+        right = ""
+        if self.roster() is not None:
+            shown = self.show_agents
+            keys = self.keymap.label("show-agents").split(" / ")[0]
+            right = (
+                "#[range=user|agents]"
+                + (f"#[fg={text}]agents shown" if shown else f"#[fg={muted}]agents hidden")
+                + (f" #[fg={accent}]{prefix} {keys}" if keys else "")
+                + "#[norange]  "
+            )
+        status = self.status_text()
+        if status:
+            bold = ",bold" if failed(status) else ""
+            right += f"#[fg={accent}{bold}]{esc(status)}"
+        else:
+            right += f"#[fg={self._tmux_fg('ok')}]●"
+        return left, centre, right
+
+    def status_line(self, rows: list[Entry] | None = None) -> str:
+        left, centre, right = self.status_slots(rows)
+        muted = self._tmux_fg("muted")
+        return (
+            f"#[fg={muted}]#[align=left]{left}"
+            f"#[fg={muted}]#[align=centre]{centre}"
+            f"#[fg={muted}]#[align=right]{right}"
+        )
 
     # -- the agent roster --------------------------------------------------
 
@@ -1206,6 +1429,14 @@ class Sidebar:
     def symbol(self, state: str) -> str:
         return self.glyph(STATE_SYMBOLS.get(state, "?"))
 
+    def symbol_style(self, symbol: str, *, on: str | None = None) -> int:
+        """Working is the accent, needs-you the danger color, the rest muted."""
+        if symbol == self.glyph("▶"):
+            return self.style("accent", on)
+        if symbol == "!":
+            return self.style("danger", on) | curses.A_BOLD
+        return self.style("muted", on)
+
     @staticmethod
     def state_name(state: str) -> str:
         return STATE_NAMES.get(state, state.replace("_", " "))
@@ -1216,17 +1447,17 @@ class Sidebar:
         roster = self.roster()
         if roster is None or not self.show_agents:
             return 0
-        room = self.size()[0] - 3 - self.footer_rows() - MIN_TAB_ROWS
+        room = self.size()[0] - 3 - self.FOOTER_ROWS - MIN_TAB_ROWS
         if room < 2:
             return 0
         wanted = 1 + max(1, min(MAX_ROSTER_ROWS, len(self.roster_entries(roster))))
         return min(wanted, room)
 
     def draw_roster(self, top: int, rows: int, width: int, roster: Snapshot) -> None:
-        """The section: its label, then one row per active agent — a symbol
-        in a fixed slot and the name — or one quiet row saying why not."""
+        """The section: its label and count, then one row per active agent — a
+        symbol in a fixed slot and the name — or one quiet row saying why not."""
         muted = self.style("muted")
-        self.put(top, 1, "Agents", muted)
+        self.put(top, 1, "AGENTS", muted)
         visible_rows = rows - 1
         self.roster_span = (top + 1, top + rows)
         if roster.stale:
@@ -1237,23 +1468,18 @@ class Sidebar:
             self.put(top + 1, 1, "No active agents", muted, width - 2)
             return
         self.roster_offset = min(self.roster_offset, max(0, len(entries) - visible_rows))
+        count = str(len(entries))
         if len(entries) > visible_rows:
-            count = str(len(entries))
             self.put(top, width - 6 - len(count), count, muted)
             self.button(top, "↑", lambda: self.scroll_roster(-1), x=width - 5, width=2, style=muted)
             self.button(top, "↓", lambda: self.scroll_roster(1), x=width - 3, width=2, style=muted)
+        else:
+            self.put_right(top, count, muted)
         shown = entries[self.roster_offset : self.roster_offset + visible_rows]
         for index, (name, state) in enumerate(shown):
             row = top + 1 + index
             symbol = self.symbol(state)
-            style = (
-                self.style("accent") | curses.A_BOLD
-                if symbol == "!"
-                else self.style("normal")
-                if symbol == self.glyph("▶")
-                else muted
-            )
-            self.put(row, 1, symbol, style, 1)
+            self.put(row, 1, symbol, self.symbol_style(symbol), 1)
             self.put(row, 3, visible(name), self.style("normal"), width - 4)
             self.hits.append((row, 0, width, lambda: self.open_menu("status")))
 
@@ -1267,7 +1493,8 @@ class Sidebar:
 
     def icon_row(self, row: int, width: int) -> None:
         """One-click workspace switching: fixed three-cell slots, the current
-        one filled; when the row is full, the last slot opens the full list."""
+        one filled with its glyph in the accent; when the row is full, the
+        last slot opens the full list."""
         spaces = self.model.state["workspaces"]
         slots = max(1, (width - 2) // 4)
         overflow = len(spaces) > slots
@@ -1285,13 +1512,13 @@ class Sidebar:
                 width=3,
                 active=active,
                 context=lambda space=space: self.context_workspace(space),
-                style=None if active else self.style("muted"),
+                style=self.style("accent", "active") if active else self.style("muted"),
             )
         if overflow:
             self.button(
                 row,
                 " … ",
-                lambda: self.open_menu("spaces"),
+                lambda: self.open_menu("workspace"),
                 x=1 + len(shown) * 4,
                 width=3,
                 style=self.style("muted"),
@@ -1300,7 +1527,7 @@ class Sidebar:
     def tab_capacity(self) -> int:
         """One row per tab: the heading, a blank row and the section label sit
         above, the roster and the footer below."""
-        return max(1, self.size()[0] - 3 - self.footer_rows() - self.roster_rows())
+        return max(1, self.size()[0] - 3 - self.FOOTER_ROWS - self.roster_rows())
 
     def draw(self) -> None:
         self._frame_roster = _UNREAD
@@ -1324,6 +1551,7 @@ class Sidebar:
             else:
                 self.selection.hide()
         command_rows = self.command_rows(start)
+        status = self.status_line(rows)
         # Skip identical frames: idle sidebar does not repaint the terminal.
         frame = (
             repr(self.model.state),
@@ -1348,10 +1576,12 @@ class Sidebar:
             self.menu_message,
             command_rows,
             self.display.small,
+            status,
         )
         if frame == self.last_frame:
             return
         self.last_frame = frame
+        self.display.set_status(status)
         self.screen.erase()
         self.body = self.interior()
         with contextlib.suppress(curses.error):
@@ -1361,199 +1591,246 @@ class Sidebar:
         self.hits.clear()
         self.context_hits.clear()
         self.roster_span = None
-        self.frame()
         if not self.roomy():
             self.put(0, 0, "Enlarge terminal", self.style("normal"))
             self.button(2, "Detach", self.quit)
             self.screen.refresh()
             return
         if self.menu and self.menu != "inline-name":
-            self.button(0, "‹ Back", self.show, style=self.style("accent"))
-            titles = {
-                "agents": "Attach to selected pane",
-                "spaces": "Workspaces",
-                "move": "Move tab to",
-                "tab": "Tab options",
-                "workspace": "Workspace options",
-                "icon": "Workspace icon",
-                "configure": "Configure",
-                "json-settings": "Opening window…",
-                "status": "Agent status",
-                "name": "Type a name",
-                "refresh": "Refresh viewer",
-            }
-            self.put(2, 1, titles[self.menu], self.style("normal") | curses.A_BOLD)
-            notes = self.notes(width)
-            for index, line in enumerate(notes):
-                self.put(3 + index, 1, line, self.style("accent"))
-            if self.menu in {"name", "agents"}:
-                self.put(3, 1, "> ", self.style("active"))
-                style = self.style("active") | (curses.A_REVERSE if self.replace_name else 0)
-                self.put(3, 3, self.query[-(width - 5) :], style)
-            if self.menu == "name":
-                self.button(5, "Save name", self.accept_name)
-            else:
-                for row, line in enumerate(command_rows, start):
-                    self.put(row, 1, line, self.style("normal"))
-                for row, entry in enumerate(rows, start):
-                    if entry.label == MENU_RULE:
-                        self.put(row, 1, "─" * (width - 2), self.style("muted"))
-                        continue
-                    self.button(
-                        row,
-                        entry.label,
-                        entry.action,
-                        active=self.offset + row - start == self.selected,
-                    )
-                if not rows and self.menu != "refresh":
-                    self.put(
-                        start,
-                        1,
-                        "No matching sessions" if self.menu == "agents" else "No entries",
-                        self.style("normal"),
-                    )
-                self.button(height - 2, "↑", lambda: self.scroll(-1), width=5)
-                self.button(height - 2, "↓", lambda: self.scroll(1), x=8, width=5)
-                if width >= 24:
-                    hint = "read · Esc" if command_rows else "↵ open · Esc"
-                    self.put(height - 2, 15, hint, self.style("accent"))
-                hint = self.tab_shortcut_hint(width)
-                if hint:
-                    self.put(height - 3, 1, hint, self.style("muted"))
-            if self.menu_message:
-                self.put(height - 1, 1, self.menu_message, self.style("accent"))
+            cursor = self.draw_menu(rows, start, command_rows, width, height)
         else:
-            # The heading is the workspace chooser: the icon and name, a
-            # chevron, and one click to switch, create or rename workspaces.
-            # A double click renames in place.
-            workspace_edit = bool(self.inline_editor and self.inline_target[1] is None)
-            tab_edit = bool(self.inline_editor and self.inline_target[1] is not None)
-            name_width = width - 5
-            self.name_hits.append((0, 1, 1 + name_width, "workspace:" + self.model.space["id"]))
-            header = self.style("normal") | curses.A_BOLD
-            icon = self.model.space.get("icon")
-            icon = icon if isinstance(icon, str) and icon.isprintable() and icon else ""
-            title = visible(self.model.space["name"])
-            room = name_width - (len(icon) + 1 if icon else 0)
-            if len(title) > room:
-                title = title[: max(0, room - 1)] + "…"
-            if icon and not workspace_edit:
-                self.put(0, 1, icon, header, len(icon))
-                self.put(0, 1 + len(icon) + 1, title, header, room)
-            else:
-                self.put(0, 1, title, header, name_width)
-            if workspace_edit:
-                cursor = self.draw_inline(0, 1, name_width)
-            self.context_hits.append(
-                (0, 1, 1 + name_width, lambda: self.context_workspace(self.model.space))
-            )
-            # The chevron opens the chooser: switch, create, rename or delete.
+            cursor = self.draw_home(roster, width, height)
+        # The bottom, from the last row up: the workspace slots, Configure…,
+        # and a blank row. The Configure menu names the versions there instead.
+        bottom = height - self.FOOTER_ROWS
+        if self.menu == "configure":
+            if self._versions is None:
+                self._versions = versions()
+            self.put(bottom + 1, 1, self._versions, self.style("muted"))
+        else:
             self.button(
-                0,
-                " ▾",
-                lambda: self.open_menu("workspace"),
-                x=width - 3,
-                width=2,
+                bottom + 1,
+                "Configure…",
+                lambda: self.open_menu("configure"),
                 style=self.style("muted"),
-                context=lambda: self.context_workspace(self.model.space),
             )
-            hint = "Enter save · Esc cancel" if width >= 25 else "↵ save · Esc cancel"
-            editing = workspace_edit or tab_edit
-            # The row under the heading is blank; while a name is edited in
-            # place it carries the editing hint. The section label keeps the
-            # add button and, when the list overflows, its scroll arrows, all
-            # on the right inset.
-            if editing:
-                self.put(1, 1, hint, self.style("accent"))
-            self.put(2, 1, "tabs", self.style("muted"))
-            self.button(
-                2,
-                "  +",
-                self.new_tab,
-                x=width - 5,
-                width=4,
-                style=self.style("accent") | curses.A_BOLD,
-            )
-            tab = self.model.tab
-            tabs = self.model.space["tabs"]
-            status = self.status_text()
-            available = self.tab_capacity()
-            self.tab_offset = min(self.tab_offset, max(0, len(tabs) - available))
-            if len(tabs) > available:
-                muted = self.style("muted")
-                self.button(2, "↑", lambda: self.scroll(-1), x=width - 9, width=2, style=muted)
-                self.button(2, "↓", lambda: self.scroll(1), x=width - 7, width=2, style=muted)
-            row = 3
-            for index, item in enumerate(
-                tabs[self.tab_offset : self.tab_offset + available], self.tab_offset
-            ):
-
-                def action(item=item):
-                    self.choose_tab(item)
-
-                def context(item=item):
-                    self.context_tab(item)
-
-                members = leaves(item["tree"])
-                active = item == tab
-                # The row is one run so the selection reads as a bar; the text
-                # keeps one cell of air from the interior's edge on each side.
-                # The selected row also carries the tab's menu behind an
-                # ellipsis on the right, before its pane count.
-                prefix = f" {'▶' if active else ' '} {index + 1} "
-                count = str(len(members))
-                tail = 5 if active else 2
-                room = width - len(prefix) - len(count) - tail
-                name = visible(item["name"])
-                if len(name) > room:
-                    name = name[: max(0, room - 1)] + "…"
-                style = self.style("active" if active else "normal")
-                self.put(row, 0, (prefix + name).ljust(width), style, width)
-                self.hits.append((row, 0, width - 3 if active else width, action))
-                self.context_hits.append((row, 0, width, context))
-                if not active:
-                    # At rest the number is a secondary detail beside the name.
-                    self.put(row, 3, str(index + 1), self.style("muted"))
-                self.put(
-                    row,
-                    width - len(count) - (4 if active else 1),
-                    count,
-                    self.style("active" if active else "muted"),
-                )
-                self.name_hits.append((row, len(prefix), len(prefix) + room, item["id"]))
-                editing_this = active and tab_edit and self.inline_target[1] == item["id"]
-                if editing_this:
-                    cursor = self.draw_inline(row, len(prefix), room)
-                if active and not editing_this:
-                    self.button(
-                        row,
-                        "⋯",
-                        lambda: self.open_menu("tab"),
-                        x=width - 3,
-                        width=2,
-                        style=style,
-                    )
-                row += 1
-            if not tabs:
-                self.put(3, 1, "No tabs yet", self.style("muted"))
-                self.button(4, "Open a terminal +", self.new_tab)
-            # The bottom, from the outline up: a blank row, the workspace
-            # icons, a blank row, Configure…, then a row that is blank unless
-            # there is something to say. The roster, when shown, ends there.
-            bottom = height - self.footer_rows()
-            roster_rows = self.roster_rows()
-            if roster_rows and roster is not None:
-                self.draw_roster(bottom - roster_rows, roster_rows, width, roster)
-            if status:
-                self.put(bottom, 1, status, self.message_style(status, bool(error or self.message)))
-            self.button(bottom + 1, "Configure…", lambda: self.open_menu("configure"))
-            self.icon_row(bottom + 3, width)
+        self.icon_row(bottom + 2, width)
         if cursor:
             with contextlib.suppress(curses.error):
                 curses.curs_set(1)
                 self.body.move(*cursor)
                 self.body.cursyncup()
         self.screen.refresh()
+
+    def draw_menu(self, rows, start, command_rows, width, height):
+        """A menu in place of the tab list: Back on the header bar, the
+        context label, then the rows with their keys at the right end."""
+        cursor = None
+        muted = self.style("muted")
+        self.fill(0, self.style("header"))
+        self.button(0, "‹ Back", self.show, width=7, style=self.style("accent", "header"))
+        self.put_right(0, "esc", self.style("muted", "header"))
+        title = self.menu_title()
+        if self.menu == "tab" and self.model.tab:
+            tabs = self.model.space["tabs"]
+            number = tabs.index(self.model.tab) + 1
+            self.put(2, 1, "TAB · ", muted)
+            self.put(
+                2, 7, f"{number} {visible(self.model.tab['name'])}", self.style("normal"), width - 8
+            )
+        else:
+            self.put(2, 1, title.upper(), muted)
+        notes = self.notes(width)
+        for index, line in enumerate(notes):
+            self.put(3 + index, 1, line, self.style("accent"))
+        if self.menu in {"name", "agents"}:
+            self.put(3, 1, "›", self.style("accent"))
+            style = self.style("normal") | (curses.A_REVERSE if self.replace_name else 0)
+            shown = self.query[-(width - 5) :]
+            self.put(3, 3, shown, style)
+            if not self.replace_name:
+                self.put(3, 3 + cells(shown), " ", self.style("normal") | curses.A_REVERSE)
+        if self.menu == "name":
+            self.button(5, "Save name", self.accept_name, style=self.style("accent"))
+            return cursor
+        for row, line in enumerate(command_rows, start):
+            self.put(row, 1, line, self.style("normal"))
+        for row, entry in enumerate(rows, start):
+            if entry.label == MENU_RULE:
+                self.put(row, 1, "─" * (width - 2), self.style("outline"))
+            elif entry.label.startswith(LABEL):
+                self.put(row, 1, entry.label[len(LABEL) :].upper(), muted)
+            else:
+                self.draw_menu_row(row, entry, self.offset + row - start == self.selected, width)
+        if not rows and self.menu != "refresh":
+            self.put(
+                start,
+                1,
+                "No matching sessions" if self.menu == "agents" else "No entries",
+                muted,
+            )
+        return cursor
+
+    def draw_menu_row(self, row: int, entry: Entry, active: bool, width: int) -> None:
+        """One choice: a two-cell gutter carrying the marker on the selected
+        row, the label, and the key or value right-aligned in muted."""
+        meta = entry.meta
+        kind = meta.get("kind")
+        on = "active" if active else None
+        if kind == "danger":
+            text = self.style("danger", on)
+        elif kind == "disabled":
+            text = self.style("muted", on)
+        else:
+            text = self.style("active") if active else self.style("normal")
+        if active:
+            self.fill(row, self.style("active"))
+            text |= curses.A_BOLD
+        icon = meta.get("icon")
+        if icon:
+            current = kind == "workspace" and entry.key == "workspace:" + self.model.space["id"]
+            style = self.style("accent", on) if current or icon == "+" else self.style("muted", on)
+            self.put(row, 1, icon, style, 1)
+            if current:
+                text |= curses.A_BOLD
+        elif active:
+            self.put(row, 1, "▶", self.style("accent", "active"), 1)
+        right = meta.get("right") or (self.key_label(meta["action"]) if meta.get("action") else "")
+        right_style = self.style("accent", on) if kind == "toggle" else self.style("muted", on)
+        room = width - 4 - (cells(right) + 1 if right else 0)
+        label = visible(entry.label)
+        if right and cells(label) > room and kind == "workspace":
+            # The name matters more than its tab count: keep the name whole.
+            right, room = "", width - 4
+        if cells(label) > room:
+            label = label[: max(0, room - 1)] + "…"
+        self.put(row, 3, label, text, max(1, room))
+        if right:
+            self.put_right(row, right, right_style)
+        self.hits.append((row, 0, width, entry.action))
+
+    def draw_home(self, roster, width, height):
+        """The workspace heading, the tab list, the roster."""
+        cursor = None
+        muted = self.style("muted")
+        # The heading is the workspace chooser: the icon and name, a
+        # chevron, and one click to switch, create or rename workspaces.
+        # A double click renames in place.
+        workspace_edit = bool(self.inline_editor and self.inline_target[1] is None)
+        tab_edit = bool(self.inline_editor and self.inline_target[1] is not None)
+        self.fill(0, self.style("header"))
+        name_width = width - 4
+        self.name_hits.append((0, 1, 1 + name_width, "workspace:" + self.model.space["id"]))
+        header = self.style("header") | curses.A_BOLD
+        icon = self.model.space.get("icon")
+        icon = icon if isinstance(icon, str) and icon.isprintable() and icon else ""
+        title = visible(self.model.space["name"])
+        room = name_width - (len(icon) + 1 if icon else 0)
+        if len(title) > room:
+            title = title[: max(0, room - 1)] + "…"
+        if icon and not workspace_edit:
+            self.put(0, 1, icon, self.style("accent", "header") | curses.A_BOLD, len(icon))
+            self.put(0, 1 + len(icon) + 1, title, header, room)
+        else:
+            self.put(0, 1, title, header, name_width)
+        if workspace_edit:
+            cursor = self.draw_inline(0, 1, name_width)
+        self.context_hits.append(
+            (0, 1, 1 + name_width, lambda: self.context_workspace(self.model.space))
+        )
+        # The chevron opens the chooser: switch, create, rename or delete.
+        self.button(
+            0,
+            " ▾",
+            lambda: self.open_menu("workspace"),
+            x=width - 3,
+            width=2,
+            style=self.style("muted", "header"),
+            context=lambda: self.context_workspace(self.model.space),
+        )
+        hint = "Enter save · Esc cancel" if width >= 25 else "↵ save · Esc cancel"
+        # The row under the heading is blank; while a name is edited in
+        # place it carries the editing hint. The section label keeps the
+        # add glyph and, when the list overflows, its scroll arrows, at the
+        # right end.
+        if workspace_edit or tab_edit:
+            self.put(1, 1, hint, self.style("accent"))
+        self.put(2, 1, "TABS", muted)
+        self.button(
+            2,
+            "  +",
+            self.new_tab,
+            x=width - 4,
+            width=3,
+            style=self.style("accent") | curses.A_BOLD,
+        )
+        tab = self.model.tab
+        tabs = self.model.space["tabs"]
+        available = self.tab_capacity()
+        self.tab_offset = min(self.tab_offset, max(0, len(tabs) - available))
+        if len(tabs) > available:
+            self.button(2, "↑", lambda: self.scroll(-1), x=width - 8, width=2, style=muted)
+            self.button(2, "↓", lambda: self.scroll(1), x=width - 6, width=2, style=muted)
+        row = 3
+        for index, item in enumerate(
+            tabs[self.tab_offset : self.tab_offset + available], self.tab_offset
+        ):
+
+            def action(item=item):
+                self.choose_tab(item)
+
+            def context(item=item):
+                self.context_tab(item)
+
+            members = leaves(item["tree"])
+            active = item == tab
+            on = "active" if active else None
+            # The row is one run so the selection reads as a bar: the number,
+            # the name, then one glyph per pane and, on the selected row, the
+            # tab's menu behind an ellipsis at the right end.
+            number = str(index + 1)
+            glyphs = "▮" * min(len(members), 6)
+            tail = cells(glyphs) + (3 if active else 1)
+            room = width - 2 - len(number) - tail - 1
+            name = visible(item["name"])
+            if cells(name) > room:
+                name = name[: max(0, room - 1)] + "…"
+            if active:
+                self.fill(row, self.style("active"))
+            self.put(row, 1, number, self.style("accent", "active") if active else muted)
+            name_x = 2 + len(number)
+            self.put(
+                row,
+                name_x,
+                name,
+                (self.style("active") | curses.A_BOLD) if active else self.style("normal"),
+                room,
+            )
+            self.hits.append((row, 0, width - 3 if active else width, action))
+            self.context_hits.append((row, 0, width, context))
+            self.put(row, width - tail, glyphs, self.style("muted", on))
+            self.name_hits.append((row, name_x, name_x + room, item["id"]))
+            editing_this = active and tab_edit and self.inline_target[1] == item["id"]
+            if editing_this:
+                cursor = self.draw_inline(row, name_x, room)
+            if active and not editing_this:
+                self.button(
+                    row,
+                    "⋯",
+                    lambda: self.open_menu("tab"),
+                    x=width - 2,
+                    width=1,
+                    style=self.style("muted", "active"),
+                )
+            row += 1
+        if not tabs:
+            self.put(3, 3, "no tabs yet", muted)
+            self.hits.append((3, 0, width, self.new_tab))
+        bottom = height - self.FOOTER_ROWS
+        roster_rows = self.roster_rows()
+        if roster_rows and roster is not None:
+            self.draw_roster(bottom - roster_rows, roster_rows, width, roster)
+        return cursor
 
     def scroll(self, amount: int) -> None:
         self.clear_inline()
@@ -1585,7 +1862,6 @@ class Sidebar:
         elif left or right:
             height, width = self.size()
             if not (0 <= x < width and 0 <= y < height):
-                # The outline itself is not a control.
                 return
             field = next((h for h in self.name_hits if h[0] == y and h[1] <= x < h[2]), None)
             edit_key = (

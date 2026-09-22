@@ -28,9 +28,10 @@ DEFAULT = -1
 # row reordering and width changes.
 ANCHORS = {
     "title": "Workspace",
-    "muted": "tabs",
-    "active": "▶",
-    # The add button on the tabs label row; the detail row is secondary text now.
+    "muted": "TABS",
+    # The selected tab's name, bold on the selection ground.
+    "active": "Tab ",
+    # The add glyph on the tabs label row.
     "accent": "+",
 }
 # The workspace header occupies the top row, and the "Workspaces…" button
@@ -43,24 +44,22 @@ FIRST_ROW_ROLES = frozenset({"title"})
 _ATTRIBUTES = {1: "bold", 2: "dim", 4: "underline", 7: "reverse"}
 _CLEAR = {22: ("bold", "dim"), 24: ("underline",), 27: ("reverse",)}
 
-# The shipped appearance: pair 1 (normal) is the terminal default, so the
-# panel tmux paints behind the pane shows through; 2 active, 3 accent and 4
-# muted sit on that same default. The panel itself is a pane style, which a
-# capture of the pane's cells does not carry.
 # On 256 colors the shipped roles are exact RGB values in the pane's own
-# palette slots, defined through OSC 4: 16 text, 17 panel, 18 selection,
-# 19 accent, 20 secondary text, 21 outline, 22 surface.
+# palette slots, defined through OSC 4: 16 text, 17 panel, 18 selected text,
+# 19 selection, 20 accent, 21 secondary text, 22 outline, 23 header bar,
+# 24 danger. The heading sits on the header bar; the selected tab's name is
+# bold on the selection.
 SHIPPED_256 = {
-    "title": (16, 17, ("bold",)),
-    "muted": (20, 17, ()),
-    "active": (16, 18, ()),
-    "accent": (19, 17, ("bold",)),
+    "title": (16, 23, ("bold",)),
+    "muted": (21, 17, ()),
+    "active": (18, 19, ("bold",)),
+    "accent": (20, 17, ("bold",)),
 }
 SHIPPED_BASIC = {
     "title": (7, 0, ("bold",)),
     "muted": (7, 0, ()),
-    "active": (7, 4, ()),
-    "accent": (6, 0, ("bold",)),
+    "active": (7, 4, ("bold",)),
+    "accent": (3, 0, ("bold",)),
 }
 
 
@@ -131,10 +130,10 @@ class Screen:
     def at(self, anchor: str, *, first_row: bool = False):
         """The style in force where `anchor` starts, or None when it is not drawn.
 
-        `first_row` searches only the heading row, the first inside the panel's
-        outline, for an anchor whose word also appears elsewhere in the sidebar.
+        `first_row` searches only the heading row, the panel's first, for an
+        anchor whose word also appears elsewhere in the sidebar.
         """
-        for text, states in self.lines[1:2] if first_row else self.lines:
+        for text, states in self.lines[0:1] if first_row else self.lines:
             position = text.find(anchor)
             if position >= 0:
                 return states[position]
@@ -239,8 +238,9 @@ def assert_styles(viewer: Tmux, expected, context: str) -> None:
 
 
 def assert_colorless_cues(viewer: Tmux, context: str) -> None:
-    """Selection must stay identifiable with every color sequence removed."""
-    marked = [line for line in screen(viewer).plain().splitlines() if ANCHORS["active"] in line]
+    """Selection must stay identifiable with every color sequence removed:
+    only the selected tab's row carries its menu glyph."""
+    marked = [line for line in screen(viewer).plain().splitlines() if "⋯" in line]
     assert len(marked) == 1, f"{context}: expected exactly one marked selection, got {marked}"
 
 
@@ -299,9 +299,11 @@ foreground = ["bright-magenta", "magenta"]
 foreground = 244
 """
 
-# Roles the file leaves alone keep the panel as their ground, slot 17.
+# Roles the file leaves alone keep the panel as their ground, slot 17; the
+# heading keeps the header bar, which takes the next free slot after the
+# outline's, 19, since the configured roles need none.
 CUSTOM_256 = {
-    "title": (16, 17, ("bold",)),
+    "title": (16, 19, ("bold",)),
     "active": (3, 27, ("bold",)),
     "accent": (13, 17, ("bold",)),
     "muted": (244, 17, ()),
@@ -319,8 +321,10 @@ def write_config(path: Path, text: str) -> Path:
 
 
 def status(viewer: Tmux) -> str:
-    """The message row: above the four-row footer, inside the outline."""
-    return screen(viewer).plain().splitlines()[-6].strip().strip("│").strip()
+    """The status row's right slot: the message the sidebar sent to tmux."""
+    text = viewer.run("show-options", "-gv", "status-format[0]")
+    right = text.rsplit("#[align=right]", 1)[-1]
+    return re.sub(r"#\[[^\]]*\]", "", right).strip()
 
 
 def configured_colors(directory: Path) -> None:
@@ -362,14 +366,11 @@ def normal_background(directory: Path) -> None:
 
         def base_is_configured():
             drawn = Screen(viewer.run("capture-pane", "-e", "-N", "-p", "-t", "%0"))
-            # A blank interior row: nothing between the outline's two cells.
-            blanks = [
-                states[1:-1]
-                for text, states in drawn.lines
-                if len(states) > 2 and not text.strip().strip("│").strip()
-            ]
+            # A blank row: the row under the heading, and the rows between
+            # the tabs and the footer.
+            blanks = [states for text, states in drawn.lines if states and not text.strip()]
             return (
-                drawn.at("Workspace") == (7, 4, ("bold",))
+                drawn.at("Tab ") is not None
                 and bool(blanks)
                 and all(state[1] == 4 for row in blanks for state in row)
             )

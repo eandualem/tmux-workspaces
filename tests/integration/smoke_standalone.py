@@ -14,6 +14,7 @@ from tests.integration.support import (
     FixtureResources,
     click_button,
     content_panes,
+    pane_text,
     saved,
     session_in_use,
     user_sessions,
@@ -100,9 +101,9 @@ def exercise(resources: FixtureResources) -> None:
         return session_in_use(tmux, target)
 
     def capture(tmux: Tmux, target: str) -> str:
-        text = tmux.run("capture-pane", "-p", "-t", target)
-        # The sidebar's outline is blanked so its lines compare as before.
-        return text.translate(OUTLINE) if target == "%0" else text
+        if target == "%0":
+            return pane_text(tmux).translate(OUTLINE)
+        return tmux.run("capture-pane", "-p", "-t", target)
 
     def open_window(tmux: Tmux):
         client = resources.own_client(
@@ -138,11 +139,13 @@ def exercise(resources: FixtureResources) -> None:
         button("Attach session…")
         wait(
             client,
-            lambda: name in [line.strip() for line in capture(viewer, "%0").splitlines()],
+            lambda: (
+                name in [line.strip().lstrip("▶ ") for line in capture(viewer, "%0").splitlines()]
+            ),
             "generic chooser omitted exact session name: " + name,
         )
         lines = capture(viewer, "%0").splitlines()
-        row = next(i for i, line in enumerate(lines) if line.strip() == name)
+        row = next(i for i, line in enumerate(lines) if line.strip().lstrip("▶ ") == name)
         top = int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
         client.click(3, row + top + 1)
         wait(
@@ -177,7 +180,7 @@ def exercise(resources: FixtureResources) -> None:
     assert "EXACT_SESSION_INPUT" not in capture(source, "=dev extra:")
     assert "EXACT_SESSION_INPUT" not in capture(source, "=elsewhere:dev")
     button("Tab actions…")
-    button("Return pane to shell")
+    button("Return to shell")
     wait(client, lambda: attached(shells, terminal), "parked shell did not return")
     assert saved(library).pane.get("source_socket") is None
     assert shell_pid == shells.run("display-message", "-p", "-t", terminal, "#{pane_pid}")
@@ -254,7 +257,7 @@ def exercise(resources: FixtureResources) -> None:
     assert "ORIGINAL_SOCKET_INPUT" not in capture(alternate, "=" + broad_name + ":")
     button("Tab actions…")
     button("Close tab")
-    wait(client, lambda: "No tabs yet" in capture(viewer, "%0"), "close tab failed")
+    wait(client, lambda: "no tabs yet" in capture(viewer, "%0"), "close tab failed")
     assert not shells.run("list-sessions", "-F", "#{session_name}", check=False)
     assert final_identities == identities(source)
     assert alternate_identities == identities(alternate)

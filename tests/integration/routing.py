@@ -13,6 +13,7 @@ from tests.integration.support import (
     OUTLINE,
     Client,
     FixtureResources,
+    pane_text,
     wait,
 )
 from tmux_workspaces.application import socket_path
@@ -208,8 +209,8 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
     original = identities()
     assert len(original) == 4 * pane_count
     expected = []
-    sidebar = viewer.run("capture-pane", "-p", "-t", "%0").splitlines()
-    workspace_row = len(sidebar) - 3
+    sidebar = pane_text(viewer).splitlines()
+    workspace_row = len(sidebar) - 1
     workspace_columns = [sidebar[workspace_row].index(f" {index + 1} ") + 2 for index in (0, 1)]
 
     def routed():

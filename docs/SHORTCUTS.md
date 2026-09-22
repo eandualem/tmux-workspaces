@@ -56,7 +56,7 @@ The shipped map follows Ghostty's usual keys, with the actions applied to saved 
 
 Out-of-range numbered shortcuts do nothing. New workspaces start empty; use
 Command-T for their first tab. Attachment never renames the tab or stops its
-parked ordinary shell. **Return pane to shell** in the tab menu brings that shell back.
+parked ordinary shell. **Return to shell** in the tab menu brings that shell back.
 Command-C copies the viewer selection; Command-V, font-size, app preferences and
 normal shell Control shortcuts retain their usual behavior. Choose
 **Configure… → View shortcuts…** for the active profile's controls.
@@ -104,7 +104,7 @@ The workspace name is a label, with its options available by right-click or the
 **▾** beside its name. To attach a session, select its destination pane and open
 the tab menu's **Attach session** (the ⋯ on the selected tab, or a right-click);
 splits, focus and pane cycling live in the same menu. Split panes have a thin
-separator in the outline color, with surface-colored padding.
+separator in the outline color.
 The tab menu's **Attach session** and the attachment shortcut work on all supported versions.
 
 ## Other terminals and the existing launcher
@@ -185,18 +185,20 @@ including from a nested chooser; an empty workspace keeps navigation focus.
 
 Type in Attach to filter session names without case sensitivity. Editing the
 filter selects its first match; no matches means Enter does nothing. **Ctrl-u**
-clears the filter. Tab options provide **Return pane to shell**, tab reordering
-and transfer. Workspace options provide **Delete empty workspace**; a workspace
-with tabs cannot be deleted. These commands need no individual shortcut.
+clears the filter. Tab options provide **Return to shell**, tab reordering
+and transfer. The workspace menu provides **Delete**; a workspace with tabs
+cannot be deleted, and the row says so. These commands need no individual
+shortcut. **Ctrl-g A** shows or hides the agents section.
 Menu input belongs to the navigation panel while the menu has focus.
 
 ## Viewing and editing shortcuts
 
-**Configure… → View shortcuts…** opens a roomy, read-only reference to the keys
-active in this viewer, grouped by tabs, panes, workspaces and viewer actions.
-It includes custom aliases and distinguishes prefix keys from keys that require
-a terminal profile. Scroll with arrows, PageUp/PageDown or the wheel; Escape,
-F10 or Close returns to the workspace. The listed actions cannot be executed
+**Configure… → View shortcuts…** opens a read-only reference to the keys
+active in this viewer, in a popup centred over the panes: one row per action,
+grouped by tabs, panes, workspaces and viewer actions, with the prefix key in
+one column and the terminal profile key in another. It includes custom aliases.
+Scroll with arrows, PageUp/PageDown or the wheel; the title counts the pages.
+Escape or F10 returns to the workspace. The listed actions cannot be executed
 from the reference, and unsaved or not-yet-refreshed keymap changes do not alter it.
 
 **Configure… → Edit shortcuts…** opens the [built-in editor](JSON_SETTINGS.md)

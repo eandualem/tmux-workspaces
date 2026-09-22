@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
+from types import MappingProxyType
 from typing import NamedTuple
 
 
@@ -11,17 +12,31 @@ class Entry(NamedTuple):
 
     Labels are what the user reads and are not unique — two workspaces may share
     a name — so selection follows the key: a session name, a workspace id or the
-    position of a fixed row.
+    position of a fixed row. ``meta`` carries what the drawing adds beside the
+    label: the shortcut key, a value, a kind.
     """
 
     key: str
     label: str
     action: Callable
+    meta: Mapping = MappingProxyType({})
 
 
 # A separator row inside a menu: drawn as a rule, never activated, skipped
-# by keyboard movement.
+# by keyboard movement. A section label is drawn as muted text and skipped
+# the same way.
 RULE = "\x00rule"
+LABEL = "\x00label:"
+
+
+def passive(label: str) -> bool:
+    """Whether a row is decoration rather than a choice."""
+    return label == RULE or label.startswith(LABEL)
+
+
+def section(title: str) -> str:
+    """A section label row for a menu."""
+    return LABEL + title
 
 
 class Selection:
@@ -107,11 +122,11 @@ class Selection:
         elif self.index > last:
             self.offset = self.index - available + 1
         self.follow_view = False
-        if self.entries[self.index].label == RULE:
+        if passive(self.entries[self.index].label):
             selectable = [
                 i
                 for i in range(self.offset, min(self.offset + available, len(self.entries)))
-                if self.entries[i].label != RULE
+                if not passive(self.entries[i].label)
             ]
             if not selectable:
                 self.active = self.displayed = None
@@ -128,13 +143,17 @@ class Selection:
             self.index, self.active, self.stale = 0, None, False
             return
         self.index = min(max(0, self.index + step), len(self.entries) - 1)
-        if self.entries[self.index].label == RULE:
-            # A rule is not a row to land on: continue in the same direction,
-            # or back the way we came at either end.
+        if passive(self.entries[self.index].label):
+            # A rule or label is not a row to land on: continue in the same
+            # direction, or back the way we came at either end.
             nudge = 1 if step >= 0 else -1
-            candidate = self.index + nudge
+            candidate = self.index
+            while 0 <= candidate < len(self.entries) and passive(self.entries[candidate].label):
+                candidate += nudge
             if not 0 <= candidate < len(self.entries):
-                candidate = self.index - nudge
+                candidate = self.index
+                while 0 <= candidate < len(self.entries) and passive(self.entries[candidate].label):
+                    candidate -= nudge
             self.index = max(0, min(candidate, len(self.entries) - 1))
         # Moving is a deliberate choice among the rows currently loaded, and the
         # frame drawn next shows it before any Enter can be read.

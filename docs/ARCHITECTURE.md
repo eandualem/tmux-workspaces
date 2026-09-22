@@ -21,12 +21,15 @@ or edit tmux configuration.
   sets/unsets the creating viewer's SSH-agent and XDG context, preventing stale
   server-global paths from leaking across reconnects or concurrent viewers.
 - `display.py`: split geometry, focus and disposable attachment clients on one
-  viewer's private display server. It never moves or owns external panes.
+  viewer's private display server, the status row it paints and where a popup
+  goes. It never moves or owns external panes.
 - `attachments.py`: external attachment clients and recursive-host protection;
   the leaf helper imports no curses controller, SQLite store or metadata adapter.
   Attachment uses tmux's `-E` flag to preserve external session environments.
 - `sidebar.py`: curses UI controller, menu state, drawing and user actions. It
   composes the model, store, source and display; it does not launch the application.
+  `popup.py` gives the settings editor and the shortcut reference their shared
+  frame: the sidebar's colors, the title bar and the footer.
 - `controls.py`: stable action identifiers/default codes and acknowledged action
   transport. `keymap.py` validates optional TOML maps and generates effective
   shortcut labels and terminal profiles. `name_editor.py` owns inline name input;

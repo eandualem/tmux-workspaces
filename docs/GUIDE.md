@@ -73,14 +73,14 @@ row, behind a right-click on any tab, and behind the tab-options shortcut.
 selected one, as do the split shortcuts. It opens with the same
 chooser as a new tab; a terminal chosen there starts in the original shell's
 working directory. Four panes still belong to one tab. Click a pane to select
-and type there. Drag the separator between panes to adjust sizes. The tab menu offers
-**Previous tab / Next tab** to switch complete layouts, and **Previous pane /
-Next pane** to move input focus inside the selected tab. **Focus one pane**
-temporarily shows only that pane; **Restore layout** shows the splits again.
-Split right creates a vertical divider; split below creates a horizontal divider.
-Selecting a menu row with the arrow keys shows its effective prefix or terminal
-profile shortcut below the list. Disabled bindings are identified, and long
-bindings point to **Configure → View shortcuts** for their full text.
+and type there. Drag the separator between panes to adjust sizes. The next and
+previous tab shortcuts switch complete layouts, and the next and previous pane
+shortcuts move input focus inside the selected tab. **Focus one pane** in the
+tab menu temporarily shows only that pane; **Restore layout** shows the splits
+again. Split right creates a vertical divider; split below creates a horizontal
+divider. Each menu row ends in its prefix key, and selecting a row with the
+arrow keys puts every way to reach it, prefix and terminal profile, in the
+status row along the bottom of the window.
 When the complete layout does not fit, the viewer temporarily shows the focused
 pane without discarding the saved arrangement.
 
@@ -89,7 +89,7 @@ pane without discarding the saved arrangement.
 To attach a session to a pane that already has a shell, select the pane, open
 the tab menu's **Attach session**, then choose a tmux session for that pane.
 Type to filter the chooser. The pane's original shell stays running;
-**Return pane to shell** in the tab menu brings it back. Each split can attach a different session or
+**Return to shell** in the tab menu brings it back. Each split can attach a different session or
 remain an ordinary terminal. Offline attachments stay associated with
 their pane and reconnect when the session returns; the viewer never starts
 an external session. An attached session is joined through a grouped tmux
@@ -111,18 +111,15 @@ chooser, never a source of tabs.
 
 ### Resize and choose an attachment destination
 
-The navigation panel is a rounded, outlined panel inset in the window, and
-the terminals sit on a slightly lighter surface beside it. Split panes are
-separated by one thin line in the outline color, with a blank column of
-surface on each side of it, so text never touches a boundary; no border marks
-the focused pane, the cursor does. The panel, surface and outline colors are
-values in **Edit theme…** and may be RGB values such as `#22252b`,
-so they can be matched to your terminal's theme. The padding is made of thin
-panes tmux cannot tell apart from the rest. Drag the visible separator line
-to resize a split; the surrounding blank columns and sidebar keep their widths.
-The hidden borders beside the line stay inert. The plain theme uses tmux's
-normal border dragging. Saved split proportions are limited by the space each
-nested layout needs; a smaller window temporarily shows the focused pane when
+The navigation panel is 22 columns wide, flush with the left edge, and the
+terminals sit on a slightly lighter surface beside it. One thin line in the
+outline color separates the panel from the content and one split pane from
+another; no border marks the focused pane, the cursor does. The panel,
+surface and outline colors are values in **Edit theme…** and may be RGB values
+such as `#15171c`, so they can be matched to your terminal's theme. Drag the
+line between two panes to resize the split; the panel keeps its width. Saved
+split proportions are limited by the space each nested layout needs; a
+smaller window temporarily shows the focused pane when
 the complete layout cannot fit. The tab menu's **Attach session** and the
 attachment shortcut work on all supported tmux versions.
 Once open, the chooser keeps its selected destination even if focus moves to
@@ -159,13 +156,18 @@ also reorders tabs or moves one to another workspace. Scroll the navigation pane
 Open **Configure…** near the bottom of the navigation panel for theme and
 shortcut editing, the shortcut reference, viewer refresh and optional agent status.
 
-**Edit theme…** opens the built-in JSON editor with Save and Cancel. Choose a
-preset or tune individual colors; saved changes apply to the running viewer.
-[THEMES.md](THEMES.md) describes every role. **Edit shortcuts…** uses the same
-editor, while **View shortcuts…** opens a read-only reference to the active keys.
-The status line at the bottom of the panel shows a small light while the viewer
-is idle and its saved state is current; a message replaces it when something
-needs attention.
+**Edit theme…** opens the built-in JSON editor, in a popup centred over the
+panes, with Save and Cancel. Choose a preset or tune individual colors; saved
+changes apply to the running viewer. [THEMES.md](THEMES.md) describes every
+role. **Edit shortcuts…** uses the same editor, while **View shortcuts…** opens
+a read-only reference to the active keys in the same popup frame.
+
+The status row along the bottom of the window has three parts. On the left,
+where you are: the workspace, the tab and the focused pane, or the selected menu
+row and its keys, or the open popup. In the centre, the few keys that matter in
+the current mode. On the right, the agents toggle when an agent source is
+connected, and a small light while the saved arrangement is current; a message
+replaces the light when something needs attention.
 
 **Detach** or closing the terminal window leaves your saved tabs, normal
 shells, running programs and agents available for reopening. Explicitly
@@ -186,7 +188,8 @@ or workspace headers/buttons for the corresponding options menu. Rename fields
 select the existing name so typing replaces it.
 
 The following portable shortcuts remain available in every profile.
-Use **Ctrl-g m** for tab options and **Ctrl-g M** for workspace options.
+Use **Ctrl-g m** for tab options and **Ctrl-g M** for the workspace menu, and
+**Ctrl-g A** to show or hide the agents section.
 In choosers and option menus, **Up / Down** or **Ctrl-p / Ctrl-n** moves the
 highlight and **Enter** activates it. Type to filter the attachment chooser;
 **Escape** closes the menu and returns to the pane. Return to shell, tab
@@ -290,8 +293,10 @@ showing old states as current. Names keep one alphabetical order as states
 change. At most six rows are shown, with scrolling and a count when there are
 more, and on short windows the roster gives rows back to the tab list first.
 The roster appears when a state-reporting source is connected (`--backbone`,
-or the demo) and can be hidden with **Show agent status**; the choice is saved
-with the layout, applies before the first frame, and hides the whole section.
+or the demo) and can be hidden with **Show agents** in Configure…, with
+**Ctrl-g A**, or by clicking **agents shown** in the status row; the choice is
+saved with the layout, applies before the first frame, and hides the whole
+section.
 Nothing in the panel names the session attached to the focused pane; name the
 tab for that.
 

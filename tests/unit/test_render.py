@@ -169,7 +169,7 @@ class RenderTests(unittest.TestCase):
                                 self.assertEqual(
                                     set(after.panes), {sidebar, *display.panes.values()}
                                 )
-                        self.assertTrue(all(width == 28 for _operation, width in samples), samples)
+                        self.assertTrue(all(width == 22 for _operation, width in samples), samples)
                         if tab is None:
                             self.assertEqual(
                                 viewer.run("list-panes", "-F", "#{@viewer_leaf_id}").strip(), ""

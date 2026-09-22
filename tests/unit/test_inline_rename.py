@@ -67,7 +67,7 @@ class InlineRenameTests(unittest.TestCase):
         self.display.render.assert_not_called()
         rendered = self.sidebar.screen.addnstr.call_args_list
         self.assertTrue(
-            any(c.args[:2] == (3, 5) and c.args[2].startswith("Original") for c in rendered)
+            any(c.args[:2] == (3, 3) and c.args[2].startswith("Original") for c in rendered)
         )
         for char in "Edited":
             self.sidebar.input(char)
@@ -92,12 +92,12 @@ class InlineRenameTests(unittest.TestCase):
         self.assertIsNotNone(self.sidebar.inline_editor)
 
     def test_double_click_count_or_menu_never_opens_editor(self):
-        # The selected row ends in its pane count and the ⋯ menu button.
-        self.tap(10, x=21)
-        self.tap(10.2, x=21)
+        # The selected row ends in its pane glyph and the ⋯ menu button.
+        self.tap(10, x=24)
+        self.tap(10.2, x=24)
         self.assertIsNone(self.sidebar.inline_editor)
         self.sidebar.draw()
-        self.tap(11, x=23)
+        self.tap(11, x=26)
         self.assertEqual(self.sidebar.menu, "tab")
         self.sidebar.close_menu()
         self.sidebar.draw()
@@ -115,7 +115,7 @@ class InlineRenameTests(unittest.TestCase):
         self.sidebar.draw()
         self.begin()
         self.sidebar.input("Y")
-        self.sidebar.mouse(23, 2, curses.BUTTON1_PRESSED)
+        self.sidebar.mouse(26, 2, curses.BUTTON1_PRESSED)
         self.assertIsNone(self.sidebar.inline_editor)
         self.assertEqual(self.model.space["tabs"][0]["name"], "Original")
         self.assertEqual(len(self.model.space["tabs"]), 2)
@@ -180,7 +180,7 @@ class InlineRenameTests(unittest.TestCase):
         self.assertEqual(self.model.space["tabs"], tabs)
         self.assertEqual(self.store.load().space["name"], "Development")
         self.sidebar.draw()
-        self.sidebar.mouse(23, 2, curses.BUTTON1_PRESSED)
+        self.sidebar.mouse(26, 2, curses.BUTTON1_PRESSED)
         self.assertEqual(len(self.model.space["tabs"]), 2)
         self.assertIsNone(self.sidebar.inline_editor)
         self.display.shells.close.assert_not_called()

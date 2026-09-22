@@ -94,30 +94,30 @@ def _exercise(resources: FixtureResources) -> None:
         client.pump(0.5)
         double(name)
         wait(client, editing, "active name double-click did not open inline editor")
-        assert "Type a name" not in sidebar(viewer), "opened old full-sidebar form"
+        assert "RENAME TAB" not in sidebar(viewer), "opened old full-sidebar form"
         assert viewer.run("display-message", "-p", "-t", "viewer:", "#{pane_id}") == "%0"
 
     def begin_workspace():
         client.pump(0.5)
         top = pane_top()
-        # The heading is the first row inside the panel's outline.
-        tap(1, 6, top, count=2)
+        # The heading is the panel's first row.
+        tap(0, 6, top, count=2)
         wait(client, editing, "workspace header double-click did not open inline editor")
-        assert "Type a name" not in sidebar(viewer)
+        assert "RENAME WORKSPACE" not in sidebar(viewer)
         assert viewer.run("display-message", "-p", "-t", "viewer:", "#{pane_id}") == "%0"
 
     hidden_caret()
     begin_workspace()
     client.type("Development")
-    workspace_column = sidebar(viewer).splitlines()[1].index("Development")
-    caret(1, workspace_column + len("Development"))
+    workspace_column = sidebar(viewer).splitlines()[0].index("Development")
+    caret(0, workspace_column + len("Development"))
     client.type("\x1bOD")
-    caret(1, workspace_column + len("Development") - 1)
+    caret(0, workspace_column + len("Development") - 1)
     client.pump(0.5)
-    tap(1, workspace_column + 3)
-    caret(1, workspace_column + 3)
+    tap(0, workspace_column + 3)
+    caret(0, workspace_column + 3)
     client.type("\x1bOC" * (len("Development") - 3))
-    caret(1, workspace_column + len("Development"))
+    caret(0, workspace_column + len("Development"))
     assert saved(library).space["name"] == original.space["name"]
     client.type("\r")
     wait(
@@ -127,7 +127,7 @@ def _exercise(resources: FixtureResources) -> None:
     )
     wait(
         client,
-        lambda: "Development" in sidebar(viewer).splitlines()[1],
+        lambda: "Development" in sidebar(viewer).splitlines()[0],
         "workspace header did not redraw",
     )
     assert saved(library).tab["name"] == first_name
@@ -183,19 +183,19 @@ def _exercise(resources: FixtureResources) -> None:
         key(action)
     wait(client, lambda: len(leaves(saved(library).tab["tree"])) == 4, "four splits missing")
     begin("inline-namX")
-    client.type("after-resize")
+    client.type("resize")
     client.resize(70, 22)
     wait(client, editing, "resize lost editor")
     assert viewer.run("display-message", "-p", "-t", "viewer:", "#{pane_id}") == "%0"
     client.type("-ok\r")
     wait(
         client,
-        lambda: saved(library).tab["name"] == "after-resize-ok",
+        lambda: saved(library).tab["name"] == "resize-ok",
         "resize redirected name input",
     )
     client.resize(160, 38)
     assert len(leaves(saved(library).tab["tree"])) == 4
-    begin("after-resize-ok")
+    begin("resize-ok")
     client.type("cancel-on-click")
     # Clicking a content terminal discards the draft after focus moves there.
     content = (
@@ -205,12 +205,12 @@ def _exercise(resources: FixtureResources) -> None:
     )
     tap(int(content[2]), int(content[1]) + 2)
     wait(client, lambda: not editing(), "content click left stale editor open")
-    assert saved(library).tab["name"] == "after-resize-ok"
+    assert saved(library).tab["name"] == "resize-ok"
     assert pid == shells.run("display-message", "-p", "-t", terminal, "#{pane_pid}")
     key("new-workspace")
-    wait(client, lambda: "Type a name" in sidebar(viewer), "new workspace form missing")
+    wait(client, lambda: "NEW WORKSPACE" in sidebar(viewer), "new workspace form missing")
     client.type("Empty\r")
-    wait(client, lambda: "No tabs yet" in sidebar(viewer), "empty workspace did not draw")
+    wait(client, lambda: "no tabs yet" in sidebar(viewer), "empty workspace did not draw")
     begin_workspace()
     client.type("Empty renamed\r")
     wait(
@@ -220,7 +220,7 @@ def _exercise(resources: FixtureResources) -> None:
     )
     assert saved(library).space["tabs"] == []
     key("select-workspace-1")
-    wait(client, lambda: "after-resize-ok" in sidebar(viewer), "return to workspace failed")
+    wait(client, lambda: "resize-ok" in sidebar(viewer), "return to workspace failed")
     assert saved(library).space["name"] == "Development"
     error_path = client.manifest(library).parent / "error.txt"
     click_button(client, viewer, "Exit")
@@ -238,7 +238,7 @@ def _exercise(resources: FixtureResources) -> None:
     )
     wait(client, lambda: client.manifest(library), "reopen failed")
     viewer = Tmux(json.loads(client.manifest(library).read_text())["viewer_socket"])
-    wait(client, lambda: "after-resize-ok" in sidebar(viewer), "inline name was not persisted")
+    wait(client, lambda: "resize-ok" in sidebar(viewer), "inline name was not persisted")
     assert pid == shells.run("display-message", "-p", "-t", terminal, "#{pane_pid}")
     assert saved(library).space["name"] == "Development"
     # Physical double-click plus typing in one terminal write must reach
@@ -246,8 +246,8 @@ def _exercise(resources: FixtureResources) -> None:
     for workspace in (True, False):
         client.pump(0.5)
         name = "Immediate workspace" if workspace else "Immediate tab"
-        row = 1 if workspace else tab_row(viewer, "after-resize-ok")
-        column = 7 if workspace else sidebar(viewer).splitlines()[row].index("after-resize-ok") + 2
+        row = 0 if workspace else tab_row(viewer, "resize-ok")
+        column = 7 if workspace else sidebar(viewer).splitlines()[row].index("resize-ok") + 2
         top = pane_top()
         click = f"\x1b[<0;{column};{row + top + 1}M\x1b[<0;{column};{row + top + 1}m"
         os.write(client.master, (click + click + name + "\r").encode())
