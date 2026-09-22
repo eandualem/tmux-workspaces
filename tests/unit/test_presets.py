@@ -277,7 +277,7 @@ class PanelColorTests(unittest.TestCase):
         display.tmux.reset_mock()
         display._content_panes = {"%3"}
         display.style_panel("default")
-        rule = "#[align=left]#[fg=default,bg=default]" + "─" * 23 + "#[bg=default]"
+        rule = "#[align=left]#[fg=default,bg=default]" + "▔" * 23
         display.tmux.batch.assert_called_once_with(
             [
                 ["set-window-option", "-g", "pane-border-style", "fg=default,bg=default"],
@@ -321,7 +321,7 @@ class PanelColorTests(unittest.TestCase):
         rule = display._rule_format()
         self.assertEqual(
             rule,
-            "#[align=left]#[fg=#2a2e36,bg=#15171c]" + "─" * 23 + "#[bg=#1b1e24]" + "─" * 77,
+            "#[align=left]#[fg=#2a2e36,bg=#15171c]" + "▔" * 100,
         )
 
     def test_every_content_pane_sits_on_the_surface(self):

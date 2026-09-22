@@ -159,7 +159,7 @@ def exercise(resources):
     previous_pid = chooser_pid()
     save_theme({"preset": "plain"})
     wait(client, lambda: border() == "fg=#2a2e36,bg=default", "plain theme kept the surface")
-    assert chooser_pid() != previous_pid
+    wait(client, lambda: chooser_pid() != previous_pid, "chooser kept the old theme process")
     assert (
         source.run("list-panes", "-t", "=ordinary:", "-F", "#{pane_id}|#{pane_pid}")
         == original_pane

@@ -349,15 +349,12 @@ class Display:
         return ["set-option", "-p", "-t", self.sidebar, "pane-border-style", style]
 
     def _rule_format(self) -> str:
-        """One rule across the window in the outline color: on the panel under
-        the sidebar, on the surface under its border column and the panes."""
+        """The top of the status band: one row on the panel with a line along
+        its upper edge in the outline color, so the band below the panes is
+        two rows deep with its border exactly where the panes end."""
         outline = self.status_styles.get("outline", "default")
         columns = max(self._rule_columns, SIDEBAR_PANE)
-        panel = "─" * SIDEBAR_PANE
-        rest = "─" * (columns - SIDEBAR_PANE)
-        return (
-            f"#[align=left]#[fg={outline},bg={self.panel_color}]{panel}#[bg={self.surface}]{rest}"
-        )
+        return f"#[align=left]#[fg={outline},bg={self.panel_color}]" + "▔" * columns
 
     def _rule_commands(self) -> list[list[str]]:
         return [["set-option", "-g", "status-format[0]", self._rule_format()]]

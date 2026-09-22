@@ -333,6 +333,22 @@ _PRESETS: tuple[tuple[str, str, str, dict[str, Role]], ...] = (
             "danger": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("bold", "underline")),
         },
     ),
+    # A diagnostic look: every ground and line in a loud, distinct color, so a
+    # gap or a misplaced edge is visible at a glance. Not for daily use.
+    (
+        "debug",
+        "#7b1fa2",
+        "#1565c0",
+        {
+            "normal": Role(("#ffffff", "231", "white"), ("#7b1fa2", "92", "magenta"), ()),
+            "active": Role(("#ffffff", "231", "white"), ("#2e7d32", "28", "green"), ()),
+            "accent": Role(("#00e5ff", "51", "cyan"), ("#7b1fa2", "92", "magenta"), ()),
+            "muted": Role(("#ffe082", "222", "yellow"), ("#7b1fa2", "92", "magenta"), ()),
+            "outline": Role(("#ff1744", "197", "red"), ("#7b1fa2", "92", "magenta"), ()),
+            "header": Role(("#000000", "16", "black"), ("#f9a825", "214", "yellow"), ()),
+            "danger": Role(("#ff6d00", "208", "red"), ("#7b1fa2", "92", "magenta"), ()),
+        },
+    ),
 )
 PRESET_NAMES: tuple[str, ...] = tuple(name for name, *_ in _PRESETS)
 _PRESET_ROLES = MappingProxyType({name: roles for name, _, _, roles in _PRESETS})

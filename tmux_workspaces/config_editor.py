@@ -118,8 +118,8 @@ class Editor:
                     else "Colors: panel/surface accept names or #rrggbb. normal, active, accent, "
                     "muted, outline, header and danger accept foreground, background and "
                     "attributes. Color lists provide fallbacks. A preset can be default, plain, "
-                    "forest, paper or mono; explicit fields override it. Saved colors apply to "
-                    "this viewer."
+                    "forest, paper, mono or debug; explicit fields override it. Saved colors "
+                    "apply to this viewer."
                 )
             )
             for index, line in enumerate(textwrap.wrap(info, width=width - 4)[:area_height]):

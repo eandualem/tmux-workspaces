@@ -66,6 +66,7 @@ preset = "plain"
 | `forest` | The terminal's background with a sage-green accent — the look shipped before presets |
 | `paper` | The light counterpart: a `#f8f8f8` panel on white, `#3b3b3b` text, a `#005fb8` accent and an `#e8e8e8` selection |
 | `mono` | The terminal's two colors only, using bold, dim and reverse |
+| `debug` | A diagnostic look: purple panel, blue surface, amber header bar, red lines, green selection. Every region a different color, so a gap or a misplaced edge shows at a glance |
 
 A `panel` or `surface` value, or a role table, after the `preset` line
 overrides that part of the preset, so `preset = "plain"` followed by
@@ -167,8 +168,9 @@ The following parts are drawn in these colors, so the window reads as one layer:
   the surface, down a column between panes side by side, across a row between
   stacked ones. No border marks the focused pane. Everything here changes the
   moment a theme installs, including after saving in the editor.
-- **The status row.** One line across the bottom of the window under a rule
-  in the `outline` color, painted by tmux on the panel in the `muted`
+- **The status band.** Two rows across the bottom of the window on the panel:
+  a line in the `outline` color along the top edge of the first, the text
+  in the second, painted by tmux in the `muted`
   foreground, with the `normal` and `accent` foregrounds for its emphasised
   words and a green light for the saved state.
 - **The new-pane chooser.** Each empty pane runs its own chooser using the
@@ -192,8 +194,8 @@ Cancel, paste, undo/redo and formatting. Saved colors apply immediately to this
 viewer; editing a draft does not preview it. Cancel leaves the file and current
 appearance unchanged.
 
-Set `preset` to `default`, `plain`, `forest`, `paper` or `mono`; explicit role or
-ground values override it. To use just a preset, replace the draft with, for
+Set `preset` to `default`, `plain`, `forest`, `paper`, `mono` or `debug`; explicit
+role or ground values override it. To use just a preset, replace the draft with, for
 example, `{"preset":"paper"}`. See [editing controls](JSON_SETTINGS.md).
 
 Saving uses the existing TOML file and conflict-checked atomic writer. It asks
