@@ -247,10 +247,10 @@ def exercise(source: Path, root: Path) -> None:
         external_identity = external_panes(source_server)
         client, viewer = launch(prefixes[0])
         original_leaf = saved(library).pane["id"]
-        client.type("\x07rInstalled work\r")
+        client.type("\x07rInstalled\r")
         wait(
             client,
-            lambda: saved(library).tab["name"] == "Installed work",
+            lambda: saved(library).tab["name"] == "Installed",
             "installed rename failed",
         )
         for label in ("Split →", "Split ↓", "Split →"):
@@ -265,11 +265,11 @@ def exercise(source: Path, root: Path) -> None:
         click_attach(client, viewer, attachment_leaf)
         click_button(client, viewer, "external")
         wait(client, lambda: saved(library).pane["agent"] == "external", "installed attach failed")
-        assert saved(library).tab["name"] == "Installed work"
+        assert saved(library).tab["name"] == "Installed"
         click_button(client, viewer, "+ Tab")
         wait(client, lambda: len(saved(library).space["tabs"]) == 2, "installed new tab failed")
         other_tab = saved(library).tab["name"]
-        click_button(client, viewer, "Installed work")
+        click_button(client, viewer, "Installed")
         wait(
             client,
             lambda: len(content_panes(viewer)) == 5,
@@ -297,7 +297,7 @@ def exercise(source: Path, root: Path) -> None:
         # persistence. Starting a foreground command must survive this switch too.
         click_button(client, viewer, other_tab)
         wait(client, lambda: len(content_panes(viewer)) == 2, "new tab not selected")
-        click_button(client, viewer, "Installed work")
+        click_button(client, viewer, "Installed")
         wait(
             client,
             lambda: len(content_panes(viewer)) == 5,
@@ -315,7 +315,7 @@ def exercise(source: Path, root: Path) -> None:
                 lambda: len(content_panes(viewer)) == 5,
                 "reopen lost splits",
             )
-            assert saved(library).tab["name"] == "Installed work"
+            assert saved(library).tab["name"] == "Installed"
             assert json.dumps(saved(library).tab["tree"], sort_keys=True) == expected_tree
             assert identity() == expected_identity
             assert (
