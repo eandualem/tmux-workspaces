@@ -525,13 +525,14 @@ def exercise_supervision(resources: FixtureResources) -> None:
     assert "SUPERVISION_READY" in shells.run("capture-pane", "-S", "-", "-p", "-t", first_terminal)
 
     # A second refresh keeps the same launcher and one window child.
+    second_instance = client.manifest(library).parent
     confirmation(client)
     client.type("\r")
     wait(
         client,
         lambda: (
             client.manifest(library) is not None
-            and client.manifest(library).parent not in (instance, second["viewer_socket"])
+            and client.manifest(library).parent not in (instance, second_instance)
         ),
         "a second refresh did not open a window",
     )
