@@ -241,17 +241,11 @@ class PanelColorTests(unittest.TestCase):
         self.assertEqual(options["pane-active-border-style"], "fg=#2a2e36,bg=#1b1e24")
         self.assertEqual(options["pane-border-lines"], "single")
         # The status row is one line at the bottom, on the panel, in muted
-        # text, between two rules in the outline color.
+        # text, below a rule in the outline color.
         self.assertEqual(options["status"], "2")
         self.assertEqual(options["status-position"], "bottom")
         self.assertEqual(options["status-style"], "fg=#7d828c,bg=#15171c")
         self.assertTrue(options["status-format[0]"].startswith("#[align=left]#[fg=#2a2e36"))
-        # The panel draws its own edge line, so tmux's border beside it hides
-        # in the surface; the lines between split panes keep the outline.
-        self.assertIn(
-            ["set-option", "-p", "-t", "%0", "pane-border-style", "fg=#1b1e24,bg=#1b1e24"],
-            commands,
-        )
         # The sidebar's own cells are curses'; its ground is the panel.
         for option in ("window-style", "window-active-style"):
             self.assertIn(["set-option", "-p", "-t", "%0", option, "bg=#15171c"], commands)
@@ -277,12 +271,11 @@ class PanelColorTests(unittest.TestCase):
         display.tmux.reset_mock()
         display._content_panes = {"%3"}
         display.style_panel("default")
-        rule = "#[align=left]#[fg=default,bg=default]" + "▔" * 23
+        rule = "#[align=left]#[fg=default,bg=default]" + "▔" * 22
         display.tmux.batch.assert_called_once_with(
             [
                 ["set-window-option", "-g", "pane-border-style", "fg=default,bg=default"],
                 ["set-window-option", "-g", "pane-active-border-style", "fg=default,bg=default"],
-                ["set-option", "-p", "-t", "%0", "pane-border-style", "fg=default,bg=default"],
                 ["set-option", "-g", "status-style", "fg=default,bg=default"],
                 ["set-option", "-g", "status-format[0]", rule],
                 ["set-option", "-p", "-t", "%0", "window-style", "default"],
@@ -343,13 +336,12 @@ class PanelColorTests(unittest.TestCase):
         with patch.object(display, "size", return_value=(170, 44)):
             left, bottom, width, height = display.popup_geometry(30)
         self.assertEqual((width, height), (88, 30))
-        # Columns 0-22 are the panel and its edge, 23 the border; the content
-        # runs from 24 to 169.
-        self.assertEqual(left, 24 + (170 - 24 - 88) // 2)
+        # Columns 0-21 are the panel, 22 the border; content starts at 23.
+        self.assertEqual(left, 23 + (170 - 23 - 88) // 2)
         self.assertEqual(bottom, (44 - 30) // 2 + 30)
         with patch.object(display, "size", return_value=(80, 20)):
             left, bottom, width, height = display.popup_geometry(30)
-        self.assertEqual((left, bottom, width, height), (25, 20, 80 - 24 - 2, 20))
+        self.assertEqual((left, bottom, width, height), (24, 20, 80 - 23 - 2, 20))
 
     def test_panel_values_are_canonical_tmux_colors(self):
         self.assertEqual(canonical_panel("#1F2430"), "#1f2430")

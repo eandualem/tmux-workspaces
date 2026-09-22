@@ -72,17 +72,21 @@ def _exercise(resources: FixtureResources):
     # No attachment yet: the tab list names no agent. The roster below it does,
     # one row per active demo agent with its state's symbol; the offline one
     # takes no row.
-    panel = sidebar()
+    expected = ["○ builder", "▶ manager", "? researcher", "! reviewer", "○ tester"]
+    panel = ""
+
+    def roster_ready():
+        nonlocal panel
+        panel = sidebar()
+        # This fixture starts at 38 rows, enough for the complete roster.
+        # Configure can appear during an earlier paint before resize settles.
+        return all(text in panel for text in ("TABS", "AGENTS", "Configure…", *expected))
+
+    wait(client, roster_ready, "initial sidebar roster did not finish painting")
     tabs_part = panel.split("AGENTS", 1)[0]
     assert "manager" not in tabs_part and "builder" not in tabs_part, panel
-    # Rows are alphabetical; a short terminal shows the first few and counts
-    # the rest on the label row.
-    expected = ["○ builder", "▶ manager", "? researcher", "! reviewer", "○ tester"]
-    shown = [line for line in expected if line in panel]
-    assert shown == expected[: len(shown)] and len(shown) >= 2, panel
-    if len(shown) < len(expected):
-        label = next(line for line in panel.splitlines() if "AGENTS" in line)
-        assert str(len(expected)) in label and "↓" in label, panel
+    shown = [line.strip() for line in panel.splitlines() if line.strip() in expected]
+    assert shown == expected, panel
     assert "notes" not in panel, "an offline agent took a roster row\n" + panel
     # The roster hides on request, the choice is saved, and it comes back.
     button("Show agents")

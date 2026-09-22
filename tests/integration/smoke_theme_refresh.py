@@ -106,7 +106,7 @@ def exercise(resources):
     previous_pid = chooser_pid()
     save_theme({"preset": "default"})
     wait(client, lambda: border() == "fg=#2a2e36,bg=#1b1e24", "theme did not recolor the borders")
-    assert chooser_pid() != previous_pid, "chooser retained the old theme process"
+    wait(client, lambda: chooser_pid() != previous_pid, "chooser retained the old theme process")
     assert viewer.run("show-options", "-pv", "-t", content(chooser), "window-style") == (
         "bg=" + preset_theme("default").surface
     )
@@ -124,7 +124,10 @@ def exercise(resources):
             "muted": {"foreground": 16},
         }
     )
-    assert chooser_pid() != previous_pid, "role-only edit left a stale chooser palette"
+    # Closing the editor can expose the old chooser before its respawn lands.
+    wait(
+        client, lambda: chooser_pid() != previous_pid, "role-only edit left a stale chooser palette"
+    )
     assert content(chooser) == retained_pane, "fixture did not exercise a respawned pane"
     wait(
         client,

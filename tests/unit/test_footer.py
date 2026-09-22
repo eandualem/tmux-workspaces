@@ -26,7 +26,7 @@ class FooterTests(unittest.TestCase):
         self.screen = Mock()
         # The panel draws its interior into a subwindow; the tests read one mock.
         self.screen.derwin.return_value = self.screen
-        self.screen.getmaxyx.return_value = (38, 29)
+        self.screen.getmaxyx.return_value = (38, 28)
         self.store = Mock()
         self.agents = {}
         self.source = Mock(socket="/unused/source.sock", persistent_socket=True)
@@ -217,14 +217,14 @@ class FooterTests(unittest.TestCase):
         # Shorter windows give rows back to the tabs first: four tab rows stay.
         for index in range(10):
             self.model.add_tab(f"Tab {index + 2}")
-        self.screen.getmaxyx.return_value = (16, 29)
+        self.screen.getmaxyx.return_value = (16, 28)
         cells = self.cells()
         self.assertEqual(self.sidebar.roster_rows(), 6)
         self.assertEqual(self.sidebar.tab_capacity(), 4)
         self.assertEqual(cells[7, 1].strip(), "AGENTS")
         self.assertEqual(cells[14, 1].strip(), "Configure…")
         self.assertEqual(cells[15, 1].strip(), "1")
-        self.screen.getmaxyx.return_value = (14, 29)
+        self.screen.getmaxyx.return_value = (14, 28)
         cells = self.cells()
         self.assertEqual(self.sidebar.roster_rows(), 4)
         self.assertEqual(self.sidebar.tab_capacity(), 4)

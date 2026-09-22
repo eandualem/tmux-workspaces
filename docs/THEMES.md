@@ -157,17 +157,23 @@ saved` or `Defaults shown` are neither labelled nor bold, so the two are
 distinguishable without relying on perception of the accent color. Every failure
 message leads with its reason and puts the file path last, because a narrow sidebar shows only the first few words.
 
+The dedicated `./ghostty` profile removes outer window padding. Any fractional
+cell space at the right or bottom takes the adjacent cell's background, so the
+terminal surface and status band extend to those edges. In macOS full screen,
+the temporary title bar can cover the workspace heading while the pointer is
+at the top; moving the pointer away reveals the heading again.
+
 ## Beyond the sidebar
 
 The following parts are drawn in these colors, so the window reads as one layer:
 
-- **The separators.** Beside the navigation panel, a line in the `outline`
-  foreground drawn at the panel's own edge, followed by one column of surface
-  before the terminal's text; tmux's border there hides in the surface. Between
-  split panes, tmux's own borders: one thin line in the `outline` foreground on
-  the surface, down a column between panes side by side, across a row between
-  stacked ones. No border marks the focused pane. Everything here changes the
-  moment a theme installs, including after saving in the editor.
+- **The separators.** The 22-column navigation panel is followed by one tmux
+  border column, with a thin line in the `outline` foreground on the surface.
+  Content starts in the next column; there is no additional hidden border or
+  padding column. Split panes use the same line, down a column between panes
+  side by side or across a row between stacked ones. No border marks the focused
+  pane. Everything here changes the moment a theme installs, including after
+  saving in the editor.
 - **The status band.** Two rows across the bottom of the window on the panel:
   a line in the `outline` color along the top edge of the first, the text
   in the second, painted by tmux in the `muted`

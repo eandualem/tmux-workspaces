@@ -28,7 +28,7 @@ class InlineRenameTests(unittest.TestCase):
         screen = Mock()
         # The panel draws its interior into a subwindow; the tests read one mock.
         screen.derwin.return_value = screen
-        screen.getmaxyx.return_value = (38, 29)
+        screen.getmaxyx.return_value = (38, 28)
         source = Mock(socket="/unused", persistent_socket=True)
         source.snapshot.return_value = ({}, "")
         self.sidebar = Sidebar(screen, self.model, self.store, source, self.display, Mock())

@@ -62,7 +62,7 @@ class SidebarTests(unittest.TestCase):
         self.screen = Mock()
         # The panel draws its interior into a subwindow; the tests read one mock.
         self.screen.derwin.return_value = self.screen
-        self.screen.getmaxyx.return_value = (38, 29)
+        self.screen.getmaxyx.return_value = (38, 28)
         self.store = Mock()
         self.source = Mock(socket="/unused/source.sock", persistent_socket=True)
         self.source.snapshot.return_value = ({}, "")
@@ -1133,7 +1133,7 @@ class KeyboardMenuTests(SidebarTests):
         self.assertIsNone(self.model.pane["agent"])
         self.assertEqual(self.sidebar.menu, "agents")
         # The chooser is still open, so restoring the size restores activation.
-        self.screen.getmaxyx.return_value = (38, 29)
+        self.screen.getmaxyx.return_value = (38, 28)
         self.assertEqual(self.labels(), ["unseen"])
         self.sidebar.input("\n")
         self.assertEqual(self.model.pane["agent"], "unseen")
@@ -1149,7 +1149,7 @@ class KeyboardMenuTests(SidebarTests):
                 self.sidebar.input(curses.KEY_UP)
                 self.sidebar.input("\n")
                 self.assertIsNone(self.model.pane["agent"])
-                self.screen.getmaxyx.return_value = (38, 29)
+                self.screen.getmaxyx.return_value = (38, 28)
                 self.sidebar.draw()
                 self.assertEqual(self.sidebar.options[self.sidebar.selected][0], "manager")
         self.sidebar.input("\n")
@@ -1242,7 +1242,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.screen = Mock()
         # The panel draws its interior into a subwindow; the tests read one mock.
         self.screen.derwin.return_value = self.screen
-        self.screen.getmaxyx.return_value = (38, 29)
+        self.screen.getmaxyx.return_value = (38, 28)
         self.store = Mock()
         source = Mock(socket="/unused/source.sock", persistent_socket=True)
         source.snapshot.return_value = ({}, "")

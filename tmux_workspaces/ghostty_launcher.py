@@ -91,11 +91,15 @@ def launch_command(
         "--working-directory=" + str(cwd),
         "--mouse-reporting=true",
         "--shell-integration=none",
-        # The window height is rarely a whole number of rows. The remainder
-        # sits below the last row in the window's background color, which is
-        # the panel: the status band reaches the window edge, and the heading
-        # bar stays exactly one row.
-        "--window-padding-color=background",
+        # The viewer owns the edge-to-edge grid. Leave cell remainders at
+        # the right/bottom, extending the adjacent cell's ground: header and
+        # surface stay flush at the top, and the footer reaches the bottom.
+        # Explicit values also prevent ordinary terminal padding from becoming
+        # a gutter around this dedicated workspace window.
+        "--window-padding-x=0",
+        "--window-padding-y=0",
+        "--window-padding-balance=false",
+        "--window-padding-color=extend-always",
         *([f"--background={panel}"] if panel.startswith("#") else []),
         "--quit-after-last-window-closed=true",
         "--command=" + command,

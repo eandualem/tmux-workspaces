@@ -265,19 +265,41 @@ def assert_roles_distinct(viewer: Tmux, context: str) -> None:
     )
 
 
+def assert_grid(client, viewer: Tmux, cols: int, rows: int) -> None:
+    """The sidebar uses 22 cells and exactly one separator at every size."""
+    expected = f"0,0,22,{rows - 2}\n23,0,{cols - 23},{rows - 2}"
+    wait(
+        client,
+        lambda: (
+            viewer.run(
+                "list-panes", "-F", "#{pane_left},#{pane_top},#{pane_width},#{pane_height}"
+            ).strip()
+            == expected
+        ),
+        f"viewer grid did not reach {cols}x{rows} with a single separator",
+    )
+    wait(client, lambda: screen(viewer).at("Workspace", first_row=True), "header lost on resize")
+    assert viewer.run("show-window-options", "-gv", "pane-border-style").strip() == (
+        "fg=#2a2e36,bg=#1b1e24"
+    )
+
+
 def default_appearance(directory: Path) -> None:
     """An unconfigured viewer keeps the shipped colors on a 256-color terminal."""
     with FixtureResources(parent=directory) as resources:
         library = resources.library("shipped")
         client, viewer = launch(resources, library)
+        assert_grid(client, viewer, 160, 38)
         assert_styles(viewer, SHIPPED_256, "unconfigured 256-color viewer")
         assert_colorless_cues(viewer, "unconfigured 256-color viewer")
         assert_roles_distinct(viewer, "unconfigured 256-color viewer")
         # Redrawing after a resize must not lose or re-resolve the palette.
         client.resize(100, 30)
+        assert_grid(client, viewer, 100, 30)
         wait(client, lambda: set(styles(viewer)) == set(ANCHORS), "roles lost after resize")
         assert_styles(viewer, SHIPPED_256, "resized 256-color viewer")
         client.resize(160, 38)
+        assert_grid(client, viewer, 160, 38)
         wait(client, lambda: set(styles(viewer)) == set(ANCHORS), "roles lost after resize back")
         assert_styles(viewer, SHIPPED_256, "restored 256-color viewer")
     print(

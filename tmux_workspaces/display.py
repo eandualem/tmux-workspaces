@@ -15,9 +15,9 @@ from .shells import Shells
 from .tmux import Tmux, command_args
 
 # The navigation panel: a fixed number of columns, flush to the left edge,
-# plus one column for the line at its edge, then tmux's border cell.
+# followed by tmux's single separator column.
 SIDEBAR_WIDTH = 22
-SIDEBAR_PANE = SIDEBAR_WIDTH + 1
+SIDEBAR_PANE = SIDEBAR_WIDTH
 CONTENT_LEFT = SIDEBAR_PANE + 1
 # The popups: the editors and the shortcut reference, centred over the content.
 POPUP_WIDTH = 88
@@ -128,7 +128,6 @@ class Display:
         commands.append(["set-option", "-g", "status-format[1]", self._status_format or ""])
         # The rule spans the panel until the first render learns the width.
         commands.extend(self._rule_commands())
-        commands.append(self._sidebar_border_command())
         for name, value in {
             "pane-border-status": "off",
             "pane-border-lines": "single",
@@ -337,17 +336,6 @@ class Display:
         text = self.status_styles.get("muted", "default")
         return f"fg={text},bg={self.panel_color}"
 
-    def _sidebar_border_command(self) -> list[str]:
-        """The panel draws its own line in its last column, so tmux's border
-        beside it vanishes into the surface and reads as the pane's padding.
-        On the terminal's own surface the border cannot hide, so the line
-        beside the panel is tmux's; the lines between split panes keep theirs."""
-        if self.surface == "default":
-            style = f"fg={self.separator},bg=default"
-        else:
-            style = f"fg={self.surface},bg={self.surface}"
-        return ["set-option", "-p", "-t", self.sidebar, "pane-border-style", style]
-
     def _rule_format(self) -> str:
         """The top of the status band: one row on the panel with a line along
         its upper edge in the outline color, so the band below the panes is
@@ -396,7 +384,6 @@ class Display:
         commands = [
             ["set-window-option", "-g", "pane-border-style", style],
             ["set-window-option", "-g", "pane-active-border-style", style],
-            self._sidebar_border_command(),
             ["set-option", "-g", "status-style", self._status_style()],
             *self._rule_commands(),
             *self._ground_commands(self.sidebar, "panel"),
