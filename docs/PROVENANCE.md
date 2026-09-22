@@ -14,7 +14,5 @@ TPM and Ghostty entry points, compact navigation, and inline tab/workspace names
 No upstream service code, existing layouts, agent data, credentials or transcripts
 are included. The runtime does not import or depend on the upstream checkout.
 
-The original snapshot passed 17 unit tests, lint/format checks, real mouse/PTY
-four-pane layouts, persistent foreground programs across exit/reopen, concurrent
-windows and an xterm-ghostty terminfo check. Current results and platform limits
-are in [ACCEPTANCE.md](ACCEPTANCE.md).
+See [verification and platform limits](ACCEPTANCE.md) for the maintained test
+coverage and evidence.

@@ -121,7 +121,7 @@ every key is optional — anything you leave out keeps its preset's value.
 | `normal` | Body text, buttons and the sidebar's own background |
 | `active` | The selected tab, the selected workspace, the inline name editor and the chooser's selected row |
 | `accent` | Hints, the add button and error text |
-| `muted` | Section labels, tab numbers and counts, the tab detail row and the chevron |
+| `muted` | Section labels, tab numbers and counts, the chevron |
 | `outline` | The panel's rounded perimeter, drawn on the surface, and the separators between split panes |
 
 ```toml
@@ -151,34 +151,31 @@ Failures share the `accent` pair, because five roles mean five color pairs and
 the startup floor allows no more. A failure is therefore labelled `Error:` and
 drawn with `bold`, and never by color alone; progress messages such as `Colors
 saved` or `Defaults shown` are neither labelled nor bold, so the two are
-distinguishable in a monochrome terminal and to a reader who cannot perceive the
-accent color. Every failure message leads with its reason and puts the file path
-last, because a narrow sidebar shows only the first few words.
+distinguishable without relying on perception of the accent color. Every failure
+message leads with its reason and puts the file path last, because a narrow sidebar shows only the first few words.
 
 ## Beyond the sidebar
 
-Two other things are drawn in these colors, so the window reads as one layer:
+The following parts are drawn in these colors, so the window reads as one layer:
 
 - **The separators between split panes.** One thin rule in the `outline`
   foreground, drawn on the surface: down a column between panes side by side,
   across a row between stacked ones, so both directions weigh the same. On
   each side of a separator sits one blank column (or row) of surface, the
   padding of the pane beside it. No border marks the focused pane. Everything
-  here changes the moment a theme installs, including while previewing in the
+  here changes the moment a theme installs, including after saving in the
   editor.
 - **The padding inside panes.** Each content pane is a tmux pane with a
   one-cell gutter pane on either side, drawn in the surface, and tmux's
   border glyphs are painted in the surface too so they vanish. Padding
   therefore exists only on a surface of the theme's own; `plain` has none.
-- **The new-tab chooser.** An empty pane is its own small program, so it reads
-  the same theme file and resolves it against the same palette size the sidebar
-  used. Its title is the accent, its hints are muted, its selected row is the
-  `active` pair, and the panel shows behind it. Three cases differ: without a
-  theme path (a viewer started with `--no-keymap`-style minimal options never
-  passes one) the chooser draws with bold, dim and reverse only; a path whose
-  file is missing, unreadable or invalid gives the shipped colors, as it does
-  for the sidebar; and a palette the terminal refuses to install falls back to
-  the attribute-only look.
+- **The new-tab chooser.** Each empty pane runs its own chooser using the
+  viewer's installed theme snapshot and palette size. Its title is the accent,
+  hints are muted, the selected row uses `active`, and the panel shows behind it.
+  Editing the file from another viewer does not change these colors until this
+  viewer applies or reloads the theme. If the terminal refuses the palette,
+  the chooser falls back to bold, dim and reverse attributes. `--no-keymap`
+  affects shortcuts, not colors.
 
 ## Editing the theme
 
@@ -186,7 +183,7 @@ Open **Configure… → Edit theme…**, or press `t` with the sidebar focused a
 menu open. The built-in editor shows the selected theme as JSON, with Save,
 Cancel, paste, undo/redo and formatting. Saved colors apply immediately to this
 viewer; editing a draft does not preview it. Cancel leaves the file and current
-appearance unchanged. The old per-row editor and separate Colors menu are retired.
+appearance unchanged.
 
 Set `preset` to `default`, `plain`, `forest`, `paper` or `mono`; explicit role or
 ground values override it. To use just a preset, replace the draft with, for
@@ -263,10 +260,9 @@ theme reaches the displayed panel and Cancel preserves it.
 Unit tests cover the presets themselves: each resolves without an invisible
 role on 8, 16 and 256 colors, the `preset` key composes with role overrides, a
 saved preset round-trips through its name, the panel reaches tmux as border,
-sidebar and empty-pane styles,
-and the chooser installs the same file the sidebar read. The pane styles and
-border band were also read back from a private tmux server on macOS with tmux
-3.7c during development, on `default` and `plain`.
+sidebar and empty-pane styles, and the chooser installs the viewer's theme
+snapshot. The theme-refresh PTY suite checks that two viewers retain their own
+colors until a local application, including newly created or resized choosers.
 
 ### Not established by those tests
 
@@ -289,8 +285,9 @@ Open **Configure… → Edit theme…**, and with the terminal on a light theme 
 confirm that the selected row is legible and obviously selected, that the `▶`
 marker and the dividers are visible, that hints and the status line are readable
 against the background, and that a failure — try entering `#8ab4f` — stands out
-as an error. Then record the terminals, their themes and what you saw in
-[ACCEPTANCE.md](ACCEPTANCE.md).
+as an error. Record the terminal, theme and observed result when reporting a
+problem. See
+[verification scope](ACCEPTANCE.md).
 
 Everything above about which color codes are emitted is verified; nothing above
 is a claim about how those colors are rendered to a human eye.
