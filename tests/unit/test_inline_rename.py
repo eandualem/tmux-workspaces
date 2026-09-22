@@ -77,6 +77,15 @@ class InlineRenameTests(unittest.TestCase):
         self.assertEqual(self.store.load().tab["name"], "Edited")
         self.display.shells.close.assert_not_called()
 
+    def test_a_late_report_of_the_opening_click_keeps_the_name_selected(self):
+        self.begin()
+        self.tap(10.3)
+        self.assertTrue(self.sidebar.inline_editor.selected)
+        self.sidebar.input("E")
+        self.assertEqual(self.sidebar.inline_editor.value, "E")
+        self.tap(11)
+        self.assertFalse(self.sidebar.inline_editor.selected)
+
     def test_inactive_double_click_only_selects_and_slow_clicks_do_not_rename(self):
         first = self.model.tab
         self.model.add_tab("Second")

@@ -349,6 +349,8 @@ class Sidebar:
             self.inline_target = (self.model.space["id"], None if workspace else key, item["name"])
             self.inline_editor = NameEditor(item["name"])
             self.message = ""
+            # Kept so a late report of the same gesture does not place the caret.
+            self.last_name_click = (key, now, x, y)
         else:
             # An active-name click should not rebuild any attachment clients.
             self.remember()
@@ -1876,7 +1878,14 @@ class Sidebar:
                 else None
             )
             if left and self.inline_editor and field and field[3] == edit_key:
-                self.inline_editor.click(x - field[1], field[2] - field[1])
+                opened = self.last_name_click
+                if not (
+                    opened
+                    and time.monotonic() - opened[1] <= 0.45
+                    and abs(x - opened[2]) <= 1
+                    and y == opened[3]
+                ):
+                    self.inline_editor.click(x - field[1], field[2] - field[1])
                 return
             if self.inline_editor:
                 self.clear_inline()
