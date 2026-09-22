@@ -5,7 +5,9 @@ Applies to every agent and all work in this repository.
 ## Read first
 
 Read README.md, docs/INITIAL_TASK.md and the relevant code and tests.
-If `.backbone/memory/HANDOFF.md` and INDEX.md exist, read them for local context.
+Read `.backbone/memory/HANDOFF.md` (active scratchpad) and `INDEX.md`, when present,
+then relevant linked memory. In linked worktrees, use the owning checkout's
+`.backbone/memory/` beside the common Git directory, not a separate memory copy.
 Shared memory, credentials, transcripts, runtime state and test artifacts stay
 untracked. Development orchestration is optional; it is not a product dependency.
 
@@ -41,7 +43,9 @@ review feedback before merging; verify the linked implementation issue is closed
 When dependent changes share a base, state their landing order and rebase between
 merges. Public repository visibility and package-registry publication are separate
 release decisions reserved for the repository owner.
-Update local HANDOFF before ending when shared memory is present.
+Refresh `.backbone/memory/HANDOFF.md` before ending with the active objective,
+state, verification, blockers and next step. Keep it compact; put completed
+history and useful learnings in separate files linked from `INDEX.md`.
 
 ## Optional Backbone communication
 
