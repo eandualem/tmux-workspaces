@@ -45,6 +45,21 @@ function run(argv) {
 }
 """
 
+# Whether any of a grid of sampled pixels is not black. A window on a Space that
+# is not showing, such as a full-screen one, captures as all black.
+PAINTED_JS = """
+ObjC.import("AppKit");
+function run(argv) {
+  const rep = $.NSBitmapImageRep.imageRepWithData($.NSData.dataWithContentsOfFile(argv[0]));
+  const w = rep.pixelsWide, h = rep.pixelsHigh;
+  for (let i = 1; i < 16; i++) for (let j = 1; j < 16; j++) {
+    const c = rep.colorAtXY(Math.floor(w * i / 16), Math.floor(h * j / 16));
+    if (c.redComponent + c.greenComponent + c.blueComponent > 0.01) return "yes";
+  }
+  return "no";
+}
+"""
+
 # Crop a PNG and enlarge it without smoothing, so single pixels stay visible.
 CROP_JS = """
 ObjC.import("AppKit");
@@ -148,6 +163,11 @@ def viewer_ready(library: Path) -> bool:
 
 def capture(state: dict, out: Path, crops: list[str]) -> None:
     subprocess.run(["screencapture", "-x", "-o", "-l", str(state["window"]), str(out)], check=True)
+    if jxa(PAINTED_JS, str(out)) != "yes":
+        raise RuntimeError(
+            f"{out} is all black: the window is not showing, for example full screen on "
+            "another Space, or this process lacks Screen Recording permission"
+        )
     print(out)
     for index, crop in enumerate(crops, 1):
         x, y, w, h, *scale = crop.split(",")

@@ -129,8 +129,10 @@ open. The window appears on screen while the capture runs.
   `--recapture DIR --out again.png` to capture it again, and `--close DIR` to
   close it and remove the directory.
 
-The process running the command needs macOS Screen Recording permission;
-without it the image shows only the desktop behind the window. Compare at least
+The process running the command needs macOS Screen Recording permission. The
+command fails, rather than keep an all-black image, when the window is not
+showing: without that permission, or when the window opened full screen on
+another Space. Use a windowed terminal for captures. Compare at least
 Ghostty and Terminal.app: the viewer adapts to what each terminal reports, for
 example the [status band's](THEMES.md#beyond-the-sidebar) one-row form.
 
