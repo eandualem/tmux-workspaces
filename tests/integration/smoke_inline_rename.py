@@ -100,8 +100,8 @@ def _exercise(resources: FixtureResources) -> None:
     def begin_workspace():
         client.pump(0.5)
         top = pane_top()
-        # The heading is centred on the panel's second row.
-        tap(1, 6, top, count=2)
+        # The heading is the panel's first row.
+        tap(0, 6, top, count=2)
         wait(client, editing, "workspace header double-click did not open inline editor")
         assert "RENAME WORKSPACE" not in sidebar(viewer)
         assert viewer.run("display-message", "-p", "-t", "viewer:", "#{pane_id}") == "%0"
@@ -109,15 +109,15 @@ def _exercise(resources: FixtureResources) -> None:
     hidden_caret()
     begin_workspace()
     client.type("Development")
-    workspace_column = sidebar(viewer).splitlines()[1].index("Development")
-    caret(1, workspace_column + len("Development"))
+    workspace_column = sidebar(viewer).splitlines()[0].index("Development")
+    caret(0, workspace_column + len("Development"))
     client.type("\x1bOD")
-    caret(1, workspace_column + len("Development") - 1)
+    caret(0, workspace_column + len("Development") - 1)
     client.pump(0.5)
-    tap(1, workspace_column + 3)
-    caret(1, workspace_column + 3)
+    tap(0, workspace_column + 3)
+    caret(0, workspace_column + 3)
     client.type("\x1bOC" * (len("Development") - 3))
-    caret(1, workspace_column + len("Development"))
+    caret(0, workspace_column + len("Development"))
     assert saved(library).space["name"] == original.space["name"]
     client.type("\r")
     wait(
@@ -127,7 +127,7 @@ def _exercise(resources: FixtureResources) -> None:
     )
     wait(
         client,
-        lambda: "Development" in sidebar(viewer).splitlines()[1],
+        lambda: "Development" in sidebar(viewer).splitlines()[0],
         "workspace header did not redraw",
     )
     assert saved(library).tab["name"] == first_name
@@ -246,7 +246,7 @@ def _exercise(resources: FixtureResources) -> None:
     for workspace in (True, False):
         client.pump(0.5)
         name = "Immediate workspace" if workspace else "Immediate tab"
-        row = 1 if workspace else tab_row(viewer, "resize-ok")
+        row = 0 if workspace else tab_row(viewer, "resize-ok")
         column = 7 if workspace else sidebar(viewer).splitlines()[row].index("resize-ok") + 2
         top = pane_top()
         click = f"\x1b[<0;{column};{row + top + 1}M\x1b[<0;{column};{row + top + 1}m"

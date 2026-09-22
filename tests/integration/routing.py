@@ -270,9 +270,10 @@ def _exercise(resources: FixtureResources, pane_count: int) -> None:
                         if kind == "workspace":
                             row, column = workspace_row, workspace_columns[index]
                         else:
-                            # The three-row header and label precede the tabs;
-                            # the mouse sequence below converts to 1-based rows.
-                            row, column = (5 if index else 4), 4
+                            # Tab rows start under the heading, its blank row
+                            # and the label, one row per tab; the sequence is
+                            # 1-based, so the first tab is row 4.
+                            row, column = (4 if index else 3), 4
                         navigation = f"\x1b[<0;{column};{row + 1}M\x1b[<0;{column};{row + 1}m"
                     command, marker = packet()
                     expected.append((marker, terminal(tab)))

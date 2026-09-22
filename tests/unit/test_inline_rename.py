@@ -41,7 +41,7 @@ class InlineRenameTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         self.sidebar.draw()
 
-    def tap(self, when, x=6, row=4):
+    def tap(self, when, x=6, row=3):
         with patch("tmux_workspaces.sidebar.time.monotonic", return_value=when):
             self.sidebar.mouse(x, row, curses.BUTTON1_PRESSED)
         self.sidebar.mouse(x, row, curses.BUTTON1_RELEASED)
@@ -67,7 +67,7 @@ class InlineRenameTests(unittest.TestCase):
         self.display.render.assert_not_called()
         rendered = self.sidebar.screen.addnstr.call_args_list
         self.assertTrue(
-            any(c.args[:2] == (4, 3) and c.args[2].startswith("Original") for c in rendered)
+            any(c.args[:2] == (3, 3) and c.args[2].startswith("Original") for c in rendered)
         )
         for char in "Edited":
             self.sidebar.input(char)
@@ -101,8 +101,8 @@ class InlineRenameTests(unittest.TestCase):
         self.assertEqual(self.sidebar.menu, "tab")
         self.sidebar.close_menu()
         self.sidebar.draw()
-        self.tap(12, row=5)
-        self.tap(12.2, row=5)
+        self.tap(12, row=4)
+        self.tap(12.2, row=4)
         self.assertIsNone(self.sidebar.inline_editor)
 
     def test_escape_and_outside_click_discard_draft(self):
@@ -115,7 +115,7 @@ class InlineRenameTests(unittest.TestCase):
         self.sidebar.draw()
         self.begin()
         self.sidebar.input("Y")
-        self.sidebar.mouse(26, 3, curses.BUTTON1_PRESSED)
+        self.sidebar.mouse(26, 2, curses.BUTTON1_PRESSED)
         self.assertIsNone(self.sidebar.inline_editor)
         self.assertEqual(self.model.space["tabs"][0]["name"], "Original")
         self.assertEqual(len(self.model.space["tabs"]), 2)
@@ -156,9 +156,9 @@ class InlineRenameTests(unittest.TestCase):
         self.display.shells.close.assert_not_called()
 
     def begin_workspace(self):
-        self.tap(10, row=1)
+        self.tap(10, row=0)
         self.assertIsNone(self.sidebar.inline_editor)
-        self.tap(10.2, row=1)
+        self.tap(10.2, row=0)
         self.assertEqual(self.sidebar.menu, "inline-name")
         self.assertIsNone(self.sidebar.inline_target[1])
         self.sidebar.draw()
@@ -168,7 +168,7 @@ class InlineRenameTests(unittest.TestCase):
         self.begin_workspace()
         self.assertTrue(
             any(
-                c.args[:2] == (1, 1) and c.args[2].startswith(self.model.space["name"])
+                c.args[:2] == (0, 1) and c.args[2].startswith(self.model.space["name"])
                 for c in self.sidebar.screen.addnstr.call_args_list
             )
         )
@@ -180,7 +180,7 @@ class InlineRenameTests(unittest.TestCase):
         self.assertEqual(self.model.space["tabs"], tabs)
         self.assertEqual(self.store.load().space["name"], "Development")
         self.sidebar.draw()
-        self.sidebar.mouse(26, 3, curses.BUTTON1_PRESSED)
+        self.sidebar.mouse(26, 2, curses.BUTTON1_PRESSED)
         self.assertEqual(len(self.model.space["tabs"]), 2)
         self.assertIsNone(self.sidebar.inline_editor)
         self.display.shells.close.assert_not_called()
@@ -227,12 +227,12 @@ class InlineRenameTests(unittest.TestCase):
 
     def test_clicks_on_different_names_do_not_combine_into_double_click(self):
         self.tap(10)
-        self.tap(10.2, row=1)
+        self.tap(10.2, row=0)
         self.assertIsNone(self.sidebar.inline_editor)
-        self.tap(10.4, row=1)
+        self.tap(10.4, row=0)
         self.assertIsNone(self.sidebar.inline_target[1])
         self.sidebar.draw()
-        self.sidebar.mouse(6, 1, curses.BUTTON1_PRESSED)
+        self.sidebar.mouse(6, 0, curses.BUTTON1_PRESSED)
         self.sidebar.input("!")
         self.assertIsNone(self.sidebar.inline_target[1])
         self.assertIn("!", self.sidebar.inline_editor.value)

@@ -240,11 +240,11 @@ class PanelColorTests(unittest.TestCase):
         self.assertEqual(options["pane-border-style"], "fg=#2a2e36,bg=#1b1e24")
         self.assertEqual(options["pane-active-border-style"], "fg=#2a2e36,bg=#1b1e24")
         self.assertEqual(options["pane-border-lines"], "single")
-        # The footer has a rule, muted text, and a blank bottom row,
+        # The compact footer has a rule and muted text,
         # all on the panel ground.
-        self.assertEqual(options["status"], "3")
+        self.assertEqual(options["status"], "2")
         self.assertEqual(options["status-position"], "bottom")
-        self.assertEqual(options["status-format[2]"], "")
+        self.assertNotIn("status-format[2]", options)
         self.assertEqual(options["status-style"], "fg=#7d828c,bg=#15171c")
         self.assertTrue(options["status-format[0]"].startswith("#[align=left]#[fg=#2a2e36"))
         # The sidebar's own cells are curses'; its ground is the panel.
@@ -272,7 +272,7 @@ class PanelColorTests(unittest.TestCase):
         display.tmux.reset_mock()
         display._content_panes = {"%3"}
         display.style_panel("default")
-        rule = "#[align=left]#[fg=default,bg=default]" + "─" * 22
+        rule = "#[align=left]#[fg=default,bg=default]" + "▁" * 22
         display.tmux.batch.assert_called_once_with(
             [
                 ["set-window-option", "-g", "pane-border-style", "fg=default,bg=default"],
@@ -315,7 +315,7 @@ class PanelColorTests(unittest.TestCase):
         rule = display._rule_format()
         self.assertEqual(
             rule,
-            "#[align=left]#[fg=#2a2e36,bg=#15171c]" + "─" * 100,
+            "#[align=left]#[fg=#2a2e36,bg=#15171c]" + "▁" * 100,
         )
 
     def test_every_content_pane_sits_on_the_surface(self):

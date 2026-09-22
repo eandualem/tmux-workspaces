@@ -34,7 +34,7 @@ ANCHORS = {
     # The add glyph on the tabs label row.
     "accent": "+",
 }
-# The workspace header occupies the second row, and the "Workspaces…" button
+# The workspace header occupies the top row, and the "Workspaces…" button
 # repeats its word further down the sidebar. Searching the whole screen for the
 # title would report that button's style as the header's, and would accept a
 # screen whose header is not drawn yet, asserting against a partial paint.
@@ -130,10 +130,10 @@ class Screen:
     def at(self, anchor: str, *, header_row: bool = False):
         """The style in force where `anchor` starts, or None when it is not drawn.
 
-        `header_row` searches only the heading row, the panel's second, for an
+        `header_row` searches only the heading row, the panel's first, for an
         anchor whose word also appears elsewhere in the sidebar.
         """
-        for text, states in self.lines[1:2] if header_row else self.lines:
+        for text, states in self.lines[0:1] if header_row else self.lines:
             position = text.find(anchor)
             if position >= 0:
                 return states[position]
@@ -267,7 +267,7 @@ def assert_roles_distinct(viewer: Tmux, context: str) -> None:
 
 def assert_grid(client, viewer: Tmux, cols: int, rows: int) -> None:
     """The sidebar uses 22 cells and exactly one separator at every size."""
-    expected = f"0,0,22,{rows - 3}\n23,0,{cols - 23},{rows - 3}"
+    expected = f"0,0,22,{rows - 2}\n23,0,{cols - 23},{rows - 2}"
     wait(
         client,
         lambda: (
@@ -388,10 +388,9 @@ def normal_background(directory: Path) -> None:
 
         def base_is_configured():
             drawn = Screen(viewer.run("capture-pane", "-e", "-N", "-p", "-t", "%0"))
-            # Blank body rows use normal; the first three rows deliberately
-            # use the header background, including its vertical padding.
+            # Blank body rows use normal; only the heading uses the header background.
             blanks = [
-                states for text, states in drawn.lines[3:] if len(states) > 1 and not text.strip()
+                states for text, states in drawn.lines[1:] if len(states) > 1 and not text.strip()
             ]
             return (
                 drawn.at("Tab ") is not None

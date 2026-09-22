@@ -23,10 +23,10 @@ Do not remove a sample library or its checkout while you still need its shells.
 ## Organization
 
 The panel is 22 columns wide and flush with the left edge; one thin line
-separates it from the content. The workspace heading sits between two blank
-rows on a three-row header bar: the workspace's icon when one is set, its
-name, and a ▾ chooser at the right. Below it are the `TABS` label with the +
-that adds a tab, then one row per tab: its number, its name, and one ▮ per pane. The
+separates it from the content. Its first row is the workspace heading on the
+header bar: the workspace's icon when one is set, its name, and a ▾ chooser at
+the right. A blank row follows, then the `TABS` label with the + that adds a
+tab, then one row per tab: its number, its name, and one ▮ per pane. The
 selected tab is one filled row with its name in bold and a ⋯ at the right end
 opening the tab menu. Long names end with an ellipsis; nothing repeats what a
 tab's panes hold.
@@ -43,8 +43,9 @@ Menus take the place of the tab list, headed by ‹ Back, with each row's prefix
 key at its right end. Double-click the active tab name or the workspace name to
 edit it in place; the hint takes the blank row under the heading.
 
-The footer has a rule above its text, a blank row below, and one cell of side
-padding. It names the workspace, tab and pane on the left, the keys for the current mode in the centre, and the agents
+The status row along the bottom of the window, directly under a rule and with
+one cell of padding on each side, names the workspace, tab and
+pane on the left, the keys for the current mode in the centre, and the agents
 toggle and the saved-state light on the right. Content panes sit on the surface
 color beside the panel; split panes are separated by one thin line in the
 outline color, down or across. No border marks the focused pane. Edit theme…

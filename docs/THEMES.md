@@ -119,7 +119,7 @@ accepts `foreground`, `background` and `attributes`, and every key is optional
 | `accent` | The ▶ marker on selected rows, the add glyph, tab numbers on the selected row, working agents, toggle values and error text |
 | `muted` | Section labels, tab numbers, pane glyphs, shortcut keys at the end of menu rows, hints and paths |
 | `outline` | The separators between the panel and the panes and between split panes, and the rules inside menus |
-| `header` | The three-row heading band of the panel or menu, and the footer of a popup |
+| `header` | The heading row of the panel, the ‹ Back row of a menu, and the footer of a popup |
 | `danger` | Agents that need you and the Close tab row |
 
 Text of one role drawn on the ground of another — the accent marker on the
@@ -174,10 +174,13 @@ The following parts are drawn in these colors, so the window reads as one layer:
   side by side or across a row between stacked ones. No border marks the focused
   pane. Everything here changes the moment a theme installs, including after
   saving in the editor.
-- **The status band.** Three rows across the bottom on the panel: a centred
-  rule in `outline`, a text row, and a blank row below. The text is inset one
-  cell from either side, painted by tmux in `muted`, with `normal` and `accent`
-  for emphasised words and a green light for the saved state.
+- **The status band.** Two rows across the bottom of the window on the panel:
+  a line in the `outline` color along the bottom edge of the first, the text
+  in the second, painted by tmux in the `muted`
+  foreground, with the `normal` and `accent` foregrounds for its emphasised
+  words and a green light for the saved state. Text has a one-cell inset on
+  both sides. The separate rule requires a full terminal row; the header and
+  footer use no blank padding rows.
 - **The new-pane chooser.** Each empty pane runs its own chooser using the
   viewer's installed theme snapshot and palette size, on the surface. Its
   title is the accent, hints are muted, the selected row uses `active`, and

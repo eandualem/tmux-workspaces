@@ -100,9 +100,8 @@ class Display:
         commands = []
         for name, value in {
             "mouse": "on",
-            # The footer keeps a rule above its text and a blank row below,
-            # so text never touches the window edge.
-            "status": "3",
+            # A compact footer: one rule row and one text row.
+            "status": "2",
             "status-position": "bottom",
             "status-interval": "0",
             "status-left": "",
@@ -125,7 +124,6 @@ class Display:
         }.items():
             commands.append(["set-option", "-g", name, value])
         commands.append(["set-option", "-g", "status-format[1]", self._status_format or ""])
-        commands.append(["set-option", "-g", "status-format[2]", ""])
         # The rule spans the panel until the first render learns the width.
         commands.extend(self._rule_commands())
         for name, value in {
@@ -337,11 +335,13 @@ class Display:
         return f"fg={text},bg={self.panel_color}"
 
     def _rule_format(self) -> str:
-        """A centred rule leaves half a row between the line and footer text,
-        instead of the full empty row below a top-edge glyph."""
+        """Place the rule at the bottom of its cell, directly above the text.
+
+        A terminal rule still needs a whole row, unlike a CSS border.
+        """
         outline = self.status_styles.get("outline", "default")
         columns = max(self._rule_columns, SIDEBAR_PANE)
-        return f"#[align=left]#[fg={outline},bg={self.panel_color}]" + "─" * columns
+        return f"#[align=left]#[fg={outline},bg={self.panel_color}]" + "▁" * columns
 
     def _rule_commands(self) -> list[list[str]]:
         return [["set-option", "-g", "status-format[0]", self._rule_format()]]
