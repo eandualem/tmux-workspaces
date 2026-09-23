@@ -21,7 +21,7 @@ class InlineRenameTests(unittest.TestCase):
         self.model = self.store.load()
         self.model.tab["name"] = "Original"
         self.store.save(self.model)
-        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP, last_size=(0, 0))
         self.display.focused_leaf.side_effect = lambda: (
             self.model.tab["focus"] if self.model.tab else None
         )

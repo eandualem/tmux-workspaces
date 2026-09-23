@@ -33,7 +33,7 @@ class FooterTests(unittest.TestCase):
         self.source.snapshot.side_effect = lambda: (self.agents, "")
         # A source with a state-reporting provider, currently listing no agents.
         self.source.roster.return_value = roster()
-        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP, last_size=(0, 0))
         self.display.snapshot_scope.return_value = contextlib.nullcontext()
         self.display.focused_leaf.side_effect = lambda: (
             self.model.tab["focus"] if self.model.tab else None

@@ -6,6 +6,7 @@ import contextlib
 import curses
 import importlib.metadata
 import locale
+import re
 import textwrap
 import time
 from collections.abc import Callable
@@ -1386,6 +1387,16 @@ class Sidebar:
 
     def status_line(self, rows: list[Entry] | None = None) -> str:
         left, centre, right = self.status_slots(rows)
+        # The centre is laid out on the whole row: it needs the wider side's
+        # room on both sides of it, plus the edge insets and a two-cell gap.
+        # Where it would run into the sides, the hints give way.
+        columns = self.display.last_size[0]
+        left_cells, centre_cells, right_cells = (
+            cells(re.sub(r"#\[[^\]]*\]", "", slot).replace("##", "#"))
+            for slot in (left, centre, right)
+        )
+        if columns and 2 * max(left_cells, right_cells) + centre_cells + 6 > columns:
+            centre = ""
         muted = self._tmux_fg("muted")
         return (
             f"#[fg={muted}]#[align=left] {left}"
