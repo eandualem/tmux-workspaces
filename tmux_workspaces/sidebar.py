@@ -138,7 +138,6 @@ def terminal_text(text: str, encoding: str) -> str:
 
 # The roster is bounded so the tab list keeps its room: at most this many
 # agent rows, and never fewer tab rows than this.
-MAX_ROSTER_ROWS = 6
 MIN_TAB_ROWS = 4
 # Sentinel: no roster has been read for the frame in progress.
 _UNREAD = object()
@@ -1473,15 +1472,29 @@ class Sidebar:
 
     def roster_rows(self) -> int:
         """Rows the roster takes, its label included; zero when it is hidden,
-        absent, or the window is too short to keep the tab list usable."""
+        absent, or the window is too short to keep the tab list usable.
+
+        The roster uses the room the tabs leave: every active agent when both
+        fit, with a blank row between them. Short of that, the tabs keep their
+        rows, but the agents that need you or are working, which come first,
+        still get theirs while the tab list keeps its minimum (fewer rows for
+        fewer tabs); the count and arrows reach the rest.
+        """
         roster = self.roster()
         if roster is None or not self.show_agents:
             return 0
-        room = self.size()[0] - 3 - self.FOOTER_ROWS - MIN_TAB_ROWS
+        space = self.size()[0] - 3 - self.FOOTER_ROWS
+        tabs = max(1, len(self.model.space["tabs"]))
+        room = space - min(MIN_TAB_ROWS, tabs)
         if room < 2:
             return 0
-        wanted = 1 + max(1, min(MAX_ROSTER_ROWS, len(self.roster_entries(roster))))
-        return min(wanted, room)
+        entries = self.roster_entries(roster)
+        wanted = 1 + max(1, len(entries))
+        leftover = space - tabs - 1
+        if wanted <= leftover:
+            return wanted
+        urgent = sum(STATE_SYMBOLS.get(state) in {"!", "▶"} for _name, state in entries)
+        return min(wanted, room, max(leftover, 1 + max(1, urgent)))
 
     def draw_roster(self, top: int, rows: int, width: int, roster: Snapshot) -> None:
         """The section: its label and count, then one row per active agent — a

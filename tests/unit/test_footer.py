@@ -194,36 +194,61 @@ class FooterTests(unittest.TestCase):
             self.sidebar.draw()
         self.assertEqual(self.sidebar.options[self.sidebar.selected][0], "▶ working")
 
-    def test_the_roster_is_bounded_scrolls_and_shrinks_before_the_tabs_do(self):
-        names = [f"agent{index:02d}" for index in range(9)]
+    def test_the_roster_uses_the_room_the_tabs_leave_and_scrolls_beyond_it(self):
+        # Twelve agents and one tab in 38 rows: every agent has a row, and a
+        # blank row separates the roster from the tabs.
+        names = [f"agent{index:02d}" for index in range(12)]
         self.source.roster.return_value = roster(**dict.fromkeys(names, "idle"))
         cells = self.cells()
-        # Six rows at most, a total and scroll arrows on the label row.
-        self.assertEqual(cells[28, 1].strip(), "AGENTS")
-        self.assertEqual(cells[28, 21].strip(), "9")
-        self.assertEqual((cells[28, 23].strip(), cells[28, 25].strip()), ("↑", "↓"))
-        self.assertEqual([cells[r, 3] for r in range(29, 35)], names[:6])
-        self.assertEqual(self.sidebar.tab_capacity(), 38 - 3 - 3 - 7)
-        self.mouse(25, 28)
-        self.mouse(25, 28)
-        self.mouse(25, 28)
+        top = 38 - 3 - 13
+        self.assertEqual(cells[top, 1].strip(), "AGENTS")
+        self.assertEqual(self.row_text(cells, top), "AGENTS12")
+        self.assertEqual([cells[r, 3] for r in range(top + 1, top + 13)], names)
+        self.assertNotIn((top, 23), cells)
+        self.assertEqual(self.sidebar.tab_capacity(), 38 - 3 - 3 - 13)
+        # More agents than the window holds: the tab keeps its row and the
+        # blank one, the roster the rest, with a total and scroll arrows.
+        names = [f"agent{index:02d}" for index in range(40)]
+        self.source.roster.return_value = roster(**dict.fromkeys(names, "idle"))
         cells = self.cells()
-        self.assertEqual([cells[r, 3] for r in range(29, 35)], names[3:])
+        self.assertEqual(self.sidebar.roster_rows(), 38 - 6 - 2)
+        self.assertEqual(self.sidebar.tab_capacity(), 2)
+        self.assertEqual(cells[5, 1].strip(), "AGENTS")
+        self.assertEqual(cells[5, 20].strip(), "40")
+        self.assertEqual((cells[5, 23].strip(), cells[5, 25].strip()), ("↑", "↓"))
+        self.assertEqual([cells[r, 3] for r in range(6, 35)], names[:29])
+        self.mouse(25, 5)
+        self.mouse(25, 5)
+        self.mouse(25, 5)
+        cells = self.cells()
+        self.assertEqual([cells[r, 3] for r in range(6, 35)], names[3:32])
         # The wheel over the rows scrolls them back; over the tabs it does not.
-        self.mouse(5, 31, curses.BUTTON4_PRESSED)
+        self.mouse(5, 20, curses.BUTTON4_PRESSED)
         self.assertEqual(self.sidebar.roster_offset, 2)
         self.mouse(5, 3, curses.BUTTON4_PRESSED)
         self.assertEqual(self.sidebar.roster_offset, 2)
-        # Shorter windows give rows back to the tabs first: four tab rows stay.
+
+    def test_a_short_window_keeps_the_tabs_and_the_agents_that_need_attention(self):
         for index in range(10):
             self.model.add_tab(f"Tab {index + 2}")
+        states = dict.fromkeys([f"agent{index:02d}" for index in range(9)], "idle")
+        self.source.roster.return_value = roster(**states)
+        # Eleven tabs fill 16 rows, so idle agents shrink to one row and a count.
         self.screen.getmaxyx.return_value = (16, 28)
         cells = self.cells()
-        self.assertEqual(self.sidebar.roster_rows(), 6)
-        self.assertEqual(self.sidebar.tab_capacity(), 4)
-        self.assertEqual(cells[7, 1].strip(), "AGENTS")
+        self.assertEqual(self.sidebar.roster_rows(), 2)
+        self.assertEqual(self.sidebar.tab_capacity(), 8)
+        self.assertEqual(cells[11, 1].strip(), "AGENTS")
         self.assertEqual(cells[14, 1].strip(), "Configure…")
-        self.assertEqual(cells[15, 1].strip(), "1")
+        # Agents that need you or are working keep their rows, while the tab
+        # list keeps its minimum of four.
+        self.source.roster.return_value = roster(
+            **states, zed="busy", yak="waiting_for_human", xen="busy"
+        )
+        cells = self.cells()
+        self.assertEqual(self.sidebar.roster_rows(), 4)
+        self.assertEqual(self.sidebar.tab_capacity(), 6)
+        self.assertEqual([cells[r, 3] for r in range(10, 13)], ["yak", "xen", "zed"])
         self.screen.getmaxyx.return_value = (14, 28)
         cells = self.cells()
         self.assertEqual(self.sidebar.roster_rows(), 4)

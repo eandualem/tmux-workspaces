@@ -37,8 +37,8 @@ Configure… (Edit theme…, Edit shortcuts…, View shortcuts…, Refresh viewe
 then Show agents and Agent status…, then Detach after a rule) and a blank row.
 Above that, when a state-reporting source is connected and the setting is on,
 the `AGENTS` section lists active agents one per row — a state symbol in a
-fixed slot and the name — bounded to six rows with a count and scroll arrows
-beyond that, or one quiet row saying *No active agents* or *Roster unavailable*.
+fixed slot and the name — in the height the tabs leave, with a count and scroll
+arrows when it holds fewer rows than agents, or one quiet row saying *No active agents* or *Roster unavailable*.
 Menus take the place of the tab list, headed by ‹ Back, with each row's prefix
 key at its right end. Double-click the active tab name or the workspace name to
 edit it in place; the hint takes the blank row under the heading.

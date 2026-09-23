@@ -292,8 +292,11 @@ agent-backbone's own reports, never from terminal text or a running process;
 when the connection fails the section says *Roster unavailable* rather than
 showing old states as current. Agents that need you come first, then those
 working, then the rest, each group in name order, so a row moves when its
-state changes. At most six rows are shown, with scrolling and a count when there are
-more, and on short windows the roster gives rows back to the tab list first.
+state changes. The roster uses the height the tab list leaves, so a tall window
+shows every active agent. When they do not all fit, the label row shows the total
+and scroll arrows; the tab list keeps its rows first, but agents that need you or
+are working keep theirs while the tab list keeps four rows, or one per tab when
+there are fewer.
 The roster appears when a state-reporting source is connected (Backbone, found
 on its own, or the demo) and can be hidden with **Show agents** in Configure…, with
 **Ctrl-g A**, or by clicking **agents shown** in the status row; the choice is
