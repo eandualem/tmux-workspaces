@@ -399,7 +399,7 @@ class WindowTests(unittest.TestCase):
             recorded = {}
 
             def start(command, **_kwargs):
-                argv = shlex.split(next(part for part in command if "_sidebar" in part))
+                argv = shlex.split(command[-1])
                 recorded["child"] = argv[argv.index("_sidebar") :]
                 instance = Path(argv[argv.index("--instance-dir") + 1])
                 recorded["instance"] = instance

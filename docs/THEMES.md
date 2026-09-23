@@ -182,21 +182,12 @@ The following parts are drawn in these colors, so the window reads as one layer:
   side by side or across a row between stacked ones. No border marks the focused
   pane. Everything here changes the moment a theme installs, including after
   saving in the editor.
-- **The status band.** Across the bottom of the window on the panel, painted
-  by tmux, with a one-cell inset on both sides. Its form depends on whether
-  tmux reports that the terminal draws an overline (SGR 53), which the viewer
-  declares for Ghostty (`xterm-ghostty`) and tmux reads from other terminals'
-  terminfo:
-  - With an overline, one row: the line is an overline along the top of the
-    text row, so the terminal content reaches the line directly. The terminal
-    draws an overline in each cell's own text color, so the whole row uses the
-    `muted` foreground and the line is that color; failures stay bold.
-  - Otherwise, two rows: a line in the `outline` color along the bottom edge of
-    the first, and the text in the second, in the `muted` foreground with the
-    `normal` and `accent` foregrounds for its emphasised words and a green
-    light for the saved state. The separate line needs a full terminal row.
-
-  Neither form uses blank padding rows.
+- **The status band.** One row across the bottom of the window on the panel,
+  painted by tmux, with a one-cell inset on both sides. The panel's ground sets
+  it apart from the terminals on the surface, so no line is drawn above it and
+  it uses no blank padding rows. The text is in the `muted` foreground, with the
+  `normal` and `accent` foregrounds for its emphasised words and a green light
+  for the saved state.
 - **The new-pane chooser.** Each empty pane runs its own chooser using the
   viewer's installed theme snapshot and palette size, on the surface. Its
   title is the accent, hints are muted, the selected row uses `active`, and

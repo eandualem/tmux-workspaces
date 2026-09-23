@@ -1,7 +1,6 @@
 import contextlib
 import copy
 import curses
-import re
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -1370,12 +1369,3 @@ class ThemeMenuTests(unittest.TestCase):
         self.assertNotIn("Error: ", status)
         self.assertNotIn("Layouts saved", status)
         self.assertIn("#[fg=#98c379]●", status)
-
-    def test_a_one_row_footer_draws_its_text_in_one_color(self):
-        self.sidebar.setup_theme()
-        self.display.overline = True
-        self.sidebar.draw()
-        status = self.display.set_status.call_args.args[0]
-        colors = set(re.findall(r"fg=(#[0-9a-f]{6})", status))
-        self.assertEqual(len(colors), 1, status)
-        self.assertIn("●", status)

@@ -133,8 +133,8 @@ The process running the command needs macOS Screen Recording permission. The
 command fails, rather than keep an all-black image, when the window is not
 showing: without that permission, or when the window opened full screen on
 another Space. Use a windowed terminal for captures. Compare at least
-Ghostty and Terminal.app: the viewer adapts to what each terminal reports, for
-example the [status band's](THEMES.md#beyond-the-sidebar) one-row form.
+Ghostty and Terminal.app: fonts, window padding and line drawing differ
+between terminals.
 
 ## Isolated Linux and SSH
 

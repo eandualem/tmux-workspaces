@@ -267,7 +267,7 @@ def assert_roles_distinct(viewer: Tmux, context: str) -> None:
 
 def assert_grid(client, viewer: Tmux, cols: int, rows: int) -> None:
     """The sidebar uses 22 cells and exactly one separator at every size."""
-    expected = f"0,0,22,{rows - 2}\n23,0,{cols - 23},{rows - 2}"
+    expected = f"0,0,22,{rows - 1}\n23,0,{cols - 23},{rows - 1}"
     wait(
         client,
         lambda: (
@@ -344,7 +344,7 @@ def write_config(path: Path, text: str) -> Path:
 
 def status(viewer: Tmux) -> str:
     """The status row's right slot: the message the sidebar sent to tmux."""
-    text = viewer.run("show-options", "-gv", "status-format[1]")
+    text = viewer.run("show-options", "-gv", "status-format[0]")
     right = text.rsplit("#[align=right]", 1)[-1]
     return re.sub(r"#\[[^\]]*\]", "", right).strip()
 

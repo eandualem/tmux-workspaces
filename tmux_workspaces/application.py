@@ -399,13 +399,6 @@ def run_instance(args) -> tuple[int, dict | None, bool]:
                     "-y",
                     str(rows),
                     script_command(*child_args),
-                    # Ghostty draws SGR 53 but its terminfo entry does not say
-                    # so; tmux reads this when the terminal attaches below.
-                    ";",
-                    "set-option",
-                    "-as",
-                    "terminal-features",
-                    "xterm-ghostty:overline",
                 ],
                 # This new, private server carries session paths to its sidebar
                 # so each viewer can initialize new shells from its own context.
