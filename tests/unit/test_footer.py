@@ -117,26 +117,26 @@ class FooterTests(unittest.TestCase):
 
     # -- the roster ----------------------------------------------------------
 
-    def test_roster_rows_carry_a_symbol_slot_and_a_name_in_a_stable_order(self):
+    def test_roster_rows_carry_a_symbol_slot_and_a_name_needs_you_and_working_first(self):
         self.source.roster.return_value = roster(
             zed="busy", Alpha="idle", mid="waiting_for_human", gone="offline", odd="weird"
         )
         cells = self.cells()
         rows = [(cells[r, 1], cells[r, 3]) for r in range(31, 35)]
-        self.assertEqual(rows, [("○", "Alpha"), ("!", "mid"), ("?", "odd"), ("▶", "zed")])
+        self.assertEqual(rows, [("!", "mid"), ("▶", "zed"), ("○", "Alpha"), ("?", "odd")])
         self.assertEqual(cells[30, 1].strip(), "AGENTS")
         self.assertEqual(cells[30, 26].strip(), "4")
         self.assertNotIn("gone", self.labels())
         # Offline agents take no row; the label sits right above the first agent.
         self.assertEqual(self.sidebar.tab_capacity(), 38 - 3 - 3 - 5)
-        # States change; positions do not.
+        # States change, and the rows follow them; names order each group.
         self.source.roster.return_value = roster(
             zed="idle", Alpha="busy", mid="idle", gone="idle", odd="starting"
         )
         cells = self.cells()
         rows = [(cells[r, 1], cells[r, 3]) for r in range(30, 35)]
         self.assertEqual(
-            rows, [("▶", "Alpha"), ("○", "gone"), ("○", "mid"), ("▶", "odd"), ("○", "zed")]
+            rows, [("▶", "Alpha"), ("▶", "odd"), ("○", "gone"), ("○", "mid"), ("○", "zed")]
         )
 
     def test_symbols_have_plain_fallbacks_and_states_have_names(self):
@@ -180,7 +180,7 @@ class FooterTests(unittest.TestCase):
         options = self.options()
         self.assertEqual(
             options[:4],
-            ["▶ builder · working", "! manager · waiting for you", "○ tester · idle", "1 offline"],
+            ["! manager · waiting for you", "▶ builder · working", "○ tester · idle", "1 offline"],
         )
         self.assertEqual(options[4], RULE)
         self.assertEqual(

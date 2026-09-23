@@ -1433,15 +1433,25 @@ class Sidebar:
 
     @staticmethod
     def roster_entries(roster: Snapshot) -> list[tuple[str, str]]:
-        """Active agents as (name, state): everything but offline, in a name
-        order that does not move as states change."""
+        """Active agents as (name, state): everything but offline. Those that
+        need you come first, then those working, so a roster taller than its
+        rows keeps them in view; names order each group. Every row opens the
+        same status menu, so a row that moves never misdirects a click."""
         entries = []
         for name, item in roster.sessions.items():
             state = item.get("state") if isinstance(item, dict) else None
             state = state if isinstance(state, str) and state else "unknown"
             if state != "offline":
                 entries.append((name, state))
-        return sorted(entries, key=lambda entry: (entry[0].casefold(), entry[0]))
+        attention = {"!": 0, "▶": 1}
+        return sorted(
+            entries,
+            key=lambda entry: (
+                attention.get(STATE_SYMBOLS.get(entry[1], "?"), 2),
+                entry[0].casefold(),
+                entry[0],
+            ),
+        )
 
     def glyph(self, char: str) -> str:
         return terminal_text(char, self.encoding)

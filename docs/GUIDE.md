@@ -290,8 +290,9 @@ is idle and `?` an unknown state; **Agent status…** spells each state out and
 ends with this legend. Offline agents take no row. States come from
 agent-backbone's own reports, never from terminal text or a running process;
 when the connection fails the section says *Roster unavailable* rather than
-showing old states as current. Names keep one alphabetical order as states
-change. At most six rows are shown, with scrolling and a count when there are
+showing old states as current. Agents that need you come first, then those
+working, then the rest, each group in name order, so a row moves when its
+state changes. At most six rows are shown, with scrolling and a count when there are
 more, and on short windows the roster gives rows back to the tab list first.
 The roster appears when a state-reporting source is connected (Backbone, found
 on its own, or the demo) and can be hidden with **Show agents** in Configure…, with
