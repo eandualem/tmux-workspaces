@@ -127,7 +127,9 @@ open. The window appears on screen while the capture runs.
   meantime you can drive it with tmux on the sockets named in that directory's
   `library/demo/windows/*/runtime.json`. Then use
   `--recapture DIR --out again.png` to capture it again, and `--close DIR` to
-  close it and remove the directory.
+  close it and remove the directory. Ghostty stops drawing a window that other
+  windows cover, so a recapture can show an earlier frame; check what tmux
+  holds (`capture-pane`) against the image. Terminal.app keeps drawing.
 
 The process running the command needs macOS Screen Recording permission. The
 command fails, rather than keep an all-black image, when the window is not

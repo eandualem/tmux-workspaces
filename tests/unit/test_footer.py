@@ -353,7 +353,8 @@ class FooterTests(unittest.TestCase):
         self.assertEqual(self.sidebar.menu, "icon")
         labels = [label for label, _ in self.sidebar._options({})]
         self.assertEqual(len(labels), len(WORKSPACE_ICONS) + 1)
-        self.assertEqual(labels[-1], "Number")
+        # Without a glyph, its name still starts in the names' column.
+        self.assertEqual(labels[-1], "   Number")
         dict(self.sidebar._options({}))[labels[0]]()
         glyph = WORKSPACE_ICONS[0][0]
         self.assertEqual(self.model.space["icon"], glyph)
@@ -370,7 +371,7 @@ class FooterTests(unittest.TestCase):
             validate_state(saved, navigation=False)
         # Back to a number; the heading is the bare name again.
         self.sidebar.open_menu("icon")
-        dict(self.sidebar._options({}))["Number"]()
+        dict(self.sidebar._options({}))["   Number"]()
         self.assertNotIn("icon", self.model.space)
         cells = self.cells()
         self.assertEqual(cells[37, 1].strip(), "1")

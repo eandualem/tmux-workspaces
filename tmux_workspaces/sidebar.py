@@ -1043,7 +1043,8 @@ class Sidebar:
                     row(f"{glyph}  {label}", lambda glyph=glyph: self.set_icon(glyph))
                     for glyph, label in WORKSPACE_ICONS
                 ),
-                row("Number", lambda: self.set_icon(None)),
+                # No glyph: its name lines up with the names above.
+                row("   Number", lambda: self.set_icon(None)),
             ]
         if self.menu == "configure":
             # Everything infrequent in one place; leaving last, after a rule,
