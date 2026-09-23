@@ -1267,7 +1267,7 @@ class Sidebar:
         "workspace": "Workspaces",
         "icon": "Workspace icon",
         "configure": "Configure",
-        "json-settings": "Opening window…",
+        "json-settings": "Popup open",
         "status": "Agent status",
         "name": "Type a name",
         "refresh": "Refresh viewer",
@@ -1681,7 +1681,7 @@ class Sidebar:
                 self.put(row, 1, entry.label[len(LABEL) :].upper(), muted)
             else:
                 self.draw_menu_row(row, entry, self.offset + row - start == self.selected, width)
-        if not rows and self.menu != "refresh":
+        if not rows and self.menu not in {"refresh", "json-settings"}:
             self.put(
                 start,
                 1,

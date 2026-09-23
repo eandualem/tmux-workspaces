@@ -205,7 +205,11 @@ def draw(screen, chooser: Chooser, curses, styles: dict[str, int] | None = None)
         put(row, max(1, width - 1 - len(text)), text, attribute)
 
     def bar(row: int) -> None:
-        put(row, 0, " " * width, styles["selected"])
+        # The whole width, like the sidebar's: its text keeps one cell of
+        # inset at both ends. The bar never reaches the bottom row, the one
+        # row whose last cell curses cannot write.
+        with contextlib.suppress(curses.error):
+            screen.addnstr(row, 0, " " * width, width, styles["selected"])
 
     put(0, 1, TITLE[:room], styles["title"])
     put(0, 2 + len(TITLE), LEAD, styles["muted"])

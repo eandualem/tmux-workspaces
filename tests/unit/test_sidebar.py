@@ -323,6 +323,11 @@ class SidebarTests(unittest.TestCase):
         with patch("tmux_workspaces.sidebar.ConfigPopup", return_value=popup):
             self.sidebar.open_config_editor("colors")
         self.assertEqual(self.sidebar.menu, "json-settings")
+        # Behind the open popup the panel says so, with no empty-list notice.
+        self.sidebar.draw()
+        drawn = [call.args[2] for call in self.screen.addnstr.call_args_list]
+        self.assertIn("POPUP OPEN", drawn)
+        self.assertNotIn("No entries", drawn)
         self.sidebar.action("close-tab")
         self.sidebar.input("t")
         self.assertEqual(self.model.state, before)
