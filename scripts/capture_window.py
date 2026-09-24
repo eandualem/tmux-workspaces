@@ -149,12 +149,16 @@ def open_terminal_app(library: Path) -> dict:
 
 def viewer_ready(library: Path) -> bool:
     """The newest window of the demo library has drawn its sidebar."""
-    manifests = sorted(
-        (library / "demo" / "windows").glob("*/runtime.json"), key=lambda p: p.stat().st_mtime
-    )
-    if not manifests:
+    try:
+        manifests = sorted(
+            (library / "demo" / "windows").glob("*/runtime.json"), key=lambda p: p.stat().st_mtime
+        )
+        if not manifests:
+            return False
+        # The viewer may still be writing its manifest.
+        socket = json.loads(manifests[-1].read_text())["viewer_socket"]
+    except (OSError, ValueError, KeyError):
         return False
-    socket = json.loads(manifests[-1].read_text())["viewer_socket"]
     shown = subprocess.run(
         ["tmux", "-S", socket, "capture-pane", "-p", "-t", "%0"], capture_output=True, text=True
     )
@@ -177,8 +181,6 @@ def capture(state: dict, out: Path, crops: list[str]) -> None:
 
 
 def close(directory: Path) -> None:
-    from tmux_workspaces.application import socket_path
-
     state = json.loads((directory / "capture.json").read_text())
     if state["terminal"] == "ghostty":
         with contextlib.suppress(ProcessLookupError):
@@ -186,9 +188,7 @@ def close(directory: Path) -> None:
     else:
         # Stop the viewer first: Terminal asks before closing a window whose
         # processes still run, and the attached tmux client ends with its server.
-        for manifest in (directory / "library" / "demo" / "windows").glob("*/runtime.json"):
-            socket = json.loads(manifest.read_text())["viewer_socket"]
-            subprocess.run(["tmux", "-S", socket, "kill-server"], capture_output=True)
+        stop_sample(directory / "library")
         time.sleep(1)
         subprocess.run(
             [
@@ -200,12 +200,23 @@ def close(directory: Path) -> None:
             capture_output=True,
         )
     time.sleep(1)
-    # Closing a viewer keeps its shells by design; these are the sample's own.
-    library = directory / "library" / "demo"
-    subprocess.run(
-        ["tmux", "-S", socket_path(library, "terminals"), "kill-server"], capture_output=True
-    )
+    stop_sample(directory / "library")
     shutil.rmtree(directory)
+
+
+def stop_sample(library: Path) -> None:
+    """Stop the sample's own tmux servers: its viewers', then its shells'.
+    Closing a viewer keeps its shells by design; these are the sample's own."""
+    from tmux_workspaces.application import socket_path
+
+    for manifest in (library / "demo" / "windows").glob("*/runtime.json"):
+        with contextlib.suppress(OSError, ValueError, KeyError):
+            socket = json.loads(manifest.read_text())["viewer_socket"]
+            subprocess.run(["tmux", "-S", socket, "kill-server"], capture_output=True)
+    subprocess.run(
+        ["tmux", "-S", socket_path(library / "demo", "terminals"), "kill-server"],
+        capture_output=True,
+    )
 
 
 def main() -> int:
@@ -242,7 +253,14 @@ def main() -> int:
     library = directory / "library"
     seed(library)
     opener = open_ghostty if options.terminal == "ghostty" else open_terminal_app
-    state = opener(library) | {"library": str(library)}
+    try:
+        state = opener(library) | {"library": str(library)}
+    except BaseException:
+        # No window to close yet: stop what the viewer started, which also
+        # ends a Ghostty instance whose command was the viewer.
+        stop_sample(library)
+        shutil.rmtree(directory)
+        raise
     (directory / "capture.json").write_text(json.dumps(state))
     try:
         wait(lambda: viewer_ready(library), "the viewer did not draw its sidebar", timeout=30)

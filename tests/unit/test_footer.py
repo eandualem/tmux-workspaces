@@ -169,6 +169,49 @@ class FooterTests(unittest.TestCase):
         self.assertEqual(options[3], RULE)
         self.assertEqual(len(options), 4 + 4)
 
+    def test_a_stale_roster_takes_only_the_rows_it_draws(self):
+        cached = {f"agent{index:02d}": {"state": "idle"} for index in range(20)}
+        self.source.roster.return_value = Snapshot(cached, error="stale", stale=True)
+        self.assertEqual(self.sidebar.roster_rows(), 2)
+
+    def test_an_agent_that_starts_working_is_shown_even_when_the_roster_was_scrolled(self):
+        states = dict.fromkeys([f"agent{index:02d}" for index in range(40)], "idle")
+        self.source.roster.return_value = roster(**states)
+        self.cells()
+        self.sidebar.scroll_roster(5)
+        self.cells()
+        self.assertEqual(self.sidebar.roster_offset, 5)
+        # Unchanged states keep the scroll; a newly working agent resets it.
+        self.cells()
+        self.assertEqual(self.sidebar.roster_offset, 5)
+        self.source.roster.return_value = roster(**{**states, "agent30": "busy"})
+        cells = self.cells()
+        self.assertEqual(self.sidebar.roster_offset, 0)
+        self.assertEqual((cells[6, 1], cells[6, 3]), ("▶", "agent30"))
+        # It stays working: scrolling by hand works again.
+        self.sidebar.scroll_roster(3)
+        self.cells()
+        self.assertEqual(self.sidebar.roster_offset, 3)
+
+    def test_the_selected_tab_stays_in_view_when_the_roster_takes_rows(self):
+        for index in range(13):
+            self.model.add_tab(f"Tab {index + 2}")
+        self.screen.getmaxyx.return_value = (20, 28)
+        self.source.roster.return_value = roster(agent="idle")
+        self.sidebar.tab_offset = 2
+        self.cells()
+        self.assertEqual((self.sidebar.tab_capacity(), self.sidebar.tab_offset), (12, 2))
+        # The last tab is selected; three agents start working, the tab list
+        # loses two rows, and the selection is still its last shown row.
+        self.source.roster.return_value = roster(agent="idle", a="busy", b="busy", c="busy")
+        cells = self.cells()
+        self.assertEqual((self.sidebar.tab_capacity(), self.sidebar.tab_offset), (10, 4))
+        self.assertEqual(cells[12, 4], "Tab 14")
+        # At a steady height, scrolling by hand is not undone.
+        self.sidebar.tab_offset = 0
+        self.cells()
+        self.assertEqual(self.sidebar.tab_offset, 0)
+
     def test_the_status_menu_spells_states_out_and_ends_with_the_legend(self):
         self.source.roster.return_value = roster(
             builder="busy", manager="waiting_for_human", tester="idle", notes="offline"

@@ -198,6 +198,8 @@ class Sidebar:
         self.selection = Selection()
         self.tab_offset = 0
         self.roster_offset = 0
+        self._urgent_names: set[str] = set()
+        self._tab_rows_seen = 0
         # Consecutive polls that found the keyboard focus away from the panel
         # while a menu or editor was open.
         self.away_polls = 0
@@ -1488,7 +1490,8 @@ class Sidebar:
         room = space - min(MIN_TAB_ROWS, tabs)
         if room < 2:
             return 0
-        entries = self.roster_entries(roster)
+        # An unavailable roster draws one line, whatever it last held.
+        entries = [] if roster.stale else self.roster_entries(roster)
         wanted = 1 + max(1, len(entries))
         leftover = space - tabs - 1
         if wanted <= leftover:
@@ -1510,6 +1513,12 @@ class Sidebar:
         if not entries:
             self.put(top + 1, 1, "No active agents", muted, width - 2)
             return
+        # An agent that starts needing you or working moves to the top; show
+        # it rather than leave it above a scrolled list.
+        urgent = {name for name, state in entries if STATE_SYMBOLS.get(state) in {"!", "▶"}}
+        if urgent - self._urgent_names:
+            self.roster_offset = 0
+        self._urgent_names = urgent
         self.roster_offset = min(self.roster_offset, max(0, len(entries) - visible_rows))
         count = str(len(entries))
         if len(entries) > visible_rows:
@@ -1811,6 +1820,15 @@ class Sidebar:
         tabs = self.model.space["tabs"]
         available = self.tab_capacity()
         self.tab_offset = min(self.tab_offset, max(0, len(tabs) - available))
+        if available < self._tab_rows_seen and tab in tabs:
+            # The roster took rows: keep the selected tab in view. Scrolling
+            # the list by hand at a steady height is left alone.
+            index = tabs.index(tab)
+            if index < self.tab_offset:
+                self.tab_offset = index
+            elif index >= self.tab_offset + available:
+                self.tab_offset = index - available + 1
+        self._tab_rows_seen = available
         if len(tabs) > available:
             self.button(2, "↑", lambda: self.scroll(-1), x=width - 8, width=2, style=muted)
             self.button(2, "↓", lambda: self.scroll(1), x=width - 6, width=2, style=muted)
