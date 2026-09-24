@@ -22,7 +22,7 @@ import uuid
 from pathlib import Path
 
 from . import relaunch
-from .cli import default_source_socket
+from .cli import default_source_socket, resolve_backbone
 from .entrypoints import application_argv
 from .keymap import keymap_source
 from .theme import theme_path
@@ -38,8 +38,9 @@ class LaunchContext:
     """What this command asked for, captured before anything derives from it."""
 
     def __init__(self, args):
-        if not args.backbone and (args.backbone_data_dir is not None or args.url is not None):
-            raise ValueError("Use --backbone to enable Backbone configuration and API access")
+        self.backbone, self.backbone_dir = resolve_backbone(args)
+        # Asked off stays off on reopen, even once Backbone's database appears.
+        self.no_backbone = args.backbone is False
         self.demo = bool(args.demo)
         self.base_library = args.data_dir.expanduser().resolve()
         # The disposable library lives beside the real one; a reopened command
@@ -49,17 +50,6 @@ class LaunchContext:
             None
             if self.demo
             else str(Path(args.source_socket or default_source_socket()).expanduser().resolve())
-        )
-        self.backbone = bool(args.backbone)
-        self.backbone_dir = (
-            (
-                args.backbone_data_dir
-                or Path(os.environ.get("BACKBONE_DATA_DIR") or "~/.local/share/agent-backbone")
-            )
-            .expanduser()
-            .resolve()
-            if self.backbone
-            else None
         )
         self.url = args.url if self.backbone else None
         self.theme = theme_path(args.theme)
@@ -129,6 +119,8 @@ class LaunchContext:
             options += ["--backbone", "--backbone-data-dir", str(self.backbone_dir)]
             if self.url:
                 options += ["--url", self.url]
+        elif self.no_backbone:
+            options.append("--no-backbone")
         if self.no_keymap:
             options.append("--no-keymap")
         elif self.keymap_required:

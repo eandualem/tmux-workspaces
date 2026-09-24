@@ -355,6 +355,8 @@ def run_instance(args) -> tuple[int, dict | None, bool]:
             child_args += ["--carry-navigation", args.carry_navigation]
         if args.backbone:
             child_args += ["--backbone", "--backbone-data-dir", str(args.backbone_data_dir)]
+        else:
+            child_args.append("--no-backbone")
         if args.backbone and args.url:
             child_args += ["--url", args.url]
         if args.demo:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import curses
 import json
+import re
 import socket
 import sys
 import textwrap
@@ -14,6 +15,7 @@ from pathlib import Path
 from .events import InputEvents
 from .json_settings import SettingsDraft
 from .name_editor import cells
+from .popup import MIN_COLS, MIN_ROWS, Frame, attribute_styles, install_styles
 from .text_buffer import TextBuffer
 
 
@@ -32,9 +34,38 @@ def clip(text, left, width):
     return result
 
 
+# JSON strings, and the ones that name a key.
+_STRING = re.compile(r'"(?:[^"\\]|\\.)*"(\s*:)?')
+
+
+def spans(line):
+    """The line as (text, kind) pieces: ``key``, ``string`` or ``text``."""
+    result, position = [], 0
+    for match in _STRING.finditer(line):
+        if match.start() > position:
+            result.append((line[position : match.start()], "text"))
+        if match.group(1):
+            result.append((line[match.start() : match.end() - len(match.group(1))], "key"))
+            result.append((match.group(1), "text"))
+        else:
+            result.append((match.group(0), "string"))
+        position = match.end()
+    if position < len(line):
+        result.append((line[position:], "text"))
+    return result
+
+
 class Editor:
-    def __init__(self, screen, draft):
+    # The text starts here: after two cells of padding and a four-cell gutter.
+    TEXT_COLUMN = 6
+    # Rows above and below the text: the title bar and a blank row, then the
+    # cursor row and the footer.
+    TOP, BOTTOM = 2, 2
+
+    def __init__(self, screen, draft, styles=None, frame=None):
         self.screen, self.draft = screen, draft
+        self.styles = styles or attribute_styles(curses)
+        self.frame = frame or Frame(screen, curses, self.styles, None, None)
         self.buffer = TextBuffer(draft.initial, draft.file.limit)
         self.message = draft.message
         self.done = False
@@ -55,21 +86,23 @@ class Editor:
             with contextlib.suppress(curses.error):
                 self.screen.addstr(row, column, clip(text, 0, width - column - 1), style)
 
+    def area(self):
+        """Rows and columns the text occupies."""
+        height, width = self.screen.getmaxyx()
+        return height - self.TOP - self.BOTTOM, width - self.TEXT_COLUMN - 2
+
     def draw(self):
         height, width = self.screen.getmaxyx()
         self.screen.erase()
         self.buttons.clear()
-        if height < 12 or width < 40:
-            self.put(0, 0, "Enlarge terminal (40x12 minimum)")
+        if height < MIN_ROWS or width < MIN_COLS:
+            self.put(0, 0, f"Enlarge terminal ({MIN_COLS}x{MIN_ROWS} minimum)")
             self.put(2, 0, "Esc cancels; your draft is retained")
             self.screen.refresh()
             return
         title = "Edit theme" if self.draft.kind == "colors" else "Edit shortcuts"
-        self.put(0, 1, title, curses.A_BOLD)
-        self.put(1, 1, str(self.draft.file.path), curses.A_DIM)
-        self.put(2, 1, "JSON view · saved as TOML", curses.A_DIM)
-        self.put(3, 1, "Ctrl-A select all · Ctrl-Z undo · Ctrl-Y redo", curses.A_DIM)
-        area_height, area_width = height - 9, width - 7
+        self.frame.title(title, "JSON view · saved as TOML")
+        area_height, area_width = self.area()
         lines, cursor_row, cursor_column = self.buffer.viewport(area_height, area_width)
         if self.help:
             info = (
@@ -83,32 +116,66 @@ class Editor:
                     "dedicated Ghostty profiles require reopening."
                     if self.draft.kind == "shortcuts"
                     else "Colors: panel/surface accept names or #rrggbb. normal, active, accent, "
-                    "muted and outline accept foreground, background and attributes. Color lists "
-                    "provide fallbacks. A preset can be default, plain, forest, paper or mono; "
-                    "explicit fields override it. Saved colors apply to this viewer."
+                    "muted, outline, header and danger accept foreground, background and "
+                    "attributes. Color lists provide fallbacks. A preset can be default, plain, "
+                    "forest, paper, mono or debug; explicit fields override it. Saved colors "
+                    "apply to this viewer."
                 )
             )
             for index, line in enumerate(textwrap.wrap(info, width=width - 4)[:area_height]):
-                self.put(4 + index, 2, line)
+                self.put(self.TOP + index, 2, line, self.styles["normal"])
         else:
             for index, line in enumerate(lines):
-                self.put(4 + index, 0, f"{self.buffer.top + index + 1:4}", curses.A_DIM)
-                style = curses.A_REVERSE if self.buffer.anchor is not None else 0
-                self.put(4 + index, 6, clip(line, self.buffer.left, area_width), style)
+                row = self.TOP + index
+                self.put(row, 2, f"{self.buffer.top + index + 1:<4}", self.styles["dim"])
+                if self.buffer.anchor is not None:
+                    text = clip(line, self.buffer.left, area_width)
+                    self.put(row, self.TEXT_COLUMN, text, self.styles["normal"] | curses.A_REVERSE)
+                else:
+                    self.draw_line(row, line, area_width)
         row, column = self.buffer.position()
-        self.put(height - 5, 1, f"Line {row + 1}, column {column + 1}", curses.A_DIM)
-        for index, line in enumerate(textwrap.wrap(self.message, max(1, width - 2))[:2]):
-            self.put(height - 4 + index, 1, line, curses.A_BOLD)
-        for index, (label, action) in enumerate(
-            (("Save F2", self.save), ("Cancel F10", self.cancel), ("Help F1", self.toggle_help))
-        ):
-            start = 1 + index * ((width - 2) // 3)
-            self.put(height - 2, start, label, curses.A_REVERSE)
-            self.buttons.append((height - 2, start, start + len(label), action))
+        if self.message:
+            text = textwrap.wrap(self.message, max(1, width - 4))[:1]
+            self.put(height - 2, 2, text[0] if text else "", self.styles["notice"])
+        else:
+            self.put(
+                height - 2,
+                2,
+                f"Line {row + 1}, column {column + 1} · ^A select all · ^Z undo · ^Y redo"
+                " · ^V paste",
+                self.styles["muted"],
+            )
+        hits = self.frame.footer(
+            [("Save F2", "pill"), ("Cancel F10", "muted/header")],
+            str(self.draft.file.path),
+            "Help F1",
+        )
+        actions = {"Save F2": self.save, "Cancel F10": self.cancel}
+        for start, end, label in hits:
+            self.buttons.append((height - 1, start, end, actions[label]))
+        help_column = max(0, width - 2 - len("Help F1"))
+        self.buttons.append((height - 1, help_column, help_column + 7, self.toggle_help))
         if not self.help:
             with contextlib.suppress(curses.error):
-                self.screen.move(4 + cursor_row, 6 + cursor_column)
+                self.screen.move(self.TOP + cursor_row, self.TEXT_COLUMN + cursor_column)
         self.screen.refresh()
+        self.frame.paint_title()
+
+    def draw_line(self, row, line, area_width):
+        """One line of JSON, keys and strings in their colors, clipped to the view."""
+        position, column, left = 0, self.TEXT_COLUMN, self.buffer.left
+        for text, kind in spans(line):
+            style = self.styles[kind] if kind in ("key", "string") else self.styles["normal"]
+            for char in text:
+                size = cells(char)
+                if position + size <= left:
+                    position += size
+                    continue
+                if position >= left + area_width:
+                    return
+                self.put(row, column, char if char.isprintable() else " ", style)
+                column += size
+                position += size
 
     def toggle_help(self):
         self.help = not self.help
@@ -137,9 +204,10 @@ class Editor:
         if key == curses.KEY_RESIZE:
             return
         height, width = self.screen.getmaxyx()
+        page = max(1, height - self.TOP - self.BOTTOM)
         if key in ("\x1b", "\x03", curses.KEY_F10):
             self.cancel()
-        elif height < 12 or width < 40:
+        elif height < MIN_ROWS or width < MIN_COLS:
             return
         elif key == curses.KEY_MOUSE:
             with contextlib.suppress(curses.error):
@@ -149,12 +217,16 @@ class Editor:
                         if y == row and start <= x < end:
                             action()
                             return
-                    if 4 <= y < height - 5 and x >= 6 and not self.help:
-                        self.buffer.click(y - 4, x - 6)
+                    if (
+                        self.TOP <= y < height - self.BOTTOM
+                        and x >= self.TEXT_COLUMN
+                        and not self.help
+                    ):
+                        self.buffer.click(y - self.TOP, x - self.TEXT_COLUMN)
                 elif buttons & curses.BUTTON4_PRESSED:
-                    self.buffer.key(curses.KEY_PPAGE, page=max(1, height - 9))
+                    self.buffer.key(curses.KEY_PPAGE, page=page)
                 elif buttons & getattr(curses, "BUTTON5_PRESSED", 0):
-                    self.buffer.key(curses.KEY_NPAGE, page=max(1, height - 9))
+                    self.buffer.key(curses.KEY_NPAGE, page=page)
         elif key in ("\x13", curses.KEY_F2):
             self.save()
         elif key == curses.KEY_F1:
@@ -171,7 +243,7 @@ class Editor:
                 self.message = str(error)
         elif not self.help:
             self.discard = False
-            if not self.buffer.key(key, page=max(1, height - 9)):
+            if not self.buffer.key(key, page=page):
                 self.message = "Text limit reached; edit or remove some text before adding more."
 
     def feed(self, key):
@@ -230,6 +302,11 @@ class Editor:
                 self.cancel()
 
 
+def emit(text):
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
 def editor_main(args):
     draft = SettingsDraft(args.config_kind, args.config_path)
     result = Path(args.config_result)
@@ -241,7 +318,9 @@ def editor_main(args):
         curses.mouseinterval(0)
         curses.mousemask(curses.ALL_MOUSE_EVENTS)
         curses.curs_set(1)
-        editor = Editor(screen, draft)
+        colors = getattr(args, "terminal_colors", None)
+        styles, theme = install_styles(curses, emit, getattr(args, "chooser_theme", None), colors)
+        editor = Editor(screen, draft, styles, Frame(screen, curses, styles, theme, colors))
         receiver, sender = socket.socketpair()
         with receiver, sender:
             events = InputEvents(screen, receiver)

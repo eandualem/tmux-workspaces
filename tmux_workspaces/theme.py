@@ -1,12 +1,14 @@
 """Validated semantic viewer colors resolved against real terminal capability.
 
-Files are TOML data naming five semantic roles and two grounds, never terminal
+Files are TOML data naming seven semantic roles and two grounds, never terminal
 escape sequences. A file may start from a named preset and override any part of
 it. The panel is painted by tmux rather than curses, so it may be an RGB value.
 This module never imports curses: the caller injects the module, as
 ``preflight.load_curses`` does, so resolution and pair installation stay testable
-without a terminal. Roles map one-to-one onto curses pairs 1-5, which keeps the
-documented startup floor of eight colors and six pairs intact.
+without a terminal. The five original roles map one-to-one onto curses pairs
+1-5, which keeps the documented startup floor of eight colors and six pairs
+intact; the header and danger roles and the combination pairs after them degrade
+to a fallback style on a terminal that refuses more pairs.
 
 The viewer styles its own layer only. Fonts, glyph availability and the colors a
 shell program prints remain the terminal's, because a curses application cannot
@@ -32,9 +34,25 @@ MAX_FALLBACKS = 8
 SUBSTITUTE_FOREGROUND = 7
 SUBSTITUTE_BACKGROUND = 0
 
-# Order is the curses pair number minus one, matching the pairs the viewer has
-# always installed: normal=1, active=2, accent=3, muted=4, outline=5.
-ROLES = ("normal", "active", "accent", "muted", "outline")
+# Order is the curses pair number minus one: normal=1, active=2, accent=3,
+# muted=4, outline=5, then the two roles the redesign added, header=6 and
+# danger=7. The first five are required; the last two degrade to a fallback
+# style when a terminal refuses more pairs, so the startup floor is unchanged.
+ROLES = ("normal", "active", "accent", "muted", "outline", "header", "danger")
+REQUIRED_ROLES = ROLES[:5]
+# What an optional role draws with when its pair cannot be installed.
+ROLE_FALLBACKS = {"header": ("normal", ()), "danger": ("accent", ("bold",))}
+# Text of one role drawn on the ground of another: the accent marker and the
+# muted key on the selected row, the icon and chevron on the header bar. Each
+# takes one more pair after the roles; a refused pair falls back to the text
+# role alone.
+COMBINATIONS: tuple[tuple[str, str], ...] = (
+    ("accent", "active"),
+    ("muted", "active"),
+    ("danger", "active"),
+    ("accent", "header"),
+    ("muted", "header"),
+)
 ATTRIBUTES = ("bold", "dim", "reverse", "standout", "underline")
 _BASIC_NAMES = ("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white")
 COLOR_NAMES = ("default", *_BASIC_NAMES, *(f"bright-{name}" for name in _BASIC_NAMES))
@@ -236,22 +254,27 @@ def tmux_spelling(name: str) -> str:
 # green for 108, silently changing the look on an eight-color terminal. Every
 # preset keeps the terminal's font and the colors shell programs print.
 # Each preset: name, panel (the sidebar's ground), surface (the
-# terminals' ground) and the roles. The shipped palette is the one the owner
-# specified from VS Code: surface #292c33, panel #22252b, outline #31343b,
-# selection #343841, text #cccccc, secondary #999999, accent #608af7.
-_DARK_PANEL, _DARK_SURFACE = "#22252b", "#292c33"
-_LIGHT_PANEL, _LIGHT_SURFACE = "#f8f8f8", "#ffffff"
+# terminals' ground) and the roles. The shipped palette is the approved
+# redesign: panel #15171c, surface #1b1e24, outline #2a2e36, header bar
+# #1e2128, selection #262a33, text #d4d6db, secondary #7d828c, an amber
+# #e0a458 accent and a #e06c75 danger.
+_DARK_PANEL, _DARK_SURFACE, _DARK_HEADER = "#15171c", "#1b1e24", "#1e2128"
+_LIGHT_PANEL, _LIGHT_SURFACE, _LIGHT_HEADER = "#f8f8f8", "#ffffff", "#ececec"
+_DARK_GROUND = (_DARK_PANEL, "233", "black")
+_LIGHT_GROUND = (_LIGHT_PANEL, "255", "white")
 _PRESETS: tuple[tuple[str, str, str, dict[str, Role]], ...] = (
     (
         "default",
         _DARK_PANEL,
         _DARK_SURFACE,
         {
-            "normal": Role(("#cccccc", "252", "white"), (_DARK_PANEL, "235", "black"), ()),
-            "active": Role(("#cccccc", "252", "white"), ("#343841", "237", "blue"), ()),
-            "accent": Role(("#608af7", "69", "cyan"), (_DARK_PANEL, "235", "black"), ()),
-            "muted": Role(("#999999", "246", "white"), (_DARK_PANEL, "235", "black"), ()),
-            "outline": Role(("#31343b", "237", "white"), (_DARK_SURFACE, "236", "black"), ()),
+            "normal": Role(("#d4d6db", "252", "white"), _DARK_GROUND, ()),
+            "active": Role(("#ffffff", "231", "white"), ("#262a33", "238", "blue"), ()),
+            "accent": Role(("#e0a458", "179", "yellow"), _DARK_GROUND, ()),
+            "muted": Role(("#7d828c", "244", "white"), _DARK_GROUND, ()),
+            "outline": Role(("#2a2e36", "236", "white"), _DARK_GROUND, ()),
+            "header": Role(("#d4d6db", "252", "white"), (_DARK_HEADER, "234", "black"), ()),
+            "danger": Role(("#e06c75", "167", "red"), _DARK_GROUND, ()),
         },
     ),
     (
@@ -259,11 +282,13 @@ _PRESETS: tuple[tuple[str, str, str, dict[str, Role]], ...] = (
         DEFAULT_PANEL,
         DEFAULT_PANEL,
         {
-            "normal": Role(("#cccccc", "252", "white"), (DEFAULT_COLOR,), ()),
-            "active": Role(("#cccccc", "252", "white"), ("#343841", "237", "blue"), ()),
-            "accent": Role(("#608af7", "69", "cyan"), (DEFAULT_COLOR,), ()),
-            "muted": Role(("#999999", "246", "white"), (DEFAULT_COLOR,), ()),
-            "outline": Role(("#31343b", "237", "white"), (DEFAULT_COLOR,), ()),
+            "normal": Role(("#d4d6db", "252", "white"), (DEFAULT_COLOR,), ()),
+            "active": Role(("#ffffff", "231", "white"), ("#262a33", "238", "blue"), ()),
+            "accent": Role(("#e0a458", "179", "yellow"), (DEFAULT_COLOR,), ()),
+            "muted": Role(("#7d828c", "244", "white"), (DEFAULT_COLOR,), ()),
+            "outline": Role(("#2a2e36", "236", "white"), (DEFAULT_COLOR,), ()),
+            "header": Role(("#d4d6db", "252", "white"), (DEFAULT_COLOR,), ()),
+            "danger": Role(("#e06c75", "167", "red"), (DEFAULT_COLOR,), ()),
         },
     ),
     (
@@ -276,6 +301,8 @@ _PRESETS: tuple[tuple[str, str, str, dict[str, Role]], ...] = (
             "accent": Role(("108", "cyan"), (DEFAULT_COLOR,), ()),
             "muted": Role(("245", "white"), (DEFAULT_COLOR,), ()),
             "outline": Role(("238", "white"), (DEFAULT_COLOR,), ()),
+            "header": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ()),
+            "danger": Role(("167", "red"), (DEFAULT_COLOR,), ()),
         },
     ),
     (
@@ -283,11 +310,13 @@ _PRESETS: tuple[tuple[str, str, str, dict[str, Role]], ...] = (
         _LIGHT_PANEL,
         _LIGHT_SURFACE,
         {
-            "normal": Role(("#3b3b3b", "237", "black"), (_LIGHT_PANEL, "255", "white"), ()),
+            "normal": Role(("#3b3b3b", "237", "black"), _LIGHT_GROUND, ()),
             "active": Role(("#3b3b3b", "237", "black"), ("#e8e8e8", "254", "cyan"), ()),
-            "accent": Role(("#005fb8", "25", "blue"), (_LIGHT_PANEL, "255", "white"), ()),
-            "muted": Role(("#6e6e6e", "243", "black"), (_LIGHT_PANEL, "255", "white"), ()),
-            "outline": Role(("#e5e5e5", "254", "black"), (_LIGHT_SURFACE, "231", "white"), ()),
+            "accent": Role(("#b8651b", "130", "yellow"), _LIGHT_GROUND, ()),
+            "muted": Role(("#6e6e6e", "243", "black"), _LIGHT_GROUND, ()),
+            "outline": Role(("#e5e5e5", "254", "black"), _LIGHT_GROUND, ()),
+            "header": Role(("#3b3b3b", "237", "black"), (_LIGHT_HEADER, "255", "white"), ()),
+            "danger": Role(("#c0392b", "160", "red"), _LIGHT_GROUND, ()),
         },
     ),
     (
@@ -300,6 +329,24 @@ _PRESETS: tuple[tuple[str, str, str, dict[str, Role]], ...] = (
             "accent": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("bold",)),
             "muted": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("dim",)),
             "outline": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("dim",)),
+            "header": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("bold",)),
+            "danger": Role((DEFAULT_COLOR,), (DEFAULT_COLOR,), ("bold", "underline")),
+        },
+    ),
+    # A diagnostic look: every ground and line in a loud, distinct color, so a
+    # gap or a misplaced edge is visible at a glance. Not for daily use.
+    (
+        "debug",
+        "#7b1fa2",
+        "#1565c0",
+        {
+            "normal": Role(("#ffffff", "231", "white"), ("#7b1fa2", "92", "magenta"), ()),
+            "active": Role(("#ffffff", "231", "white"), ("#2e7d32", "28", "green"), ()),
+            "accent": Role(("#00e5ff", "51", "cyan"), ("#7b1fa2", "92", "magenta"), ()),
+            "muted": Role(("#ffe082", "222", "yellow"), ("#7b1fa2", "92", "magenta"), ()),
+            "outline": Role(("#ff1744", "197", "red"), ("#7b1fa2", "92", "magenta"), ()),
+            "header": Role(("#000000", "16", "black"), ("#f9a825", "214", "yellow"), ()),
+            "danger": Role(("#ff6d00", "208", "red"), ("#7b1fa2", "92", "magenta"), ()),
         },
     ),
 )
@@ -326,13 +373,14 @@ def preset_theme(name: str) -> Theme:
         frozenset(
             role
             for role, value in _PRESET_ROLES[key].items()
-            if role != "outline" and tmux_spelling(value.background[0]) == _PRESET_PANELS[key]
+            if tmux_spelling(value.background[0]) == _PRESET_PANELS[key]
         ),
         key,
         frozenset(
             role
             for role, value in _PRESET_ROLES[key].items()
-            if role == "outline" and tmux_spelling(value.background[0]) == _PRESET_SURFACES[key]
+            if tmux_spelling(value.background[0]) == _PRESET_SURFACES[key]
+            and tmux_spelling(value.background[0]) != _PRESET_PANELS[key]
         ),
     )
 
@@ -352,14 +400,21 @@ class Palette:
     _styles: dict[str, int] = field(default_factory=dict, compare=False, repr=False)
     _installed: dict[str, tuple[int, int]] = field(default_factory=dict, compare=False, repr=False)
 
-    def pair(self, role: str) -> int:
-        return ROLES.index(role) + 1
+    def pair(self, role: str, on: str | None = None) -> int:
+        if on is None:
+            return ROLES.index(role) + 1
+        return len(ROLES) + COMBINATIONS.index((role, on)) + 1
 
-    def style(self, role: str) -> int:
-        """Precomputed curses attribute. install() must run first."""
-        if role not in self._styles:
-            raise ThemeError(f"palette role {role!r} is not installed")
-        return self._styles[role]
+    def style(self, role: str, on: str | None = None) -> int:
+        """Precomputed curses attribute. install() must run first.
+
+        ``on`` names the role whose ground the text sits on: the accent marker
+        on the selected row, the muted chevron on the header bar.
+        """
+        key = role if on is None else f"{role}/{on}"
+        if key not in self._styles:
+            raise ThemeError(f"palette role {key!r} is not installed")
+        return self._styles[key]
 
     def installed(self, role: str) -> tuple[int, int]:
         """The numbers actually handed to init_pair, which entries may not equal.
@@ -372,8 +427,11 @@ class Palette:
         return self._installed[role]
 
     def install(self, curses, write=None, *, previous_rgb=()) -> None:
-        """Install pairs 1-5 once. On failure, restore the pairs already in use.
+        """Install the role pairs once. On failure, restore the pairs already in use.
 
+        The first five roles are required; the header and danger roles and the
+        combination pairs fall back to an installed style when the terminal
+        refuses another pair, so a small pair table never stops the viewer.
         ``write`` sends text to the pane's terminal; it receives the palette
         definitions for any RGB colors. Without it, such colors show as
         whatever the slots held, so a viewer always passes one. ``previous_rgb``
@@ -390,41 +448,33 @@ class Palette:
             with_default = False
         applied: dict[str, int] = {}
         installed: dict[str, tuple[int, int]] = {}
+        numbers: dict[str, tuple[int, int]] = {}
+
+        def attribute_bits(attributes: tuple[str, ...]) -> int:
+            bits = 0
+            for name in attributes:
+                bits |= getattr(curses, f"A_{name.upper()}", 0)
+            return bits
+
         try:
             for role in ROLES:
                 foreground, background, attributes = self.entries[role]
                 if not with_default:
-                    # Substituting concrete colors for -1 can collapse a pair that
-                    # was legible while the terminal supplied its own defaults, so
-                    # the legibility guard has to run again on these numbers. Only
-                    # one side can have been substituted here, and it is the side
-                    # to move: the other is the user's explicit choice.
-                    substituted_foreground = foreground < 0
-                    foreground = SUBSTITUTE_FOREGROUND if foreground < 0 else foreground
-                    substituted_background = background < 0
-                    background = SUBSTITUTE_BACKGROUND if background < 0 else background
-                    if foreground == background:
-                        if substituted_background:
-                            background = (
-                                SUBSTITUTE_BACKGROUND
-                                if foreground == SUBSTITUTE_FOREGROUND
-                                else SUBSTITUTE_FOREGROUND
-                            )
-                        elif substituted_foreground:
-                            foreground = (
-                                SUBSTITUTE_BACKGROUND
-                                if background == SUBSTITUTE_FOREGROUND
-                                else SUBSTITUTE_FOREGROUND
-                            )
-                        else:
-                            foreground = SUBSTITUTE_FOREGROUND
-                            background = SUBSTITUTE_BACKGROUND
-                curses.init_pair(self.pair(role), foreground, background)
+                    foreground, background = _substitute(foreground, background)
+                numbers[role] = (foreground, background)
+                try:
+                    curses.init_pair(self.pair(role), foreground, background)
+                except (curses.error, OSError, ValueError):
+                    if role in REQUIRED_ROLES:
+                        raise
+                    # An optional role on a terminal with few pairs: draw it
+                    # with the documented fallback instead of failing.
+                    base, extra = ROLE_FALLBACKS[role]
+                    installed[role] = installed[base]
+                    applied[role] = applied[base] | attribute_bits(extra)
+                    continue
                 installed[role] = (foreground, background)
-                style = curses.color_pair(self.pair(role))
-                for name in attributes:
-                    style |= getattr(curses, f"A_{name.upper()}", 0)
-                applied[role] = style
+                applied[role] = curses.color_pair(self.pair(role)) | attribute_bits(attributes)
         except (curses.error, OSError, ValueError) as error:
             for role, entry in previous.items():
                 with contextlib.suppress(curses.error, OSError, ValueError):
@@ -432,6 +482,22 @@ class Palette:
             raise ThemeError(
                 f"cannot install theme colors: {error}. The previous colors were kept."
             ) from error
+        for text, ground in COMBINATIONS:
+            key = f"{text}/{ground}"
+            foreground, background = numbers[text][0], numbers[ground][1]
+            attributes = attribute_bits(self.entries[text][2]) | attribute_bits(
+                self.entries[ground][2]
+            )
+            if (foreground >= 0 and foreground == background) or installed[text] != numbers[text]:
+                # Invisible on that ground, or the text role itself fell back:
+                # the text role's own style is the legible choice.
+                applied[key] = applied[text]
+                continue
+            try:
+                curses.init_pair(self.pair(text, ground), foreground, background)
+                applied[key] = curses.color_pair(self.pair(text, ground)) | attributes
+            except (curses.error, OSError, ValueError):
+                applied[key] = applied[text]
         self._styles.clear()
         self._styles.update(applied)
         self._installed.clear()
@@ -444,6 +510,37 @@ class Palette:
             sequence += palette_sequence({name: slot for slot, name in self.rgb.items()})
             if sequence:
                 write(sequence)
+
+
+def _substitute(foreground: int, background: int) -> tuple[int, int]:
+    """Concrete colors for -1 on a terminal without default-color support.
+
+    Substituting can collapse a pair that was legible while the terminal
+    supplied its own defaults, so the legibility guard runs again on these
+    numbers. Only one side can have been substituted here, and it is the side
+    to move: the other is the user's explicit choice.
+    """
+    substituted_foreground = foreground < 0
+    foreground = SUBSTITUTE_FOREGROUND if foreground < 0 else foreground
+    substituted_background = background < 0
+    background = SUBSTITUTE_BACKGROUND if background < 0 else background
+    if foreground == background:
+        if substituted_background:
+            background = (
+                SUBSTITUTE_BACKGROUND
+                if foreground == SUBSTITUTE_FOREGROUND
+                else SUBSTITUTE_FOREGROUND
+            )
+        elif substituted_foreground:
+            foreground = (
+                SUBSTITUTE_BACKGROUND
+                if background == SUBSTITUTE_FOREGROUND
+                else SUBSTITUTE_FOREGROUND
+            )
+        else:
+            foreground = SUBSTITUTE_FOREGROUND
+            background = SUBSTITUTE_BACKGROUND
+    return foreground, background
 
 
 # The pairs currently installed in this process, so a failed apply can roll back.
@@ -573,6 +670,20 @@ class Theme:
         name = self.roles["outline"].foreground[0]
         return self.panel if name == DEFAULT_COLOR else tmux_spelling(name)
 
+    def tmux_role(self, role: str, colors: int) -> tuple[str, str]:
+        """A role's foreground and background as tmux spells them, for the
+        status row and popup styles tmux paints itself: the first fallback
+        this palette size supports, or the same nearest choice curses gets."""
+
+        def pick(names: tuple[str, ...]) -> str:
+            for name in names:
+                if _supported(name, colors):
+                    return tmux_spelling(name)
+            return tmux_color(_nearest(names[-1], colors))
+
+        value = self.roles[role]
+        return pick(value.foreground), pick(value.background)
+
     def preset_name(self) -> str | None:
         """The preset this theme equals exactly, or None for custom colors."""
         return next((name for name in PRESET_NAMES if preset_theme(name) == self), None)
@@ -642,10 +753,11 @@ class Theme:
         return Palette(MappingProxyType(entries), rgb)
 
 
-# Palette slots an RGB role color may take in the viewer's own pane. tmux keeps
-# a palette per pane, so redefining these changes nothing outside the viewer;
-# the range is one no preset names by number.
-RGB_SLOTS = range(16, 24)
+# Palette slots an RGB color may take in the viewer's own pane. tmux keeps a
+# palette per pane, so redefining these changes nothing outside the viewer;
+# the range is one no preset names by number. Seven roles and the popups'
+# extra colors fit with room to spare.
+RGB_SLOTS = range(16, 48)
 
 
 def _resolve_color(
@@ -672,6 +784,69 @@ def _resolve_color(
     # Dropping a bright color to its base loses the brightness; bold restores it.
     extra = frozenset({"bold"}) if 8 <= index < 16 and nearest == index - 8 else frozenset()
     return nearest, extra
+
+
+# Colors the popups and the status row use beyond the theme's roles: the
+# saved-state light, JSON keys and strings in the editor, and the dim outline
+# of a popup frame. Each is an exact value with a 256-color and a basic
+# fallback, like every preset color.
+EXTRA_COLORS: Mapping[str, tuple[str, ...]] = MappingProxyType(
+    {
+        "ok": ("#98c379", "114", "green"),
+        "key": ("#8ab4f8", "111", "blue"),
+        "string": ("#98c379", "114", "green"),
+        "dim": ("#3a3f4a", "237", "white"),
+    }
+)
+
+
+def extra_color(name: str, colors: int) -> str:
+    """The tmux spelling of an extra color for this palette size."""
+    names = EXTRA_COLORS[name]
+    for value in names:
+        if _supported(value, colors):
+            return tmux_spelling(value)
+    return tmux_color(_nearest(names[-1], colors))
+
+
+def install_extras(
+    palette: Palette, curses, write, colors: int, names: tuple[str, ...]
+) -> dict[str, int]:
+    """Give a popup the extra colors as styles on the normal ground.
+
+    Each takes a pair after the roles and combinations and, for an exact
+    value, a free palette slot. Anything the terminal refuses draws as normal
+    text, so a popup never fails over a decoration.
+    """
+    styles: dict[str, int] = {}
+    background = palette.installed("normal")[1]
+    taken = {number for entry in palette.entries.values() for number in entry[:2]}
+    free = [slot for slot in RGB_SLOTS if slot not in palette.rgb and slot not in taken]
+    slots: dict[str, int] = {}
+    pair = len(ROLES) + len(COMBINATIONS) + 1
+    for name in names:
+        styles[name] = palette.style("normal")
+        for value in EXTRA_COLORS[name]:
+            if not _supported(value, colors):
+                continue
+            if is_rgb(value):
+                if value not in slots:
+                    if not free:
+                        continue
+                    slots[value] = free.pop(0)
+                index = slots[value]
+            else:
+                index = color_index(value)
+            try:
+                curses.init_pair(pair, index, background)
+                styles[name] = curses.color_pair(pair)
+            except (curses.error, OSError, ValueError):
+                break
+            pair += 1
+            break
+    if write is not None and slots:
+        write(palette_sequence(slots))
+    return styles
 
 
 def palette_sequence(slots: Mapping[str, int]) -> str:

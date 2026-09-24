@@ -35,16 +35,26 @@ class LauncherTests(unittest.TestCase):
         with patch.dict(os.environ, {"TMUX_TMPDIR": "/tmp/runtime"}, clear=True):
             self.assertEqual(default_source_socket(), f"/tmp/runtime/tmux-{os.getuid()}/default")
 
-    def test_backbone_options_require_explicit_adapter(self):
+    def test_backbone_is_detected_named_or_refused(self):
+        from tmux_workspaces.cli import resolve_backbone
+
         for arguments in (["--url", "http://127.0.0.1:9"], ["--backbone-data-dir", "/tmp/unused"]):
             with (
                 self.subTest(arguments=arguments),
-                self.assertRaisesRegex(ValueError, "--backbone"),
+                self.assertRaisesRegex(ValueError, "--no-backbone"),
             ):
-                supervise(parser().parse_args(arguments))
+                supervise(parser().parse_args(["--no-backbone", *arguments]))
+            self.assertTrue(resolve_backbone(parser().parse_args(arguments))[0])
         args = parser().parse_args([])
-        self.assertFalse(args.backbone)
+        self.assertIsNone(args.backbone)
         self.assertIsNone(args.backbone_data_dir)
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {"BACKBONE_DATA_DIR": directory}):
+                self.assertEqual(resolve_backbone(args), (False, None))
+                (Path(directory) / "backbone.db").touch()
+                self.assertEqual(resolve_backbone(args), (True, Path(directory).resolve()))
+            off = parser().parse_args(["--no-backbone"])
+            self.assertEqual(resolve_backbone(off), (False, None))
 
     def test_saved_attachment_uses_original_socket_and_raw_name(self):
         display = Display(

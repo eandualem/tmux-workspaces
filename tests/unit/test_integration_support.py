@@ -305,7 +305,7 @@ class GestureSynchronizationTests(unittest.TestCase):
                 return "done"
             # During the first attempt the menu does not change. It moves only
             # when the helper starts waiting for its second attempt.
-            return "‹ Back\n    Go" if clock() >= 1.6 else "‹ Back\nGo"
+            return "‹ Back\n    Go" if clock() >= 4.1 else "‹ Back\nGo"
 
         viewer.run.side_effect = run
         with (
@@ -324,10 +324,10 @@ class GestureSynchronizationTests(unittest.TestCase):
             patch("tests.integration.support._appears", side_effect=[False, True]),
             patch("builtins.print") as output,
         ):
-            click_button(client, viewer, "[x] Show agent status")
+            click_button(client, viewer, "Show agents")
         self.assertEqual(
             [call.args[2] for call in click.call_args_list],
-            ["Configure…", "Configure…", "[x] Show agent status"],
+            ["Configure…", "Configure…", "Show agents"],
         )
         output.assert_called_once()
         self.assertIn("RETRY:", output.call_args.args[0])

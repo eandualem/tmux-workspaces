@@ -133,6 +133,8 @@ class PresetThemeTests(unittest.TestCase):
                 )
                 self.assertEqual(theme.roles["normal"].background, ("bright-blue",))
                 self.assertEqual(theme.roles["accent"].background, ("bright-blue",))
+                # The outline draws its rules on the panel too.
+                self.assertEqual(theme.roles["outline"].background, ("bright-blue",))
                 self.assertEqual(
                     theme.roles["muted"].background, preset_theme(preset).roles["muted"].background
                 )
@@ -141,33 +143,20 @@ class PresetThemeTests(unittest.TestCase):
                 again = restored.with_panel("red")
                 self.assertEqual(again.roles["normal"].background, ("red",))
                 self.assertEqual(again.roles["accent"].background, ("red",))
+                self.assertEqual(again.roles["outline"].background, ("red",))
                 self.assertEqual(again.roles["muted"], restored.roles["muted"])
-                self.assertEqual(again.roles["outline"], restored.roles["outline"])
                 self.assertEqual(parse_theme(again.to_toml().encode()), again)
 
-    def test_surface_override_follows_outline_but_preserves_explicit_background(self):
+    def test_surface_override_changes_only_the_terminals_ground(self):
         for preset in PRESET_NAMES:
             with self.subTest(preset=preset):
                 theme = Theme.from_dict({"preset": preset, "surface": "brightgreen"})
-                self.assertEqual(theme.roles["outline"].background, ("bright-green",))
-                self.assertEqual(theme.roles["normal"], preset_theme(preset).roles["normal"])
+                self.assertEqual(theme.surface, "brightgreen")
+                self.assertEqual(theme.roles, preset_theme(preset).roles)
                 restored = parse_theme(theme.to_toml().encode())
                 self.assertEqual(restored, theme)
-                self.assertEqual(restored.with_surface("red").roles["outline"].background, ("red",))
-                fixed = Theme.from_dict(
-                    {
-                        "preset": preset,
-                        "surface": "brightgreen",
-                        "outline": {"background": ["bright-green"]},
-                    }
-                )
-                self.assertEqual(
-                    parse_theme(fixed.to_toml().encode())
-                    .with_surface("red")
-                    .roles["outline"]
-                    .background,
-                    ("bright-green",),
-                )
+                self.assertEqual(restored.with_surface("red").surface, "red")
+                self.assertEqual(restored.with_surface("red").roles, theme.roles)
 
     def test_returning_to_preset_grounds_restores_inherited_fallbacks(self):
         for preset in PRESET_NAMES:
@@ -197,7 +186,7 @@ class PresetThemeTests(unittest.TestCase):
         self.assertEqual(palette.entries["muted"][:2], (16, 18))
         self.assertNotIn(16, palette.rgb)
         # Every remaining exact color still has a slot, from 17 upward.
-        self.assertEqual(sorted(palette.rgb), [17, 18, 19, 20, 21, 22])
+        self.assertEqual(sorted(palette.rgb), [17, 18, 19, 20, 21, 22, 23, 24])
 
     def test_live_theme_releases_rgb_slots_for_indexed_colors(self):
         fake, writes = Curses(), []
@@ -232,29 +221,36 @@ class PanelColorTests(unittest.TestCase):
     def test_grounds_set_before_setup_are_applied_by_setup(self):
         display = self.display()
         display.tmux = Mock()
-        display.style_panel("#22252b", "#292c33", "#31343b")
+        display.style_panel(
+            "#15171c", "#1b1e24", "#2a2e36", {"muted": "#7d828c", "outline": "#2a2e36"}
+        )
         display.tmux.batch.assert_not_called()
         display.setup()
-        options = {
-            command[2]: command[3]
-            for call in display.tmux.batch.call_args_list
-            for command in call.args[0]
-            if command[:2] == ["set-window-option", "-g"]
-        }
-        # With a surface of its own the border glyphs vanish into it, so the
-        # padding beside each pane reads as blank and no border is marked.
-        self.assertEqual(options["pane-border-style"], "fg=#292c33,bg=#292c33")
-        self.assertEqual(options["pane-active-border-style"], "fg=#292c33,bg=#292c33")
-        # The sidebar's own cells are curses'; its ground is the surface, which
-        # shows only where curses leaves a cell alone.
         commands = [
             command for call in display.tmux.batch.call_args_list for command in call.args[0]
         ]
+        options = {
+            command[2]: command[3]
+            for command in commands
+            if command[:2] in (["set-window-option", "-g"], ["set-option", "-g"])
+        }
+        # The borders are tmux's own: one thin line in the separator color on
+        # the surface, between the sidebar and the content and between split
+        # panes alike. No border is marked.
+        self.assertEqual(options["pane-border-style"], "fg=#2a2e36,bg=#1b1e24")
+        self.assertEqual(options["pane-active-border-style"], "fg=#2a2e36,bg=#1b1e24")
+        self.assertEqual(options["pane-border-lines"], "single")
+        # The compact footer is one row of muted text on the panel ground,
+        # with no rule above it.
+        self.assertEqual(options["status"], "on")
+        self.assertEqual(options["status-position"], "bottom")
+        self.assertNotIn("status-format[1]", options)
+        self.assertEqual(options["status-style"], "fg=#7d828c,bg=#15171c")
+        # The sidebar's own cells are curses'; its ground is the panel.
         for option in ("window-style", "window-active-style"):
-            self.assertIn(["set-option", "-p", "-t", "%0", option, "bg=#292c33"], commands)
-        self.assertTrue(display.padded)
+            self.assertIn(["set-option", "-p", "-t", "%0", option, "bg=#15171c"], commands)
 
-    def test_the_panel_alone_makes_a_band_and_no_padding(self):
+    def test_the_panel_alone_keeps_the_terminals_own_ground(self):
         display = self.display()
         display.tmux = Mock()
         display.style_panel("#22252b")
@@ -265,8 +261,7 @@ class PanelColorTests(unittest.TestCase):
             for command in call.args[0]
             if command[:2] == ["set-window-option", "-g"]
         }
-        self.assertEqual(options["pane-border-style"], "fg=#22252b,bg=#22252b")
-        self.assertFalse(display.padded)
+        self.assertEqual(options["pane-border-style"], "fg=#22252b,bg=default")
         self.assertEqual(display.separator, "#22252b")
 
     def test_a_panel_set_after_setup_reaches_tmux_in_one_batch(self):
@@ -274,13 +269,13 @@ class PanelColorTests(unittest.TestCase):
         display.tmux = Mock()
         display.setup()
         display.tmux.reset_mock()
-        display._empty_panes = {"%3"}
+        display._content_panes = {"%3"}
         display.style_panel("default")
         display.tmux.batch.assert_called_once_with(
             [
-                ["set-option", "-g", "@viewer_padded", "0"],
                 ["set-window-option", "-g", "pane-border-style", "fg=default,bg=default"],
                 ["set-window-option", "-g", "pane-active-border-style", "fg=default,bg=default"],
+                ["set-option", "-g", "status-style", "fg=default,bg=default"],
                 ["set-option", "-p", "-t", "%0", "window-style", "default"],
                 ["set-option", "-p", "-t", "%0", "window-active-style", "default"],
                 ["set-option", "-p", "-t", "%3", "window-style", "default"],
@@ -289,22 +284,60 @@ class PanelColorTests(unittest.TestCase):
         )
         self.assertEqual(display.panel_color, "default")
 
-    def test_empty_panes_join_the_panel_and_filled_panes_leave_it(self):
+    def test_a_status_text_tmux_refused_is_sent_again(self):
         display = self.display()
-        display.panel_color = "#272c36"
+        display.tmux = Mock()
+        display.setup()
+        display.tmux.run.side_effect = [RuntimeError("busy"), ""]
+        with self.assertRaises(RuntimeError):
+            display.set_status("#[align=left]saved")
+        display.set_status("#[align=left]saved")
+        self.assertEqual(display.tmux.run.call_count, 2)
+
+    def test_the_status_row_text_is_sent_once_per_change(self):
+        display = self.display()
+        display.tmux = Mock()
+        display.set_status("#[align=left]before setup")
+        display.tmux.run.assert_not_called()
+        display.setup()
+        commands = [
+            command for call in display.tmux.batch.call_args_list for command in call.args[0]
+        ]
+        self.assertIn(
+            ["set-option", "-g", "status-format[0]", "#[align=left]before setup"], commands
+        )
+        display.set_status("#[align=left]before setup")
+        display.tmux.run.assert_not_called()
+        display.set_status("#[align=left]after")
+        display.tmux.run.assert_called_once_with(
+            "set-option", "-g", "status-format[0]", "#[align=left]after"
+        )
+
+    def test_every_content_pane_sits_on_the_surface(self):
+        display = self.display()
+        display.surface = "#272c36"
         model = Model.initial()
         model.add_tab(empty=True)
         empty = model.pane
         model.add_tab("filled")
         filled = model.pane
-        tab = {"id": "t", "focus": empty["id"], "tree": {**empty}}
-        commands = display._identity_commands(tab, {empty["id"]: "%5"})
-        self.assertIn(["set-option", "-p", "-t", "%5", "window-style", "bg=#272c36"], commands)
-        self.assertEqual(display._empty_panes, {"%5"})
-        tab = {"id": "t", "focus": filled["id"], "tree": {**filled}}
-        commands = display._identity_commands(tab, {filled["id"]: "%5"})
-        self.assertIn(["set-option", "-p", "-t", "%5", "window-style", "default"], commands)
-        self.assertEqual(display._empty_panes, set())
+        for leaf in (empty, filled):
+            tab = {"id": "t", "focus": leaf["id"], "tree": {**leaf}}
+            commands = display._identity_commands(tab, {leaf["id"]: "%5"})
+            self.assertIn(["set-option", "-p", "-t", "%5", "window-style", "bg=#272c36"], commands)
+            self.assertEqual(display._content_panes, {"%5"})
+
+    def test_a_popup_is_centred_over_the_content_area(self):
+        display = self.display()
+        with patch.object(display, "size", return_value=(170, 44)):
+            left, bottom, width, height = display.popup_geometry(30)
+        self.assertEqual((width, height), (88, 30))
+        # Columns 0-21 are the panel, 22 the border; content starts at 23.
+        self.assertEqual(left, 23 + (170 - 23 - 88) // 2)
+        self.assertEqual(bottom, (44 - 30) // 2 + 30)
+        with patch.object(display, "size", return_value=(80, 20)):
+            left, bottom, width, height = display.popup_geometry(30)
+        self.assertEqual((left, bottom, width, height), (24, 20, 80 - 23 - 2, 20))
 
     def test_panel_values_are_canonical_tmux_colors(self):
         self.assertEqual(canonical_panel("#1F2430"), "#1f2430")
@@ -399,15 +432,28 @@ class ChooserThemeTests(unittest.TestCase):
         chooser = Chooser("t", "l")
         chooser.update({"work": {"online": True, "state": "idle"}}, "")
         chooser.select(1)
-        styles = {"title": 11, "muted": 12, "selected": 13, "notice": 14}
+        styles = {
+            "title": 11,
+            "muted": 12,
+            "selected": 13,
+            "notice": 14,
+            "normal": 15,
+            "accent": 16,
+            "danger": 17,
+            "dim": 18,
+            "marker": 19,
+        }
         draw(screen, chooser, curses_fake, styles)
         calls = {call.args[2].rstrip(): call.args[4] for call in screen.addnstr.call_args_list}
         self.assertEqual(calls[chooser_module.TITLE], 11)
         self.assertEqual(calls[chooser_module.LEAD], 12)
-        self.assertEqual(calls["▸ work"], 13)
+        self.assertEqual(calls["work"], 13 | curses_fake.A_BOLD)
         self.assertEqual(calls["idle"], 13)
-        bars = [call.args[2] for call in screen.addnstr.call_args_list if "▸" in call.args[2]]
-        self.assertEqual(len(bars[0]), chooser_module.BAR_WIDTH)
+        self.assertEqual(calls["▶"], 19)
+        # The selected row is one bar across the whole pane.
+        self.assertEqual(calls[""], 13)
+        bars = [c.args[2] for c in screen.addnstr.call_args_list if c.args[2] == " " * 120]
+        self.assertEqual(len(bars), 1)
 
     def test_theme_styles_read_the_installed_palette(self):
         fake = Curses()
@@ -415,6 +461,8 @@ class ChooserThemeTests(unittest.TestCase):
         palette.install(fake)
         styles = theme_styles(palette, fake)
         self.assertEqual(styles["selected"], palette.style("active"))
+        self.assertEqual(styles["marker"], palette.style("accent", "active"))
+        self.assertEqual(styles["danger"], palette.style("danger"))
         self.assertEqual(styles["title"], palette.style("accent") | Curses.A_BOLD)
 
 

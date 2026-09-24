@@ -54,11 +54,6 @@ that focus and subsequent typing follow the click without a stale warning.
 Unit checks cover the three-second deadline, stale/dead panes, failed action
 acknowledgements, and skipping offline external sessions and empty choosers.
 
-The real-tmux gutter tests shrink the window during nested layout construction,
-after a leaf has already been mapped. Recovery must retain the requested focus,
-route typing to its shell, and restore the saved proportions when the window
-grows, with every original shell process preserved.
-
 Inline rename smoke checks the terminal's visible caret coordinates after typing,
 arrow keys and mouse placement, and that the caret hides outside editing.
 Theme refresh smoke uses two viewers to verify that newly created and resized
@@ -105,6 +100,43 @@ inside a restricted development environment. To require SSH on a supported local
 host, run `make smoke-ssh`. That command fails on missing prerequisites or daemon
 startup failure; it never silently turns a failed scenario into a skip. Do not
 change system security settings to make a test pass; use the container recipe.
+
+## Native window captures
+
+The PTY suites check what tmux holds, not what a terminal draws. For a visual
+change, capture the real window on macOS as well:
+
+```sh
+python3 -m scripts.capture_window --terminal ghostty --out ghostty.png
+python3 -m scripts.capture_window --terminal terminal --out terminal.png
+```
+
+Each run seeds the [sample library](UI_PREVIEW.md) into a new temporary
+directory and opens it in demo mode, in a new Ghostty instance or a new
+Terminal.app window. It captures only that window with `screencapture`, then
+closes it and stops the sample's own tmux servers by their sockets. The viewer
+gets a disposable theme and the shipped keymap, so it never opens your library,
+sessions or settings files, even if someone clicks in the window while it is
+open. The window appears on screen while the capture runs.
+
+- `--crop X,Y,W,H[,SCALE]` also writes an enlarged region, measured in the
+  capture's pixels (twice the point size on a Retina display) and scaled up
+  without smoothing, so single-pixel lines can be judged. Repeat it for
+  several regions.
+- `--keep-open` leaves the window running and prints its run directory. In the
+  meantime you can drive it with tmux on the sockets named in that directory's
+  `library/demo/windows/*/runtime.json`. Then use
+  `--recapture DIR --out again.png` to capture it again, and `--close DIR` to
+  close it and remove the directory. Ghostty stops drawing a window that other
+  windows cover, so a recapture can show an earlier frame; check what tmux
+  holds (`capture-pane`) against the image. Terminal.app keeps drawing.
+
+The process running the command needs macOS Screen Recording permission. The
+command fails, rather than keep an all-black image, when the window is not
+showing: without that permission, or when the window opened full screen on
+another Space. Use a windowed terminal for captures. Compare at least
+Ghostty and Terminal.app: fonts, window padding and line drawing differ
+between terminals.
 
 ## Isolated Linux and SSH
 
@@ -167,4 +199,5 @@ for evidence, including retries, rather than inferring a pass from the configure
 matrix.
 
 Native macOS SSH, WSL, the exact tmux 3.3 floor, real network latency and native
-Ghostty GUI rendering remain unverified by these fixtures.
+GUI rendering remain unverified by these fixtures; for rendering, use
+[native window captures](#native-window-captures).

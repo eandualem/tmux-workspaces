@@ -23,7 +23,7 @@ class AttachTargetTests(unittest.TestCase):
         self.tab_id = self.model.tab["id"]
         self.first, self.second = [pane["id"] for pane in leaves(self.model.tab["tree"])]
         self.focus = self.second
-        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP, last_size=(0, 0))
         self.display.panes = {self.first: "%1", self.second: "%2"}
         self.display.focused_leaf.side_effect = lambda: self.focus
         self.display.select.side_effect = lambda leaf: setattr(self, "focus", leaf)
@@ -36,7 +36,7 @@ class AttachTargetTests(unittest.TestCase):
         screen = Mock()
         # The panel draws its interior into a subwindow; the tests read one mock.
         screen.derwin.return_value = screen
-        screen.getmaxyx.return_value = (38, 28)
+        screen.getmaxyx.return_value = (38, 29)
         self.sidebar = Sidebar(
             screen,
             self.model,

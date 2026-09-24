@@ -211,7 +211,7 @@ class PaneGeometryTests(unittest.TestCase):
                     self.assert_targets(display, viewer, second)
                 self.assertEqual(
                     viewer.run("display-message", "-p", "-t", display.sidebar, "#{pane_width}"),
-                    "28",
+                    "22",
                 )
 
     def test_effective_focus_tree_reuses_only_matching_visible_geometry(self):

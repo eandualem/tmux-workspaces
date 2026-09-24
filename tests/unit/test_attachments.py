@@ -1,6 +1,5 @@
 """Ordinary attachment startup and recovery retain external-session guards."""
 
-import struct
 import subprocess
 import unittest
 from contextlib import redirect_stdout
@@ -104,28 +103,46 @@ class AttachmentTests(unittest.TestCase):
         self.assertIn("external — session offline", output.getvalue())
 
 
-class SeparatorTests(unittest.TestCase):
-    def test_named_colors_match_indexed_colors_in_both_directions(self):
-        from tmux_workspaces.attachments import rule_main
-        from tmux_workspaces.theme import Theme
+class EmptyWorkspaceLabelTests(unittest.TestCase):
+    def test_the_label_colors_its_parts_by_role_and_sits_one_cell_in_on_row_two(self):
+        from tmux_workspaces.attachments import LABEL_SEPARATOR, render_label
+        from tmux_workspaces.theme import DEFAULT_THEME
 
-        for color, code in (("red", 1), ("bright-white", 15), ("1", 1)):
-            for vertical in (False, True):
-                output = StringIO()
-                with (
-                    patch("fcntl.ioctl", return_value=struct.pack("HHHH", 2, 6, 0, 0)),
-                    patch("tmux_workspaces.attachments.time.sleep", side_effect=StopFixture),
-                    redirect_stdout(output),
-                    self.assertRaises(StopFixture),
-                ):
-                    rule_main(
-                        SimpleNamespace(
-                            color=Theme.from_dict({"outline": {"foreground": color}}).separator(),
-                            vertical=vertical,
-                        )
-                    )
-                self.assertIn(f"\x1b[38;5;{code}m", output.getvalue())
-                self.assertIn("│" if vertical else "─", output.getvalue())
+        label = LABEL_SEPARATOR.join(("muted:Empty workspace. ", "accent:+", "normal: opens"))
+        text = render_label(label, DEFAULT_THEME.to_toml(), 256)
+        self.assertTrue(text.startswith("\033[2J\033[2;2H"))
+        self.assertIn("\033[38;2;125;130;140mEmpty workspace. \033[39m", text)
+        self.assertIn("\033[38;2;224;164;88m+\033[39m", text)
+        self.assertIn("\033[38;2;212;214;219m opens\033[39m", text)
+        # Fewer colors pick the same fallbacks the sidebar gets.
+        self.assertIn("\033[38;5;3m+", render_label(label, DEFAULT_THEME.to_toml(), 8))
+        # Without a theme the words are printed plainly.
+        self.assertEqual(
+            render_label(label, None, None), "\033[2J\033[2;2HEmpty workspace. + opens\033[0m"
+        )
+        # The fallback label names no role; its text is still shown.
+        self.assertEqual(
+            render_label("Empty workspace.", DEFAULT_THEME.to_toml(), 256),
+            "\033[2J\033[2;2HEmpty workspace.\033[0m",
+        )
+
+    def test_the_empty_leaf_prints_its_label_and_waits(self):
+        output = StringIO()
+        args = SimpleNamespace(
+            agent="",
+            terminal="",
+            source_socket="/unused",
+            label="muted:Nothing here yet",
+            chooser_theme=None,
+            terminal_colors=None,
+        )
+        with (
+            redirect_stdout(output),
+            patch("tmux_workspaces.attachments.time.sleep", side_effect=StopFixture),
+            self.assertRaises(StopFixture),
+        ):
+            leaf_main(args)
+        self.assertIn("Nothing here yet", output.getvalue())
 
 
 class GroupedAttachTests(unittest.TestCase):

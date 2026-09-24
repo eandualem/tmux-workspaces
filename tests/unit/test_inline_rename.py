@@ -21,7 +21,7 @@ class InlineRenameTests(unittest.TestCase):
         self.model = self.store.load()
         self.model.tab["name"] = "Original"
         self.store.save(self.model)
-        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP, last_size=(0, 0))
         self.display.focused_leaf.side_effect = lambda: (
             self.model.tab["focus"] if self.model.tab else None
         )
@@ -67,7 +67,7 @@ class InlineRenameTests(unittest.TestCase):
         self.display.render.assert_not_called()
         rendered = self.sidebar.screen.addnstr.call_args_list
         self.assertTrue(
-            any(c.args[:2] == (3, 5) and c.args[2].startswith("Original") for c in rendered)
+            any(c.args[:2] == (3, 3) and c.args[2].startswith("Original") for c in rendered)
         )
         for char in "Edited":
             self.sidebar.input(char)
@@ -76,6 +76,15 @@ class InlineRenameTests(unittest.TestCase):
         self.assertEqual(self.model.tab, before | {"name": "Edited"})
         self.assertEqual(self.store.load().tab["name"], "Edited")
         self.display.shells.close.assert_not_called()
+
+    def test_a_late_report_of_the_opening_click_keeps_the_name_selected(self):
+        self.begin()
+        self.tap(10.3)
+        self.assertTrue(self.sidebar.inline_editor.selected)
+        self.sidebar.input("E")
+        self.assertEqual(self.sidebar.inline_editor.value, "E")
+        self.tap(11)
+        self.assertFalse(self.sidebar.inline_editor.selected)
 
     def test_inactive_double_click_only_selects_and_slow_clicks_do_not_rename(self):
         first = self.model.tab
@@ -92,12 +101,12 @@ class InlineRenameTests(unittest.TestCase):
         self.assertIsNotNone(self.sidebar.inline_editor)
 
     def test_double_click_count_or_menu_never_opens_editor(self):
-        # The selected row ends in its pane count and the ⋯ menu button.
-        self.tap(10, x=21)
-        self.tap(10.2, x=21)
+        # The selected row ends in its pane glyph and the ⋯ menu button.
+        self.tap(10, x=24)
+        self.tap(10.2, x=24)
         self.assertIsNone(self.sidebar.inline_editor)
         self.sidebar.draw()
-        self.tap(11, x=23)
+        self.tap(11, x=26)
         self.assertEqual(self.sidebar.menu, "tab")
         self.sidebar.close_menu()
         self.sidebar.draw()
@@ -115,7 +124,7 @@ class InlineRenameTests(unittest.TestCase):
         self.sidebar.draw()
         self.begin()
         self.sidebar.input("Y")
-        self.sidebar.mouse(23, 2, curses.BUTTON1_PRESSED)
+        self.sidebar.mouse(26, 2, curses.BUTTON1_PRESSED)
         self.assertIsNone(self.sidebar.inline_editor)
         self.assertEqual(self.model.space["tabs"][0]["name"], "Original")
         self.assertEqual(len(self.model.space["tabs"]), 2)
@@ -180,7 +189,7 @@ class InlineRenameTests(unittest.TestCase):
         self.assertEqual(self.model.space["tabs"], tabs)
         self.assertEqual(self.store.load().space["name"], "Development")
         self.sidebar.draw()
-        self.sidebar.mouse(23, 2, curses.BUTTON1_PRESSED)
+        self.sidebar.mouse(26, 2, curses.BUTTON1_PRESSED)
         self.assertEqual(len(self.model.space["tabs"]), 2)
         self.assertIsNone(self.sidebar.inline_editor)
         self.display.shells.close.assert_not_called()

@@ -1,5 +1,6 @@
 """Read-only external session attachment clients and recursive-host protection."""
 
+import contextlib
 import os
 import shlex
 import subprocess
@@ -22,54 +23,47 @@ def attachment_hosts_viewer(args, target: str) -> bool:
     return args.host_pane in panes.splitlines()
 
 
-def rule_main(args) -> int:
-    """Draw one horizontal rule across this pane, redrawn when its size changes.
-
-    The pane is a one-row separator between two stacked panes. A whole row of
-    the separator color would weigh more than the one-column separator beside
-    two side-by-side panes, so a thin line is drawn instead.
-    """
-    import fcntl
-    import struct
-    import sys
-    import termios
-
+def sgr(color: str, *, background: bool = False) -> str:
+    """The SGR sequence for a tmux color spelling, or nothing for default."""
     from .theme import COLOR_NAMES, color_index, tmux_spelling
 
-    named_colors = {tmux_spelling(name): color_index(name) for name in COLOR_NAMES}
+    base = 48 if background else 38
+    if color.startswith("#") and len(color) == 7:
+        r, g, b = (int(color[i : i + 2], 16) for i in (1, 3, 5))
+        return f"\033[{base};2;{r};{g};{b}m"
+    if color.startswith("colour") and color[6:].isdigit():
+        return f"\033[{base};5;{int(color[6:])}m"
+    named = {tmux_spelling(name): color_index(name) for name in COLOR_NAMES}
+    if color in named and color != "default":
+        return f"\033[{base};5;{named[color]}m"
+    return ""
 
-    def paint(color: str) -> None:
-        try:
-            rows, cols = struct.unpack("HHHH", fcntl.ioctl(1, termios.TIOCGWINSZ, b"\0" * 8))[:2]
-        except OSError:
-            rows, cols = 24, 80
-        sequence = ""
-        if color.startswith("#") and len(color) == 7:
-            r, g, b = (int(color[i : i + 2], 16) for i in (1, 3, 5))
-            sequence = f"\033[38;2;{r};{g};{b}m"
-        elif color.startswith("colour") and color[6:].isdigit():
-            sequence = f"\033[38;5;{int(color[6:])}m"
-        elif color in named_colors and color != "default":
-            sequence = f"\033[38;5;{named_colors[color]}m"
-        if args.vertical:
-            # One thin line down a one-column pane: the same weight as the rule
-            # between stacked panes, rather than a filled column of color.
-            body = "".join(f"\033[{row};1H│" for row in range(1, max(1, rows) + 1))
+
+# Segments of the empty-workspace line travel as ``role:text`` parts.
+LABEL_SEPARATOR = "\x1f"
+
+
+def render_label(label: str, theme_state: str | None, colors: int | None) -> str:
+    """The empty workspace's one line: muted text with the add glyph in the
+    accent and the keys in the text color, on row 2 after one cell of air."""
+    from .theme import ThemeError, parse_theme_state
+
+    theme = None
+    if theme_state:
+        with contextlib.suppress(ThemeError, ValueError):
+            theme = parse_theme_state(theme_state)
+    palette = colors or 256
+    text = ""
+    for part in label.split(LABEL_SEPARATOR):
+        role, separator, words = part.partition(":")
+        if not separator:
+            # Text without a role is shown as it is.
+            text += part
+        elif theme is not None and role in theme.roles:
+            text += sgr(theme.tmux_role(role, palette)[0]) + words + "\033[39m"
         else:
-            body = "\033[H" + "─" * max(0, cols)
-        sys.stdout.write("\033[?25l\033[2J" + sequence + body + "\033[0m")
-        sys.stdout.flush()
-
-    painted = None
-    while True:
-        try:
-            size = fcntl.ioctl(1, termios.TIOCGWINSZ, b"\0" * 8)
-        except OSError:
-            size = None
-        if size != painted:
-            paint(args.color)
-            painted = size
-        time.sleep(0.5)
+            text += words
+    return "\033[2J\033[2;2H" + text + "\033[0m"
 
 
 # Grouped sessions the viewer creates for its own attach clients carry this
@@ -248,8 +242,14 @@ def leaf_main(args) -> int:
     print("".join(f"\x1b]104;{slot}\x1b\\" for slot in RGB_SLOTS), end="", flush=True)
     name = args.agent or args.terminal
     if not name:
+        label = getattr(args, "label", "") or "Empty workspace."
         print(
-            "\033[2J\033[HCreate a terminal with the top +, or Ctrl-g then t.",
+            render_label(
+                label,
+                getattr(args, "chooser_theme", None),
+                getattr(args, "terminal_colors", None),
+            ),
+            end="",
             flush=True,
         )
         while True:
@@ -272,7 +272,7 @@ def leaf_main(args) -> int:
             current = "host"
             detail = (
                 "This session hosts the viewer.\r\n\r\n"
-                "Choose another session, or use Tab… → Return pane to shell."
+                "Choose another session, or use Tab… → Return to shell."
             )
         elif exists:
             notice = ""

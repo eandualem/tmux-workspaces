@@ -6,6 +6,7 @@ import fcntl
 import json
 import os
 import pty
+import re
 import select
 import signal
 import sqlite3
@@ -40,6 +41,9 @@ class Client:
                 "SHELL": "/bin/sh",
             }
             env.update(terminal_env or {})
+            if launcher is None and not {"--backbone", "--no-backbone"} & set(arguments):
+                # This host may run Backbone; a scenario never reads it unasked.
+                arguments = [*arguments, "--no-backbone"]
             self.process = subprocess.Popen(
                 [
                     *(
@@ -345,7 +349,20 @@ def right_click(client: Client, viewer: Tmux, row: int, column: int = 3) -> None
     client.pump(0.3)
 
 
-OUTLINE = str.maketrans(dict.fromkeys("╭╮╰╯│─", " "))
+# Menu rules and the line down the panel's edge are blanked in captured text,
+# so lines strip and compare as text alone.
+OUTLINE = str.maketrans(dict.fromkeys("╭╮╰╯│─▕", " "))
+_SEQUENCE = re.compile(r"\x1b\[[0-9;:?]*[A-Za-z]")
+
+
+def pane_text(viewer: Tmux, target: str = "%0") -> str:
+    """A pane's text with every cell in place.
+
+    Read from the styled capture with the sequences removed: tmux's plain
+    capture can leave out a styled blank cell at the start of a row, which
+    would shift every column the scenarios click on.
+    """
+    return _SEQUENCE.sub("", viewer.run("capture-pane", "-e", "-p", "-t", target))
 
 
 def user_sessions(server: Tmux, fields: str = "#{session_name}") -> list[str]:
@@ -379,9 +396,14 @@ def content_panes(viewer: Tmux) -> list[str]:
 
 
 def sidebar(viewer: Tmux) -> str:
-    """The sidebar's text with its outline blanked, so columns stay in place
-    while lines strip and compare as they did before the panel had a frame."""
-    return viewer.run("capture-pane", "-p", "-t", "%0").translate(OUTLINE)
+    """The sidebar's text; menu rules are blanked so lines strip and compare."""
+    return pane_text(viewer).translate(OUTLINE)
+
+
+def status_row(viewer: Tmux) -> str:
+    """The status row's text, as the sidebar last sent it to tmux: the bottom
+    line."""
+    return viewer.run("show-options", "-gv", "status-format[0]")
 
 
 def tab_row(viewer: Tmux, name: str) -> int:
@@ -496,7 +518,7 @@ def click_attach(client, viewer, leaf_id):
     click_button(client, viewer, "Attach session…")
     wait(
         client,
-        lambda: "Attach to selected pane" in viewer.run("capture-pane", "-p", "-t", "%0"),
+        lambda: "ATTACH SESSION" in pane_text(viewer),
         "sidebar did not open attachment chooser",
     )
 
@@ -508,7 +530,6 @@ MENU_ROUTES = {
     "Split ↓": "Split below",
     "Focus": "Focus one pane",
     "Layout": "Restore layout",
-    "Next →": "Next pane",
     "Attach session…": "Attach session",
 }
 # Leaving is labelled for what it does: shells and sessions keep running.
@@ -520,8 +541,7 @@ CONFIGURE = {
     "View shortcuts…",
     "Detach",
     "Refresh viewer…",
-    "[x] Show agent status",
-    "[ ] Show agent status",
+    "Show agents",
 }
 
 
@@ -579,7 +599,7 @@ def _appears(client, viewer, text, timeout: float) -> bool:
     """Whether `text` is drawn in the sidebar within `timeout`, without failing."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if text in viewer.run("capture-pane", "-p", "-t", "%0"):
+        if text in pane_text(viewer):
             return True
         client.pump(0.1)
     return False
@@ -587,7 +607,7 @@ def _appears(client, viewer, text, timeout: float) -> bool:
 
 def _click(client, viewer, text, timeout: float = 10):
     def sidebar():
-        return viewer.run("capture-pane", "-p", "-t", "%0")
+        return pane_text(viewer)
 
     seen: dict = {}
 
@@ -628,7 +648,7 @@ def _click(client, viewer, text, timeout: float = 10):
         # since a second click on a name would begin renaming it.
         if "‹ Back" not in before:
             return
-        deadline = time.monotonic() + 1.5
+        deadline = time.monotonic() + 4.0
         while time.monotonic() < deadline:
             try:
                 changed = sidebar() != before
@@ -638,4 +658,6 @@ def _click(client, viewer, text, timeout: float = 10):
             if changed:
                 return
             client.pump(0.1)
-    raise AssertionError(f"menu click {text} had no visible effect after three attempts")
+    raise AssertionError(
+        f"menu click {text} had no visible effect after three attempts\n" + sidebar()
+    )

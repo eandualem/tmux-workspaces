@@ -19,6 +19,7 @@ from tests.integration.support import (
     grouped_sessions,
     saved,
     sidebar,
+    status_row,
     user_sessions,
     wait,
 )
@@ -118,7 +119,7 @@ def displays(library: Path) -> list[Path]:
 
 def confirmation(client: Client) -> None:
     client.type("\x07f")
-    wait(client, lambda: "Refresh viewer" in sidebar_of(client), "confirmation did not open")
+    wait(client, lambda: "REFRESH VIEWER" in sidebar_of(client), "confirmation did not open")
 
 
 def break_settings(checkout: Path) -> str:
@@ -199,11 +200,11 @@ def attach(client: Client, library: Path, source: Tmux, name: str) -> None:
     click_button(client, viewer, "Attach session…")
     wait(
         client,
-        lambda: name in [line.strip() for line in sidebar(viewer).splitlines()],
+        lambda: name in [line.strip().lstrip("▶ ") for line in sidebar(viewer).splitlines()],
         "chooser omitted the external session",
     )
     lines = sidebar(viewer).splitlines()
-    row = next(index for index, line in enumerate(lines) if line.strip() == name)
+    row = next(index for index, line in enumerate(lines) if line.strip().lstrip("▶ ") == name)
     top = int(viewer.run("display-message", "-p", "-t", "%0", "#{pane_top}"))
     client.click(3, row + top + 1)
     wait(
@@ -215,11 +216,10 @@ def attach(client: Client, library: Path, source: Tmux, name: str) -> None:
 
 def selected(client: Client, library: Path) -> str:
     viewer = Tmux(runtime(client, library)["viewer_socket"])
-    line = next(line for line in sidebar(viewer).splitlines() if line.lstrip().startswith("▶"))
-    # "▶ 2 Beta          1 ⋯": drop the marker, the index, the pane count and
-    # the menu glyph the selected row ends with.
-    rest = line.strip().strip("▶ ").split(" ", 1)[1].rstrip(" ⋯").strip()
-    return rest.rsplit(" ", 1)[0].strip()
+    line = next(line for line in sidebar(viewer).splitlines() if "⋯" in line)
+    # " 2 Beta          ▮ ⋯": drop the index, the pane glyphs and the menu
+    # glyph the selected row ends with.
+    return line.strip().split(" ", 1)[1].rstrip(" ⋯▮").strip()
 
 
 def sidebar_of(client: Client) -> str:
@@ -249,7 +249,7 @@ def exercise(resources: FixtureResources) -> None:
     external_pid = source.run("display-message", "-p", "-t", "=external:", "#{pane_pid}")
 
     theme = directory / "custom colors.toml"
-    theme.write_text('[normal]\nforeground = "white"\nbackground = "blue"\n')
+    theme.write_text('[header]\nforeground = "white"\nbackground = "blue"\n')
     client = start(resources, library, source, config, theme=theme)
     wait(client, lambda: title_pair(client) == (7, 4), "viewer did not load its explicit theme")
     first_instance = client.manifest(library).parent
@@ -299,9 +299,9 @@ def exercise(resources: FixtureResources) -> None:
 
     # Cancelling leaves this viewer exactly where it was.
     confirmation(client)
-    assert "Enter refresh" in sidebar_of(client), sidebar_of(client)
+    assert "⏎ refresh" in status_row(Tmux(client.viewer_socket)), sidebar_of(client)
     client.type("\x1b")
-    wait(client, lambda: "Refresh viewer" not in sidebar_of(client), "Escape did not cancel")
+    wait(client, lambda: "REFRESH VIEWER" not in sidebar_of(client), "Escape did not cancel")
     assert client.manifest(library).parent == first_instance, "cancelling replaced the viewer"
     client.type("\x07t")
     wait(client, lambda: len(saved(library).space["tabs"]) == 3, "cancelled viewer stopped working")
@@ -324,7 +324,7 @@ def exercise(resources: FixtureResources) -> None:
     config.write_text(EDITED_CONFIG)
     confirmation(client)
     # The next interpreter must reload the same selected theme file too.
-    theme.write_text('[normal]\nforeground = "white"\nbackground = "red"\n')
+    theme.write_text('[header]\nforeground = "white"\nbackground = "red"\n')
     # Two confirmations in one write must still produce a single replacement.
     client.type("\r\r")
     wait(
@@ -419,7 +419,11 @@ def exercise_recovery(resources: FixtureResources) -> None:
     assert client.manifest(library).parent == instance, "broken launcher replaced the viewer"
     assert client.process.poll() is None, "a refused refresh closed the launcher"
     client.type("\x1b")
-    wait(client, lambda: "Esc close" not in sidebar_of(client), "Escape did not close the refusal")
+    wait(
+        client,
+        lambda: "REFRESH VIEWER" not in sidebar_of(client),
+        "Escape did not close the refusal",
+    )
     (checkout / "tmux_workspaces" / "keymap.py").write_text(original)
     client.type("\x07t")
     wait(client, lambda: len(saved(library).space["tabs"]) == 2, "refusal left an unusable viewer")
@@ -521,13 +525,14 @@ def exercise_supervision(resources: FixtureResources) -> None:
     assert "SUPERVISION_READY" in shells.run("capture-pane", "-S", "-", "-p", "-t", first_terminal)
 
     # A second refresh keeps the same launcher and one window child.
+    second_instance = client.manifest(library).parent
     confirmation(client)
     client.type("\r")
     wait(
         client,
         lambda: (
             client.manifest(library) is not None
-            and client.manifest(library).parent not in (instance, second["viewer_socket"])
+            and client.manifest(library).parent not in (instance, second_instance)
         ),
         "a second refresh did not open a window",
     )
@@ -553,12 +558,18 @@ def exercise_supervision(resources: FixtureResources) -> None:
             DEFAULT_CONFIG,
         ],
         launcher=[sys.executable, str(checkout / "run")],
+        # Keep the whole wrapped command visible below the padded header/footer.
+        rows=40,
     )
     wait(pinned, lambda: ready(pinned, library), "fixed-key viewer did not start", timeout=25)
     pinned.viewer_socket = runtime(pinned, library)["viewer_socket"]
     pinned_instance = pinned.manifest(library).parent
     confirmation(pinned)
-    wait(pinned, lambda: "Esc close" in sidebar_of(pinned), "manual reopen was not offered")
+    wait(
+        pinned,
+        lambda: "esc close" in status_row(Tmux(pinned.viewer_socket)),
+        "manual reopen was not offered",
+    )
     assert "Refresh viewer now" not in sidebar_of(pinned), "a fixed-key window offered to close"
     command = runtime(pinned, library)["reopen_command"]
     assert command.startswith(sys.executable), command

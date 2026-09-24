@@ -274,7 +274,15 @@ class StopSignalTests(unittest.TestCase):
 
 class LaunchContextTests(unittest.TestCase):
     def context(self, arguments):
-        return supervisor.LaunchContext(parser().parse_args(arguments))
+        # This host may run Backbone; a context here never detects it unasked.
+        with patch.dict(os.environ, {"BACKBONE_DATA_DIR": "/nonexistent/backbone"}):
+            return supervisor.LaunchContext(parser().parse_args(arguments))
+
+    def test_a_reopen_keeps_backbone_off_only_when_it_was_asked_off(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = ["--no-keymap", "--data-dir", directory]
+            self.assertIn("--no-backbone", self.context(["--no-backbone", *base]).reopen)
+            self.assertNotIn("--no-backbone", self.context(base).reopen)
 
     def test_a_disposable_library_is_resolved_once_and_asked_for_by_mode(self):
         with tempfile.TemporaryDirectory() as directory:

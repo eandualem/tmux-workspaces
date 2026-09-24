@@ -7,7 +7,7 @@ import sys
 from contextlib import closing
 from pathlib import Path
 
-from tests.integration.support import FixtureResources, open_terminal, sidebar, wait
+from tests.integration.support import FixtureResources, open_terminal, sidebar, status_row, wait
 from tmux_workspaces.application import socket_path
 from tmux_workspaces.controls import direct_sequence
 from tmux_workspaces.model import leaves
@@ -246,7 +246,9 @@ def exercise_click_during_readiness(resources):
     for leaf in items:
         text = shells.run("capture-pane", "-p", "-t", "=" + Shells.name(leaf) + ":")
         assert text.count(marker) == (1 if leaf == items[0] else 0), "click input misrouted"
-    assert "Terminal attachment" not in sidebar(viewer), "legitimate click left a readiness error"
+    assert "Terminal attachment" not in status_row(viewer), (
+        "legitimate click left a readiness error"
+    )
     assert created == source_processes(), "readiness interruption replaced an existing shell"
     print(
         "Attachment readiness: pending shell creation yields to a content click; "

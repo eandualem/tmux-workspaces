@@ -45,7 +45,7 @@ def main() -> None:
     source.write_bytes(payload)
     values = {
         "SOURCE_URL": source.as_uri(),
-        "SOURCE_VERSION": "0.1.0-pre." + commit,
+        "SOURCE_VERSION": "0.1.1-pre." + commit,
         "SOURCE_SHA256": checksum,
     }
     for key, value in values.items():
