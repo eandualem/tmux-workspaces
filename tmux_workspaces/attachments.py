@@ -55,8 +55,11 @@ def render_label(label: str, theme_state: str | None, colors: int | None) -> str
     palette = colors or 256
     text = ""
     for part in label.split(LABEL_SEPARATOR):
-        role, _, words = part.partition(":")
-        if theme is not None and role in theme.roles:
+        role, separator, words = part.partition(":")
+        if not separator:
+            # Text without a role is shown as it is.
+            text += part
+        elif theme is not None and role in theme.roles:
             text += sgr(theme.tmux_role(role, palette)[0]) + words + "\033[39m"
         else:
             text += words

@@ -380,9 +380,10 @@ class Display:
         """Replace the status row's text. Identical text is not resent."""
         if status == self._status_format:
             return
-        self._status_format = status
         if self._setup_done:
             self.tmux.run("set-option", "-g", "status-format[0]", status)
+        # Remembered once tmux has it, so a failed update is sent again.
+        self._status_format = status
 
     def popup_geometry(self, height: int) -> tuple[int, int, int, int]:
         """Where a popup of ``height`` rows goes: centred over the content area,

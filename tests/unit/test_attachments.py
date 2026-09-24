@@ -120,6 +120,11 @@ class EmptyWorkspaceLabelTests(unittest.TestCase):
         self.assertEqual(
             render_label(label, None, None), "\033[2J\033[2;2HEmpty workspace. + opens\033[0m"
         )
+        # The fallback label names no role; its text is still shown.
+        self.assertEqual(
+            render_label("Empty workspace.", DEFAULT_THEME.to_toml(), 256),
+            "\033[2J\033[2;2HEmpty workspace.\033[0m",
+        )
 
     def test_the_empty_leaf_prints_its_label_and_waits(self):
         output = StringIO()

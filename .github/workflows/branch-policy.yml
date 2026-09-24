@@ -1,7 +1,10 @@
 name: Branch policy
 
+# pull_request_target runs this workflow and the validator from the base
+# branch, so a pull request cannot change the check that judges its route.
+# Nothing from the pull request is checked out or run.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, synchronize, edited, ready_for_review]
 
 permissions:

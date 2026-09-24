@@ -1297,8 +1297,8 @@ class Sidebar:
         on the left, the hints for the current mode in the centre, the
         agents toggle and the saved-state light on the right."""
         text, muted, accent = (self._tmux_fg(name) for name in ("normal", "muted", "accent"))
-        prefix = short_key_label(self.keymap.prefix)
         esc = self._escape
+        prefix = esc(short_key_label(self.keymap.prefix))
 
         def named(label: str, detail: str = "") -> str:
             left = f"#[fg={text}]{esc(label)}#[fg={muted}]"
@@ -1306,7 +1306,7 @@ class Sidebar:
 
         def hint(action: str, word: str) -> str:
             keys = self.keymap.label(action)
-            return f"{prefix} {keys.split(' / ')[0]} {word}" if keys else ""
+            return f"{prefix} {esc(keys.split(' / ')[0])} {word}" if keys else ""
 
         popup = self.config_popup
         if popup is not None:
@@ -1376,7 +1376,7 @@ class Sidebar:
             right = (
                 "#[range=user|agents]"
                 + (f"#[fg={text}]agents shown" if shown else f"#[fg={muted}]agents hidden")
-                + (f" #[fg={accent}]{prefix} {keys}" if keys else "")
+                + (f" #[fg={accent}]{prefix} {esc(keys)}" if keys else "")
                 + "#[norange]  "
             )
         status = self.status_text()
