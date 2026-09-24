@@ -139,6 +139,7 @@ explains local source bundles; it does not provide a published Homebrew tap.
 - [Shortcuts](docs/SHORTCUTS.md) — the in-app editor, custom keymaps, terminal profiles
 - [Colors](docs/THEMES.md) and [refresh](docs/REFRESH.md)
 - [Testing](docs/TESTING.md) · [Architecture](docs/ARCHITECTURE.md)
+- [Changelog](CHANGELOG.md) — what changed in each version
 - [Acceptance and known limits](docs/ACCEPTANCE.md) — what is verified, on which
   platforms, and what is not
 - If something is wrong: [startup requirements](docs/STARTUP.md) when it will not
