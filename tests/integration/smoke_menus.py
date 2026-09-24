@@ -316,8 +316,8 @@ def _exercise(resources: FixtureResources) -> None:
             lambda index=index: len(saved(library).state["workspaces"]) == index + 2,
             "workspace creation failed",
         )
-    # Seventeen rows: fourteen for the panel above the status row and its rules.
-    client.resize(160, 17)
+    # Sixteen rows: fourteen for the panel above the status row and its rules.
+    client.resize(160, 16)
     wait(client, lambda: "Space 10" in panel() or "Configure…" in panel(), "resize failed")
     open_menu("w", "WORKSPACES")
     assert "Space 10" not in panel(), "the overflowing list already showed its last row"

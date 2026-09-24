@@ -402,8 +402,8 @@ def sidebar(viewer: Tmux) -> str:
 
 def status_row(viewer: Tmux) -> str:
     """The status row's text, as the sidebar last sent it to tmux: the bottom
-    line, directly below the rule."""
-    return viewer.run("show-options", "-gv", "status-format[1]")
+    line."""
+    return viewer.run("show-options", "-gv", "status-format[0]")
 
 
 def tab_row(viewer: Tmux, name: str) -> int:

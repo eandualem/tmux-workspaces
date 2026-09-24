@@ -36,7 +36,8 @@ Use unique private tmux sockets and disposable ordinary shells for tests. Never
 use an unqualified kill-server, move external panes or message real agents in tests.
 Do not change another agent's lifecycle or configuration. Do not weaken a sandbox.
 Keep working behavior; avoid a rewrite. Add dependencies only with a reason.
-Run `make check` before commits and `make smoke` after terminal/UI changes.
+Run `make check` before commits and `make smoke` after terminal/UI changes;
+for visual changes also inspect native window captures (docs/TESTING.md).
 Record actual evidence separately from expected behavior and untested platforms.
 
 ## Release boundaries

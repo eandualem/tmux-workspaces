@@ -71,8 +71,8 @@ def _exercise(resources: FixtureResources):
     wait(client, lambda: attached(terminal), "ordinary shell not attached")
     # No attachment yet: the tab list names no agent. The roster below it does,
     # one row per active demo agent with its state's symbol; the offline one
-    # takes no row.
-    expected = ["○ builder", "▶ manager", "? researcher", "! reviewer", "○ tester"]
+    # takes no row. Needing you comes first, then working, then the rest.
+    expected = ["! reviewer", "▶ manager", "○ builder", "? researcher", "○ tester"]
     panel = ""
 
     def roster_ready():

@@ -159,7 +159,15 @@ message leads with its reason and puts the file path last, because a narrow side
 
 The dedicated `./ghostty` profile removes outer window padding. Any fractional
 cell space at the right or bottom takes the adjacent cell's background, so the
-terminal surface and status band extend to those edges. In macOS full screen,
+terminal surface and status band extend to those edges. Other terminals keep
+their own window padding.
+
+The header and the status band are one text row each, so their text has no
+vertical padding of its own. Window padding does not add it: padding shrinks
+the grid, the space that no longer fits a whole row collects at the bottom edge,
+and in Ghostty two points above and below showed up as extra space under the
+status band. Changing the terminal's cell height would pad every row, not only
+these two. In macOS full screen,
 the temporary title bar can cover the workspace heading while the pointer is
 at the top; moving the pointer away reveals the heading again.
 
@@ -174,13 +182,12 @@ The following parts are drawn in these colors, so the window reads as one layer:
   side by side or across a row between stacked ones. No border marks the focused
   pane. Everything here changes the moment a theme installs, including after
   saving in the editor.
-- **The status band.** Two rows across the bottom of the window on the panel:
-  a line in the `outline` color along the bottom edge of the first, the text
-  in the second, painted by tmux in the `muted`
-  foreground, with the `normal` and `accent` foregrounds for its emphasised
-  words and a green light for the saved state. Text has a one-cell inset on
-  both sides. The separate rule requires a full terminal row; the header and
-  footer use no blank padding rows.
+- **The status band.** One row across the bottom of the window on the panel,
+  painted by tmux, with a one-cell inset on both sides. The panel's ground sets
+  it apart from the terminals on the surface, so no line is drawn above it and
+  it uses no blank padding rows. The text is in the `muted` foreground, with the
+  `normal` and `accent` foregrounds for its emphasised words and a green light
+  for the saved state.
 - **The new-pane chooser.** Each empty pane runs its own chooser using the
   viewer's installed theme snapshot and palette size, on the surface. Its
   title is the accent, hints are muted, the selected row uses `active`, and

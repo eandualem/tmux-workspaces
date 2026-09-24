@@ -240,13 +240,12 @@ class PanelColorTests(unittest.TestCase):
         self.assertEqual(options["pane-border-style"], "fg=#2a2e36,bg=#1b1e24")
         self.assertEqual(options["pane-active-border-style"], "fg=#2a2e36,bg=#1b1e24")
         self.assertEqual(options["pane-border-lines"], "single")
-        # The compact footer has a rule and muted text,
-        # all on the panel ground.
-        self.assertEqual(options["status"], "2")
+        # The compact footer is one row of muted text on the panel ground,
+        # with no rule above it.
+        self.assertEqual(options["status"], "on")
         self.assertEqual(options["status-position"], "bottom")
-        self.assertNotIn("status-format[2]", options)
+        self.assertNotIn("status-format[1]", options)
         self.assertEqual(options["status-style"], "fg=#7d828c,bg=#15171c")
-        self.assertTrue(options["status-format[0]"].startswith("#[align=left]#[fg=#2a2e36"))
         # The sidebar's own cells are curses'; its ground is the panel.
         for option in ("window-style", "window-active-style"):
             self.assertIn(["set-option", "-p", "-t", "%0", option, "bg=#15171c"], commands)
@@ -272,13 +271,11 @@ class PanelColorTests(unittest.TestCase):
         display.tmux.reset_mock()
         display._content_panes = {"%3"}
         display.style_panel("default")
-        rule = "#[align=left]#[fg=default,bg=default]" + "▁" * 22
         display.tmux.batch.assert_called_once_with(
             [
                 ["set-window-option", "-g", "pane-border-style", "fg=default,bg=default"],
                 ["set-window-option", "-g", "pane-active-border-style", "fg=default,bg=default"],
                 ["set-option", "-g", "status-style", "fg=default,bg=default"],
-                ["set-option", "-g", "status-format[0]", rule],
                 ["set-option", "-p", "-t", "%0", "window-style", "default"],
                 ["set-option", "-p", "-t", "%0", "window-active-style", "default"],
                 ["set-option", "-p", "-t", "%3", "window-style", "default"],
@@ -297,25 +294,13 @@ class PanelColorTests(unittest.TestCase):
             command for call in display.tmux.batch.call_args_list for command in call.args[0]
         ]
         self.assertIn(
-            ["set-option", "-g", "status-format[1]", "#[align=left]before setup"], commands
+            ["set-option", "-g", "status-format[0]", "#[align=left]before setup"], commands
         )
         display.set_status("#[align=left]before setup")
         display.tmux.run.assert_not_called()
         display.set_status("#[align=left]after")
         display.tmux.run.assert_called_once_with(
-            "set-option", "-g", "status-format[1]", "#[align=left]after"
-        )
-
-    def test_the_rules_follow_the_window_width(self):
-        display = self.display()
-        display.tmux = Mock()
-        display.style_panel("#15171c", "#1b1e24", "#2a2e36", {"outline": "#2a2e36"})
-        display.setup()
-        display._rule_columns = 100
-        rule = display._rule_format()
-        self.assertEqual(
-            rule,
-            "#[align=left]#[fg=#2a2e36,bg=#15171c]" + "▁" * 100,
+            "set-option", "-g", "status-format[0]", "#[align=left]after"
         )
 
     def test_every_content_pane_sits_on_the_surface(self):

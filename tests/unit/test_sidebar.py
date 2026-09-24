@@ -66,7 +66,7 @@ class SidebarTests(unittest.TestCase):
         self.store = Mock()
         self.source = Mock(socket="/unused/source.sock", persistent_socket=True)
         self.source.snapshot.return_value = ({}, "")
-        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP, last_size=(0, 0))
         self.display.snapshot_scope.return_value = contextlib.nullcontext()
         self.display.focused_leaf.return_value = self.model.tab["focus"]
 
@@ -323,6 +323,11 @@ class SidebarTests(unittest.TestCase):
         with patch("tmux_workspaces.sidebar.ConfigPopup", return_value=popup):
             self.sidebar.open_config_editor("colors")
         self.assertEqual(self.sidebar.menu, "json-settings")
+        # Behind the open popup the panel says so, with no empty-list notice.
+        self.sidebar.draw()
+        drawn = [call.args[2] for call in self.screen.addnstr.call_args_list]
+        self.assertIn("POPUP OPEN", drawn)
+        self.assertNotIn("No entries", drawn)
         self.sidebar.action("close-tab")
         self.sidebar.input("t")
         self.assertEqual(self.model.state, before)
@@ -467,6 +472,15 @@ class SidebarTests(unittest.TestCase):
         self.assertIn(self.model.space["name"], status)
         self.assertIn(f"{self.model.tab['name']} · pane 1/1", status)
         self.assertIn("^b t new", status)
+        self.assertIn("●", status)
+
+    def test_the_status_hints_give_way_where_they_would_meet_the_sides(self):
+        self.display.last_size = (160, 40)
+        self.assertIn(" t new", self.sidebar.status_line())
+        self.display.last_size = (70, 40)
+        status = self.sidebar.status_line()
+        self.assertNotIn(" t new", status)
+        self.assertIn(f"{self.model.tab['name']} · pane 1/1", status)
         self.assertIn("●", status)
 
     def test_navigation_menu_hit_targets_follow_short_narrow_scrolling(self):
@@ -1248,7 +1262,7 @@ class ThemeMenuTests(unittest.TestCase):
         self.store = Mock()
         source = Mock(socket="/unused/source.sock", persistent_socket=True)
         source.snapshot.return_value = ({}, "")
-        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP, last_size=(0, 0))
         self.display.focused_leaf.return_value = self.model.tab["focus"]
         self.sidebar = Sidebar(
             self.screen,

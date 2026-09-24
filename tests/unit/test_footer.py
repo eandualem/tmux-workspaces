@@ -33,7 +33,7 @@ class FooterTests(unittest.TestCase):
         self.source.snapshot.side_effect = lambda: (self.agents, "")
         # A source with a state-reporting provider, currently listing no agents.
         self.source.roster.return_value = roster()
-        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP)
+        self.display = Mock(sidebar="%0", small=False, keymap=DEFAULT_KEYMAP, last_size=(0, 0))
         self.display.snapshot_scope.return_value = contextlib.nullcontext()
         self.display.focused_leaf.side_effect = lambda: (
             self.model.tab["focus"] if self.model.tab else None
@@ -117,26 +117,26 @@ class FooterTests(unittest.TestCase):
 
     # -- the roster ----------------------------------------------------------
 
-    def test_roster_rows_carry_a_symbol_slot_and_a_name_in_a_stable_order(self):
+    def test_roster_rows_carry_a_symbol_slot_and_a_name_needs_you_and_working_first(self):
         self.source.roster.return_value = roster(
             zed="busy", Alpha="idle", mid="waiting_for_human", gone="offline", odd="weird"
         )
         cells = self.cells()
         rows = [(cells[r, 1], cells[r, 3]) for r in range(31, 35)]
-        self.assertEqual(rows, [("○", "Alpha"), ("!", "mid"), ("?", "odd"), ("▶", "zed")])
+        self.assertEqual(rows, [("!", "mid"), ("▶", "zed"), ("○", "Alpha"), ("?", "odd")])
         self.assertEqual(cells[30, 1].strip(), "AGENTS")
         self.assertEqual(cells[30, 26].strip(), "4")
         self.assertNotIn("gone", self.labels())
         # Offline agents take no row; the label sits right above the first agent.
         self.assertEqual(self.sidebar.tab_capacity(), 38 - 3 - 3 - 5)
-        # States change; positions do not.
+        # States change, and the rows follow them; names order each group.
         self.source.roster.return_value = roster(
             zed="idle", Alpha="busy", mid="idle", gone="idle", odd="starting"
         )
         cells = self.cells()
         rows = [(cells[r, 1], cells[r, 3]) for r in range(30, 35)]
         self.assertEqual(
-            rows, [("▶", "Alpha"), ("○", "gone"), ("○", "mid"), ("▶", "odd"), ("○", "zed")]
+            rows, [("▶", "Alpha"), ("▶", "odd"), ("○", "gone"), ("○", "mid"), ("○", "zed")]
         )
 
     def test_symbols_have_plain_fallbacks_and_states_have_names(self):
@@ -169,6 +169,49 @@ class FooterTests(unittest.TestCase):
         self.assertEqual(options[3], RULE)
         self.assertEqual(len(options), 4 + 4)
 
+    def test_a_stale_roster_takes_only_the_rows_it_draws(self):
+        cached = {f"agent{index:02d}": {"state": "idle"} for index in range(20)}
+        self.source.roster.return_value = Snapshot(cached, error="stale", stale=True)
+        self.assertEqual(self.sidebar.roster_rows(), 2)
+
+    def test_an_agent_that_starts_working_is_shown_even_when_the_roster_was_scrolled(self):
+        states = dict.fromkeys([f"agent{index:02d}" for index in range(40)], "idle")
+        self.source.roster.return_value = roster(**states)
+        self.cells()
+        self.sidebar.scroll_roster(5)
+        self.cells()
+        self.assertEqual(self.sidebar.roster_offset, 5)
+        # Unchanged states keep the scroll; a newly working agent resets it.
+        self.cells()
+        self.assertEqual(self.sidebar.roster_offset, 5)
+        self.source.roster.return_value = roster(**{**states, "agent30": "busy"})
+        cells = self.cells()
+        self.assertEqual(self.sidebar.roster_offset, 0)
+        self.assertEqual((cells[6, 1], cells[6, 3]), ("▶", "agent30"))
+        # It stays working: scrolling by hand works again.
+        self.sidebar.scroll_roster(3)
+        self.cells()
+        self.assertEqual(self.sidebar.roster_offset, 3)
+
+    def test_the_selected_tab_stays_in_view_when_the_roster_takes_rows(self):
+        for index in range(13):
+            self.model.add_tab(f"Tab {index + 2}")
+        self.screen.getmaxyx.return_value = (20, 28)
+        self.source.roster.return_value = roster(agent="idle")
+        self.sidebar.tab_offset = 2
+        self.cells()
+        self.assertEqual((self.sidebar.tab_capacity(), self.sidebar.tab_offset), (12, 2))
+        # The last tab is selected; three agents start working, the tab list
+        # loses two rows, and the selection is still its last shown row.
+        self.source.roster.return_value = roster(agent="idle", a="busy", b="busy", c="busy")
+        cells = self.cells()
+        self.assertEqual((self.sidebar.tab_capacity(), self.sidebar.tab_offset), (10, 4))
+        self.assertEqual(cells[12, 4], "Tab 14")
+        # At a steady height, scrolling by hand is not undone.
+        self.sidebar.tab_offset = 0
+        self.cells()
+        self.assertEqual(self.sidebar.tab_offset, 0)
+
     def test_the_status_menu_spells_states_out_and_ends_with_the_legend(self):
         self.source.roster.return_value = roster(
             builder="busy", manager="waiting_for_human", tester="idle", notes="offline"
@@ -180,7 +223,7 @@ class FooterTests(unittest.TestCase):
         options = self.options()
         self.assertEqual(
             options[:4],
-            ["▶ builder · working", "! manager · waiting for you", "○ tester · idle", "1 offline"],
+            ["! manager · waiting for you", "▶ builder · working", "○ tester · idle", "1 offline"],
         )
         self.assertEqual(options[4], RULE)
         self.assertEqual(
@@ -194,36 +237,61 @@ class FooterTests(unittest.TestCase):
             self.sidebar.draw()
         self.assertEqual(self.sidebar.options[self.sidebar.selected][0], "▶ working")
 
-    def test_the_roster_is_bounded_scrolls_and_shrinks_before_the_tabs_do(self):
-        names = [f"agent{index:02d}" for index in range(9)]
+    def test_the_roster_uses_the_room_the_tabs_leave_and_scrolls_beyond_it(self):
+        # Twelve agents and one tab in 38 rows: every agent has a row, and a
+        # blank row separates the roster from the tabs.
+        names = [f"agent{index:02d}" for index in range(12)]
         self.source.roster.return_value = roster(**dict.fromkeys(names, "idle"))
         cells = self.cells()
-        # Six rows at most, a total and scroll arrows on the label row.
-        self.assertEqual(cells[28, 1].strip(), "AGENTS")
-        self.assertEqual(cells[28, 21].strip(), "9")
-        self.assertEqual((cells[28, 23].strip(), cells[28, 25].strip()), ("↑", "↓"))
-        self.assertEqual([cells[r, 3] for r in range(29, 35)], names[:6])
-        self.assertEqual(self.sidebar.tab_capacity(), 38 - 3 - 3 - 7)
-        self.mouse(25, 28)
-        self.mouse(25, 28)
-        self.mouse(25, 28)
+        top = 38 - 3 - 13
+        self.assertEqual(cells[top, 1].strip(), "AGENTS")
+        self.assertEqual(self.row_text(cells, top), "AGENTS12")
+        self.assertEqual([cells[r, 3] for r in range(top + 1, top + 13)], names)
+        self.assertNotIn((top, 23), cells)
+        self.assertEqual(self.sidebar.tab_capacity(), 38 - 3 - 3 - 13)
+        # More agents than the window holds: the tab keeps its row and the
+        # blank one, the roster the rest, with a total and scroll arrows.
+        names = [f"agent{index:02d}" for index in range(40)]
+        self.source.roster.return_value = roster(**dict.fromkeys(names, "idle"))
         cells = self.cells()
-        self.assertEqual([cells[r, 3] for r in range(29, 35)], names[3:])
+        self.assertEqual(self.sidebar.roster_rows(), 38 - 6 - 2)
+        self.assertEqual(self.sidebar.tab_capacity(), 2)
+        self.assertEqual(cells[5, 1].strip(), "AGENTS")
+        self.assertEqual(cells[5, 20].strip(), "40")
+        self.assertEqual((cells[5, 23].strip(), cells[5, 25].strip()), ("↑", "↓"))
+        self.assertEqual([cells[r, 3] for r in range(6, 35)], names[:29])
+        self.mouse(25, 5)
+        self.mouse(25, 5)
+        self.mouse(25, 5)
+        cells = self.cells()
+        self.assertEqual([cells[r, 3] for r in range(6, 35)], names[3:32])
         # The wheel over the rows scrolls them back; over the tabs it does not.
-        self.mouse(5, 31, curses.BUTTON4_PRESSED)
+        self.mouse(5, 20, curses.BUTTON4_PRESSED)
         self.assertEqual(self.sidebar.roster_offset, 2)
         self.mouse(5, 3, curses.BUTTON4_PRESSED)
         self.assertEqual(self.sidebar.roster_offset, 2)
-        # Shorter windows give rows back to the tabs first: four tab rows stay.
+
+    def test_a_short_window_keeps_the_tabs_and_the_agents_that_need_attention(self):
         for index in range(10):
             self.model.add_tab(f"Tab {index + 2}")
+        states = dict.fromkeys([f"agent{index:02d}" for index in range(9)], "idle")
+        self.source.roster.return_value = roster(**states)
+        # Eleven tabs fill 16 rows, so idle agents shrink to one row and a count.
         self.screen.getmaxyx.return_value = (16, 28)
         cells = self.cells()
-        self.assertEqual(self.sidebar.roster_rows(), 6)
-        self.assertEqual(self.sidebar.tab_capacity(), 4)
-        self.assertEqual(cells[7, 1].strip(), "AGENTS")
+        self.assertEqual(self.sidebar.roster_rows(), 2)
+        self.assertEqual(self.sidebar.tab_capacity(), 8)
+        self.assertEqual(cells[11, 1].strip(), "AGENTS")
         self.assertEqual(cells[14, 1].strip(), "Configure…")
-        self.assertEqual(cells[15, 1].strip(), "1")
+        # Agents that need you or are working keep their rows, while the tab
+        # list keeps its minimum of four.
+        self.source.roster.return_value = roster(
+            **states, zed="busy", yak="waiting_for_human", xen="busy"
+        )
+        cells = self.cells()
+        self.assertEqual(self.sidebar.roster_rows(), 4)
+        self.assertEqual(self.sidebar.tab_capacity(), 6)
+        self.assertEqual([cells[r, 3] for r in range(10, 13)], ["yak", "xen", "zed"])
         self.screen.getmaxyx.return_value = (14, 28)
         cells = self.cells()
         self.assertEqual(self.sidebar.roster_rows(), 4)
@@ -353,7 +421,8 @@ class FooterTests(unittest.TestCase):
         self.assertEqual(self.sidebar.menu, "icon")
         labels = [label for label, _ in self.sidebar._options({})]
         self.assertEqual(len(labels), len(WORKSPACE_ICONS) + 1)
-        self.assertEqual(labels[-1], "Number")
+        # Without a glyph, its name still starts in the names' column.
+        self.assertEqual(labels[-1], "   Number")
         dict(self.sidebar._options({}))[labels[0]]()
         glyph = WORKSPACE_ICONS[0][0]
         self.assertEqual(self.model.space["icon"], glyph)
@@ -370,7 +439,7 @@ class FooterTests(unittest.TestCase):
             validate_state(saved, navigation=False)
         # Back to a number; the heading is the bare name again.
         self.sidebar.open_menu("icon")
-        dict(self.sidebar._options({}))["Number"]()
+        dict(self.sidebar._options({}))["   Number"]()
         self.assertNotIn("icon", self.model.space)
         cells = self.cells()
         self.assertEqual(cells[37, 1].strip(), "1")

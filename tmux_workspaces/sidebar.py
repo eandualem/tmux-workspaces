@@ -6,6 +6,7 @@ import contextlib
 import curses
 import importlib.metadata
 import locale
+import re
 import textwrap
 import time
 from collections.abc import Callable
@@ -137,7 +138,6 @@ def terminal_text(text: str, encoding: str) -> str:
 
 # The roster is bounded so the tab list keeps its room: at most this many
 # agent rows, and never fewer tab rows than this.
-MAX_ROSTER_ROWS = 6
 MIN_TAB_ROWS = 4
 # Sentinel: no roster has been read for the frame in progress.
 _UNREAD = object()
@@ -198,6 +198,8 @@ class Sidebar:
         self.selection = Selection()
         self.tab_offset = 0
         self.roster_offset = 0
+        self._urgent_names: set[str] = set()
+        self._tab_rows_seen = 0
         # Consecutive polls that found the keyboard focus away from the panel
         # while a menu or editor was open.
         self.away_polls = 0
@@ -1042,7 +1044,8 @@ class Sidebar:
                     row(f"{glyph}  {label}", lambda glyph=glyph: self.set_icon(glyph))
                     for glyph, label in WORKSPACE_ICONS
                 ),
-                row("Number", lambda: self.set_icon(None)),
+                # No glyph: its name lines up with the names above.
+                row("   Number", lambda: self.set_icon(None)),
             ]
         if self.menu == "configure":
             # Everything infrequent in one place; leaving last, after a rule,
@@ -1266,7 +1269,7 @@ class Sidebar:
         "workspace": "Workspaces",
         "icon": "Workspace icon",
         "configure": "Configure",
-        "json-settings": "Opening window…",
+        "json-settings": "Popup open",
         "status": "Agent status",
         "name": "Type a name",
         "refresh": "Refresh viewer",
@@ -1386,6 +1389,16 @@ class Sidebar:
 
     def status_line(self, rows: list[Entry] | None = None) -> str:
         left, centre, right = self.status_slots(rows)
+        # The centre is laid out on the whole row: it needs the wider side's
+        # room on both sides of it, plus the edge insets and a two-cell gap.
+        # Where it would run into the sides, the hints give way.
+        columns = self.display.last_size[0]
+        left_cells, centre_cells, right_cells = (
+            cells(re.sub(r"#\[[^\]]*\]", "", slot).replace("##", "#"))
+            for slot in (left, centre, right)
+        )
+        if columns and 2 * max(left_cells, right_cells) + centre_cells + 6 > columns:
+            centre = ""
         muted = self._tmux_fg("muted")
         return (
             f"#[fg={muted}]#[align=left] {left}"
@@ -1421,15 +1434,25 @@ class Sidebar:
 
     @staticmethod
     def roster_entries(roster: Snapshot) -> list[tuple[str, str]]:
-        """Active agents as (name, state): everything but offline, in a name
-        order that does not move as states change."""
+        """Active agents as (name, state): everything but offline. Those that
+        need you come first, then those working, so a roster taller than its
+        rows keeps them in view; names order each group. Every row opens the
+        same status menu, so a row that moves never misdirects a click."""
         entries = []
         for name, item in roster.sessions.items():
             state = item.get("state") if isinstance(item, dict) else None
             state = state if isinstance(state, str) and state else "unknown"
             if state != "offline":
                 entries.append((name, state))
-        return sorted(entries, key=lambda entry: (entry[0].casefold(), entry[0]))
+        attention = {"!": 0, "▶": 1}
+        return sorted(
+            entries,
+            key=lambda entry: (
+                attention.get(STATE_SYMBOLS.get(entry[1], "?"), 2),
+                entry[0].casefold(),
+                entry[0],
+            ),
+        )
 
     def glyph(self, char: str) -> str:
         return terminal_text(char, self.encoding)
@@ -1451,15 +1474,30 @@ class Sidebar:
 
     def roster_rows(self) -> int:
         """Rows the roster takes, its label included; zero when it is hidden,
-        absent, or the window is too short to keep the tab list usable."""
+        absent, or the window is too short to keep the tab list usable.
+
+        The roster uses the room the tabs leave: every active agent when both
+        fit, with a blank row between them. Short of that, the tabs keep their
+        rows, but the agents that need you or are working, which come first,
+        still get theirs while the tab list keeps its minimum (fewer rows for
+        fewer tabs); the count and arrows reach the rest.
+        """
         roster = self.roster()
         if roster is None or not self.show_agents:
             return 0
-        room = self.size()[0] - 3 - self.FOOTER_ROWS - MIN_TAB_ROWS
+        space = self.size()[0] - 3 - self.FOOTER_ROWS
+        tabs = max(1, len(self.model.space["tabs"]))
+        room = space - min(MIN_TAB_ROWS, tabs)
         if room < 2:
             return 0
-        wanted = 1 + max(1, min(MAX_ROSTER_ROWS, len(self.roster_entries(roster))))
-        return min(wanted, room)
+        # An unavailable roster draws one line, whatever it last held.
+        entries = [] if roster.stale else self.roster_entries(roster)
+        wanted = 1 + max(1, len(entries))
+        leftover = space - tabs - 1
+        if wanted <= leftover:
+            return wanted
+        urgent = sum(STATE_SYMBOLS.get(state) in {"!", "▶"} for _name, state in entries)
+        return min(wanted, room, max(leftover, 1 + max(1, urgent)))
 
     def draw_roster(self, top: int, rows: int, width: int, roster: Snapshot) -> None:
         """The section: its label and count, then one row per active agent — a
@@ -1475,6 +1513,12 @@ class Sidebar:
         if not entries:
             self.put(top + 1, 1, "No active agents", muted, width - 2)
             return
+        # An agent that starts needing you or working moves to the top; show
+        # it rather than leave it above a scrolled list.
+        urgent = {name for name, state in entries if STATE_SYMBOLS.get(state) in {"!", "▶"}}
+        if urgent - self._urgent_names:
+            self.roster_offset = 0
+        self._urgent_names = urgent
         self.roster_offset = min(self.roster_offset, max(0, len(entries) - visible_rows))
         count = str(len(entries))
         if len(entries) > visible_rows:
@@ -1670,7 +1714,7 @@ class Sidebar:
                 self.put(row, 1, entry.label[len(LABEL) :].upper(), muted)
             else:
                 self.draw_menu_row(row, entry, self.offset + row - start == self.selected, width)
-        if not rows and self.menu != "refresh":
+        if not rows and self.menu not in {"refresh", "json-settings"}:
             self.put(
                 start,
                 1,
@@ -1776,6 +1820,15 @@ class Sidebar:
         tabs = self.model.space["tabs"]
         available = self.tab_capacity()
         self.tab_offset = min(self.tab_offset, max(0, len(tabs) - available))
+        if available < self._tab_rows_seen and tab in tabs:
+            # The roster took rows: keep the selected tab in view. Scrolling
+            # the list by hand at a steady height is left alone.
+            index = tabs.index(tab)
+            if index < self.tab_offset:
+                self.tab_offset = index
+            elif index >= self.tab_offset + available:
+                self.tab_offset = index - available + 1
+        self._tab_rows_seen = available
         if len(tabs) > available:
             self.button(2, "↑", lambda: self.scroll(-1), x=width - 8, width=2, style=muted)
             self.button(2, "↓", lambda: self.scroll(1), x=width - 6, width=2, style=muted)

@@ -162,7 +162,7 @@ changes apply to the running viewer. [THEMES.md](THEMES.md) describes every
 role. **Edit shortcuts…** uses the same editor, while **View shortcuts…** opens
 a read-only reference to the active keys in the same popup frame.
 
-The status row along the bottom of the window, set off by a rule above it,
+The status row along the bottom of the window, set off by the panel color,
 has three parts. On the left,
 where you are: the workspace, the tab and the focused pane, or the selected menu
 row and its keys, or the open popup. In the centre, the few keys that matter in
@@ -290,9 +290,13 @@ is idle and `?` an unknown state; **Agent status…** spells each state out and
 ends with this legend. Offline agents take no row. States come from
 agent-backbone's own reports, never from terminal text or a running process;
 when the connection fails the section says *Roster unavailable* rather than
-showing old states as current. Names keep one alphabetical order as states
-change. At most six rows are shown, with scrolling and a count when there are
-more, and on short windows the roster gives rows back to the tab list first.
+showing old states as current. Agents that need you come first, then those
+working, then the rest, each group in name order, so a row moves when its
+state changes. The roster uses the height the tab list leaves, so a tall window
+shows every active agent. When they do not all fit, the label row shows the total
+and scroll arrows; the tab list keeps its rows first, but agents that need you or
+are working keep theirs while the tab list keeps four rows, or one per tab when
+there are fewer.
 The roster appears when a state-reporting source is connected (Backbone, found
 on its own, or the demo) and can be hidden with **Show agents** in Configure…, with
 **Ctrl-g A**, or by clicking **agents shown** in the status row; the choice is

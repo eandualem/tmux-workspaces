@@ -99,6 +99,9 @@ class ChooserDrawTests(unittest.TestCase):
         # The selected row is one bar across the pane, marked at its left end;
         # the state glyph sits in its own column before the name.
         self.assertIn((5, 0, " " * 60), texts)
+        # It reaches the last column too, as the sidebar's bar does.
+        bar = next(c for c in screen.addnstr.call_args_list if c.args[:3] == (5, 0, " " * 60))
+        self.assertEqual(bar.args[3], 60)
         self.assertIn((5, 1, "▶"), texts)
         self.assertIn((5, 3, "○"), texts)
         self.assertIn((5, 5, "work"), texts)

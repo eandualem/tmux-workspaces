@@ -158,6 +158,13 @@ class Frame:
             self.put(row, column, label, self.styles[style])
             hits.append((column, column + cells(label), label))
             column += cells(label) + 2
+        # A path too long for the room between keeps its end, where the file
+        # name is, and the right-hand key stays on the row.
+        room = width - 2 - cells(right) - 2 - column
+        if cells(centre) > room:
+            while centre and cells(centre) > room - 1:
+                centre = centre[1:]
+            centre = "…" + centre if centre and room > 1 else ""
         start = max(column, (width - cells(centre)) // 2)
         self.put(row, start, centre, self.styles["muted/header"])
         self.put(
