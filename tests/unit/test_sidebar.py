@@ -437,6 +437,12 @@ class SidebarTests(unittest.TestCase):
             self.assertEqual(self.model.state["focus"], focused)
         self.display.shells.close.assert_not_called()
 
+    def test_keys_in_the_status_row_cannot_start_a_tmux_format(self):
+        self.sidebar.keymap = Keymap.from_dict({"prefix": "C-b", "bindings": {"new-tab": ["#"]}})
+        status = self.sidebar.status_line()
+        self.assertIn("^b ## new", status)
+        self.assertNotIn("^b # new", status)
+
     def test_menu_rows_carry_their_keys_and_the_status_row_spells_them_out(self):
         self.sidebar.keymap = Keymap.from_dict(
             {

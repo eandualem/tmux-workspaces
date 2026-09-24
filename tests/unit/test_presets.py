@@ -284,6 +284,16 @@ class PanelColorTests(unittest.TestCase):
         )
         self.assertEqual(display.panel_color, "default")
 
+    def test_a_status_text_tmux_refused_is_sent_again(self):
+        display = self.display()
+        display.tmux = Mock()
+        display.setup()
+        display.tmux.run.side_effect = [RuntimeError("busy"), ""]
+        with self.assertRaises(RuntimeError):
+            display.set_status("#[align=left]saved")
+        display.set_status("#[align=left]saved")
+        self.assertEqual(display.tmux.run.call_count, 2)
+
     def test_the_status_row_text_is_sent_once_per_change(self):
         display = self.display()
         display.tmux = Mock()

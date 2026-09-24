@@ -39,6 +39,8 @@ class LaunchContext:
 
     def __init__(self, args):
         self.backbone, self.backbone_dir = resolve_backbone(args)
+        # Asked off stays off on reopen, even once Backbone's database appears.
+        self.no_backbone = args.backbone is False
         self.demo = bool(args.demo)
         self.base_library = args.data_dir.expanduser().resolve()
         # The disposable library lives beside the real one; a reopened command
@@ -117,6 +119,8 @@ class LaunchContext:
             options += ["--backbone", "--backbone-data-dir", str(self.backbone_dir)]
             if self.url:
                 options += ["--url", self.url]
+        elif self.no_backbone:
+            options.append("--no-backbone")
         if self.no_keymap:
             options.append("--no-keymap")
         elif self.keymap_required:
