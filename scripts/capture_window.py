@@ -180,8 +180,10 @@ def capture(state: dict, out: Path, crops: list[str]) -> None:
         print(target)
 
 
-def close(directory: Path) -> None:
-    state = json.loads((directory / "capture.json").read_text())
+def close(directory: Path, state: dict | None = None) -> None:
+    """Close a run's window and its sample servers. ``state`` stands in for
+    ``capture.json`` when that could not be written."""
+    state = state or json.loads((directory / "capture.json").read_text())
     if state["terminal"] == "ghostty":
         with contextlib.suppress(ProcessLookupError):
             os.kill(state["pid"], signal.SIGTERM)
@@ -261,13 +263,13 @@ def main() -> int:
         stop_sample(library)
         shutil.rmtree(directory)
         raise
-    (directory / "capture.json").write_text(json.dumps(state))
     try:
+        (directory / "capture.json").write_text(json.dumps(state))
         wait(lambda: viewer_ready(library), "the viewer did not draw its sidebar", timeout=30)
         time.sleep(options.wait)
         capture(state, options.out or directory / "capture.png", options.crop)
     except BaseException:
-        close(directory)
+        close(directory, state)
         raise
     if options.keep_open:
         print(f"kept open: {directory}")
