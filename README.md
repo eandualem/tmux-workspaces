@@ -28,8 +28,9 @@ a split layout in each one, and come back to the same arrangement tomorrow.
 
 Use it for shells, editors, development servers or sessions you already run in
 tmux. The Agents section shown above is optional: it shows agent state when an
-agent-backbone server is running on this host, and workspaces work fully
-without it. It adds no notifications. The status row
+agent-backbone server is running on this host
+([how it is found](docs/GUIDE.md#optional-backbone-agent-status)), and
+workspaces work fully without it. It adds no notifications. The status row
 along the bottom names where you are, the keys that matter in the current
 mode, and whether the saved arrangement is current.
 
