@@ -502,8 +502,10 @@ class Sidebar:
         leaves the keyboard on the panel, never in another terminal."""
         self.remember()
         # Search the layout as saved now, not as of the last poll.
-        with contextlib.suppress(LayoutConflict):
-            self.store.refresh(self.model)
+        try:
+            changed = self.store.refresh(self.model)
+        except LayoutConflict:
+            changed = True
         here = os.path.realpath(self.source.socket)
 
         def shows(pane: dict | None) -> bool:
@@ -522,6 +524,8 @@ class Sidebar:
             if shows(pane)
         ]
         if not found:
+            if changed:
+                self.show()
             self.open_menu("status")
             self.message = f"No tab shows {name}"
             return

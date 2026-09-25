@@ -294,6 +294,22 @@ class FooterTests(unittest.TestCase):
         self.assertEqual(self.sidebar.message, "No tab shows builder")
         self.assertIsNone(tab["tree"]["agent"])
 
+    def test_a_peer_change_found_on_the_way_to_the_fallback_is_drawn(self):
+        self.source.roster.return_value = roster(builder="busy")
+        tab = self.model.tab
+        self.cells()
+        self.display.render.reset_mock()
+
+        def peer(model):
+            tab["tree"]["agent"] = "reviewer"
+            return True
+
+        self.store.refresh.side_effect = peer
+        self.mouse(5, 34)
+        self.display.render.assert_called_once_with(tab, False)
+        self.assertEqual(self.sidebar.menu, "status")
+        self.display.select_sidebar.assert_called()
+
     def test_the_status_menu_spells_states_out_and_ends_with_the_legend(self):
         self.source.roster.return_value = roster(
             builder="busy", manager="waiting_for_human", tester="idle", notes="offline"
