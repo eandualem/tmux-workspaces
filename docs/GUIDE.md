@@ -297,6 +297,10 @@ shows every active agent. When they do not all fit, the label row shows the tota
 and scroll arrows; the tab list keeps its rows first, but agents that need you or
 are working keep theirs while the tab list keeps four rows, or one per tab when
 there are fewer.
+Clicking an agent's row goes to a tab already showing its session, switching
+workspace if needed; when several do, the one this window showed most recently.
+It never attaches or starts anything: with no such tab, **Agent status…** opens
+and says so.
 The roster appears when a state-reporting source is connected (Backbone, found
 on its own, or the demo) and can be hidden with **Show agents** in Configure…, with
 **Ctrl-g A**, or by clicking **agents shown** in the status row; the choice is

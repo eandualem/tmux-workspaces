@@ -5,7 +5,9 @@ from __future__ import annotations
 import contextlib
 import curses
 import importlib.metadata
+import itertools
 import locale
+import os
 import re
 import textwrap
 import time
@@ -198,6 +200,10 @@ class Sidebar:
         self.selection = Selection()
         self.tab_offset = 0
         self.roster_offset = 0
+        # When each tab was last shown in this window, so a roster click can
+        # pick the most recently used of several tabs showing one agent.
+        self.tab_uses: dict[str, int] = {}
+        self._use_clock = itertools.count()
         self._urgent_names: set[str] = set()
         self._tab_rows_seen = 0
         # Consecutive polls that found the keyboard focus away from the panel
@@ -464,6 +470,8 @@ class Sidebar:
         self.close_menu()
         self.save()
         self.display.render(self.model.tab, self.model.state["focus"])
+        if self.model.tab:
+            self.tab_uses[self.model.tab["id"]] = next(self._use_clock)
 
     def choose_tab(self, tab: dict) -> None:
         self.remember()
@@ -475,11 +483,51 @@ class Sidebar:
             self.message = "Tab changed; choose a tab"
             return
         self.model.space["selected"] = tab["id"]
+        self.reveal_tab(index)
+        self.show()
+
+    def reveal_tab(self, index: int) -> None:
+        """Scroll the tab list so the tab at this position is in view."""
         available = self.tab_capacity()
         if index < self.tab_offset:
             self.tab_offset = index
         elif index >= self.tab_offset + available:
             self.tab_offset = index - available + 1
+
+    def open_agent(self, name: str) -> None:
+        """Go to a tab showing this agent's session, in whichever workspace
+        holds it: the current tab if it does, else the one most recently shown
+        here. Nothing is attached or started; with no such tab, the status
+        menu opens and says so."""
+        self.remember()
+        here = os.path.realpath(self.source.socket)
+        current = self.model.tab
+        found = [
+            (space, tab, pane)
+            for space in self.model.state["workspaces"]
+            for tab in space["tabs"]
+            for pane in leaves(tab["tree"])
+            if pane["agent"] == name
+            and os.path.realpath(pane.get("source_socket") or self.source.socket) == here
+        ]
+        if not found:
+            self.open_menu("status")
+            self.message = f"No tab shows {name}"
+            return
+        space, tab, pane = max(
+            found,
+            key=lambda item: (
+                item[1] is current,
+                self.tab_uses.get(item[1]["id"], -1),
+                item[2]["id"] == item[1]["focus"],
+            ),
+        )
+        if space["id"] != self.model.space["id"]:
+            self.model.state["selected"] = space["id"]
+            self.tab_offset = 0
+        space["selected"] = tab["id"]
+        tab["focus"] = pane["id"]
+        self.reveal_tab(space["tabs"].index(tab))
         self.show()
 
     def choose_workspace(self, space: dict) -> None:
@@ -1436,8 +1484,8 @@ class Sidebar:
     def roster_entries(roster: Snapshot) -> list[tuple[str, str]]:
         """Active agents as (name, state): everything but offline. Those that
         need you come first, then those working, so a roster taller than its
-        rows keeps them in view; names order each group. Every row opens the
-        same status menu, so a row that moves never misdirects a click."""
+        rows keeps them in view; names order each group. A row's click is bound
+        to its name, so a row that moves never misdirects it."""
         entries = []
         for name, item in roster.sessions.items():
             state = item.get("state") if isinstance(item, dict) else None
@@ -1533,7 +1581,7 @@ class Sidebar:
             symbol = self.symbol(state)
             self.put(row, 1, symbol, self.symbol_style(symbol), 1)
             self.put(row, 3, visible(name), self.style("normal"), width - 4)
-            self.hits.append((row, 0, width, lambda: self.open_menu("status")))
+            self.hits.append((row, 0, width, lambda name=name: self.open_agent(name)))
 
     def scroll_roster(self, amount: int) -> None:
         self.roster_offset = max(0, self.roster_offset + amount)
