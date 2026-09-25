@@ -73,6 +73,9 @@ GROUPED_MARKER = "@tmux_workspaces_attachment"
 GROUPED_SOURCE_SESSION = "@tmux_workspaces_source_session"
 # How often a grouped attachment checks that the session it joined still exists.
 TARGET_PROBE_SECONDS = 2
+# theme.RGB_SLOTS, the palette slots the UI defines. Every pane's helper resets
+# them, so it takes the range from here rather than importing the theme module.
+RGB_SLOTS = range(16, 48)
 
 
 def grouped_session_name() -> str:
@@ -237,8 +240,6 @@ def run_grouped_attachment(source_socket: str, target: str, window: str = "") ->
 def leaf_main(args) -> int:
     # respawn-pane retains the chooser's OSC palette overrides. Reset only the
     # slots our UI owns, on this private viewer PTY, before a shell/TUI attaches.
-    from .theme import RGB_SLOTS
-
     print("".join(f"\x1b]104;{slot}\x1b\\" for slot in RGB_SLOTS), end="", flush=True)
     name = args.agent or args.terminal
     if not name:
