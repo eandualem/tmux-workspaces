@@ -28,7 +28,8 @@ they already create; never create load with them.
 2. **Read existing evidence**: `docs/PERFORMANCE.md`, earlier benchmark JSON
    and local memory evidence.
 3. **Observe the natural load passively** (read-only):
-   - `uptime`, `sysctl vm.swapusage`, `ps -Ao pcpu,rss,comm | sort -rn | head`
+   - `uptime`, `ps -Ao pcpu,rss,comm | sort -rn | head`, and swap use:
+     `sysctl vm.swapusage` on macOS, `free -h` on Linux
    - a viewer process's cumulative CPU: `ps -o time= -p PID`, sampled twice,
      a minute apart
    - read-only queries on a viewer's private socket (`list-panes`,
