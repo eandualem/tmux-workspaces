@@ -95,9 +95,10 @@ their pane and reconnect when the session returns; the viewer never starts
 an external session. An attached session is joined through a grouped tmux
 session of the viewer's own, which shares the session's windows but carries
 its own options: it starts with the settings of the session you attached
-(mouse mode included) and turns its status line off, so the row it took
-returns to the program inside, while the session you attached keeps its own
-status line and every other setting untouched. The grouped session disappears
+(mouse mode included) and replaces its status line with one row along the
+top that shows only the session's name, on the right, in the theme's panel
+and accent colors. The session you attached keeps its own status line and every
+other setting untouched. The grouped session disappears
 when the pane lets go of it, or as soon as the session it joined is gone, so
 a session that ends shows as offline instead of living on inside the viewer.
 The attachment starts on the source session's current window. A window you select
