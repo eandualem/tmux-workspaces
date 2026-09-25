@@ -212,6 +212,115 @@ class FooterTests(unittest.TestCase):
         self.cells()
         self.assertEqual(self.sidebar.tab_offset, 0)
 
+    def agent_tab(self, name, agent, source_socket="/unused/source.sock"):
+        """A tab in the current workspace whose second pane shows the agent."""
+        self.model.add_tab(name)
+        self.model.split("right")
+        self.model.attach(agent, source_socket)
+        return self.model.tab
+
+    def test_clicking_an_agent_goes_to_the_tab_showing_it_in_its_workspace(self):
+        self.source.roster.return_value = roster(builder="busy", tester="idle")
+        home = self.model.space
+        self.model.add_workspace("Agents")
+        tab = self.agent_tab("Build", "builder")
+        pane = tab["focus"]
+        tab["focus"] = tab["tree"]["first"]["id"]
+        self.model.state["selected"] = home["id"]
+        self.cells()
+        # Label on 32, builder on 33.
+        self.mouse(5, 33)
+        self.assertEqual((self.model.space["name"], self.model.tab), ("Agents", tab))
+        self.assertEqual(tab["focus"], pane)
+        self.assertIsNone(self.sidebar.menu)
+        self.display.render.assert_called_with(tab, False)
+        self.assertEqual(tab["tree"]["second"]["agent"], "builder")
+
+    def test_of_several_tabs_the_most_recently_shown_wins_on_the_same_server(self):
+        # One agent: label on 33, builder on 34.
+        self.source.roster.return_value = roster(builder="busy")
+        first = self.agent_tab("First", "builder")
+        second = self.agent_tab("Second", "builder")
+        elsewhere = self.agent_tab("Elsewhere", "builder", "/other/server.sock")
+        plain = self.model.space["tabs"][0]
+        for tab in (second, first, elsewhere, plain):
+            self.sidebar.choose_tab(tab)
+        self.cells()
+        self.mouse(5, 34)
+        self.assertIs(self.model.tab, first)
+        for tab in (first, second, plain):
+            self.sidebar.choose_tab(tab)
+        self.cells()
+        self.mouse(5, 34)
+        self.assertIs(self.model.tab, second)
+
+    def test_the_current_tab_wins_over_a_more_recently_shown_match(self):
+        self.source.roster.return_value = roster(builder="busy")
+        first = self.agent_tab("First", "builder")
+        second = self.agent_tab("Second", "builder")
+        for tab in (first, second):
+            self.sidebar.choose_tab(tab)
+        self.model.space["selected"] = first["id"]
+        self.cells()
+        self.mouse(5, 34)
+        self.assertIs(self.model.tab, first)
+
+    def test_the_click_searches_the_layout_a_peer_saved_since_the_last_poll(self):
+        self.source.roster.return_value = roster(builder="busy")
+        home = self.model.tab
+        self.model.add_tab("Plain")
+        self.cells()
+
+        def peer(model):
+            # Another window attached builder to the first tab after this one polled.
+            home["tree"]["agent"] = "builder"
+
+        self.store.refresh.side_effect = peer
+        self.mouse(5, 34)
+        self.assertIs(self.model.tab, home)
+        self.assertIsNone(self.sidebar.menu)
+
+    def test_a_replacement_merged_as_the_move_saves_leaves_the_keyboard_on_the_panel(self):
+        self.source.roster.return_value = roster(builder="busy")
+        tab = self.agent_tab("Build", "builder")
+        self.model.space["selected"] = self.model.space["tabs"][0]["id"]
+        self.cells()
+        self.display.select_sidebar.reset_mock()
+
+        def peer(model):
+            tab["tree"]["second"]["agent"] = "reviewer"
+
+        self.store.save.side_effect = peer
+        self.mouse(5, 34)
+        self.display.select_sidebar.assert_called_once()
+        self.assertEqual(self.sidebar.message, "Pane changed; choose the agent again")
+
+    def test_an_agent_no_tab_shows_opens_the_status_menu_and_moves_nothing(self):
+        self.source.roster.return_value = roster(builder="busy")
+        tab = self.model.tab
+        self.cells()
+        self.mouse(5, 34)
+        self.assertIs(self.model.tab, tab)
+        self.assertEqual(self.sidebar.menu, "status")
+        self.assertEqual(self.sidebar.message, "No tab shows builder")
+        self.assertIsNone(tab["tree"]["agent"])
+
+    def test_a_peer_change_found_on_the_way_to_the_fallback_is_drawn(self):
+        self.source.roster.return_value = roster(builder="busy")
+        tab = self.model.tab
+        self.cells()
+        self.display.render.reset_mock()
+
+        def peer(model):
+            tab["tree"]["agent"] = "reviewer"
+            return True
+
+        self.store.refresh.side_effect = peer
+        self.mouse(5, 34)
+        self.display.render.assert_called_once_with(tab, False)
+        self.assertEqual(self.sidebar.menu, "status")
+        self.display.select_sidebar.assert_called()
+
     def test_the_status_menu_spells_states_out_and_ends_with_the_legend(self):
         self.source.roster.return_value = roster(
             builder="busy", manager="waiting_for_human", tester="idle", notes="offline"
