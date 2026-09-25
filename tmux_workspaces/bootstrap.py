@@ -31,6 +31,10 @@ def _dispatch(module, *args):
 
 def main():
     """Installed console command and standalone viewer entry point."""
+    if sys.argv[1:2] == ["_action"]:
+        # tmux starts this helper for every viewer shortcut and panel click. It
+        # needs the action transport, not the full command-line parser.
+        return _dispatch(".controls", sys.argv[2:])
     return _dispatch(".cli")
 
 

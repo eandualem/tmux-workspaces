@@ -78,11 +78,14 @@ class BackboneProvider:
             request.add_header("Authorization", "Bearer " + key)
         with opener.open(request, timeout=3) as response:
             items = json.load(response)["items"]
-        roster = session_items(items, valid_agent, "backbone")
-        for item in roster.values():
-            # API agent state does not establish tmux attachment availability.
-            item.pop("online", None)
-        return roster
+        # Keep what the viewer shows: the name and the state. The rest of an
+        # agent's record changes while it works, and would turn every poll into
+        # a repaint and every frame into a larger copy. API agent state (and
+        # its online field) does not establish tmux attachment availability.
+        return {
+            name: {"name": name, "state": item["state"], "origin": item["origin"]}
+            for name, item in session_items(items, valid_agent, "backbone").items()
+        }
 
     def read(self) -> Snapshot:
         try:
