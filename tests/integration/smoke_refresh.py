@@ -284,7 +284,7 @@ def exercise(resources: FixtureResources) -> None:
     assert source.run("show-option", "-t", "=" + grouped + ":", "-v", "status") == "on"
     assert (
         source.run("show-option", "-t", "=" + grouped + ":", "-v", "status-format[0]")
-        == "#[align=right]external "
+        == "#[align=right]external"  # run() strips the trailing space
     )
     assert source.run("show-option", "-t", "=" + grouped + ":", "-v", "destroy-unattached") == "on"
     assert source.run("show-option", "-t", "=external:", "-v", "status") == "off"
@@ -292,7 +292,7 @@ def exercise(resources: FixtureResources) -> None:
     assert source.run("show-option", "-t", "=external:", "-v", "status") == "on"
     assert (
         source.run("show-option", "-t", "=" + grouped + ":", "-v", "status-format[0]")
-        == "#[align=right]external "
+        == "#[align=right]external"  # run() strips the trailing space
     )
     assert identities == user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     client.type(direct_sequence("select-tab-1"))
