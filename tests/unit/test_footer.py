@@ -254,6 +254,36 @@ class FooterTests(unittest.TestCase):
         self.mouse(5, 34)
         self.assertIs(self.model.tab, second)
 
+    def test_the_click_searches_the_layout_a_peer_saved_since_the_last_poll(self):
+        self.source.roster.return_value = roster(builder="busy")
+        home = self.model.tab
+        self.model.add_tab("Plain")
+        self.cells()
+
+        def peer(model):
+            # Another window attached builder to the first tab after this one polled.
+            home["tree"]["agent"] = "builder"
+
+        self.store.refresh.side_effect = peer
+        self.mouse(5, 34)
+        self.assertIs(self.model.tab, home)
+        self.assertIsNone(self.sidebar.menu)
+
+    def test_a_replacement_merged_as_the_move_saves_leaves_the_keyboard_on_the_panel(self):
+        self.source.roster.return_value = roster(builder="busy")
+        tab = self.agent_tab("Build", "builder")
+        self.model.space["selected"] = self.model.space["tabs"][0]["id"]
+        self.cells()
+        self.display.select_sidebar.reset_mock()
+
+        def peer(model):
+            tab["tree"]["second"]["agent"] = "reviewer"
+
+        self.store.save.side_effect = peer
+        self.mouse(5, 34)
+        self.display.select_sidebar.assert_called_once()
+        self.assertEqual(self.sidebar.message, "Pane changed; choose the agent again")
+
     def test_an_agent_no_tab_shows_opens_the_status_menu_and_moves_nothing(self):
         self.source.roster.return_value = roster(builder="busy")
         tab = self.model.tab

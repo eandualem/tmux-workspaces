@@ -498,17 +498,28 @@ class Sidebar:
         """Go to a tab showing this agent's session, in whichever workspace
         holds it: the current tab if it does, else the one most recently shown
         here. Nothing is attached or started; with no such tab, the status
-        menu opens and says so."""
+        menu opens and says so. A peer's change landing as the move is saved
+        leaves the keyboard on the panel, never in another terminal."""
         self.remember()
+        # Search the layout as saved now, not as of the last poll.
+        with contextlib.suppress(LayoutConflict):
+            self.store.refresh(self.model)
         here = os.path.realpath(self.source.socket)
+
+        def shows(pane: dict | None) -> bool:
+            return (
+                pane is not None
+                and pane["agent"] == name
+                and os.path.realpath(pane.get("source_socket") or self.source.socket) == here
+            )
+
         current = self.model.tab
         found = [
             (space, tab, pane)
             for space in self.model.state["workspaces"]
             for tab in space["tabs"]
             for pane in leaves(tab["tree"])
-            if pane["agent"] == name
-            and os.path.realpath(pane.get("source_socket") or self.source.socket) == here
+            if shows(pane)
         ]
         if not found:
             self.open_menu("status")
@@ -529,6 +540,9 @@ class Sidebar:
         tab["focus"] = pane["id"]
         self.reveal_tab(space["tabs"].index(tab))
         self.show()
+        if not shows(self.model.pane):
+            self.display.select_sidebar()
+            self.message = "Pane changed; choose the agent again"
 
     def choose_workspace(self, space: dict) -> None:
         self.remember()
