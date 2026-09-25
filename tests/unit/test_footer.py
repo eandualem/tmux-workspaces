@@ -254,6 +254,17 @@ class FooterTests(unittest.TestCase):
         self.mouse(5, 34)
         self.assertIs(self.model.tab, second)
 
+    def test_the_current_tab_wins_over_a_more_recently_shown_match(self):
+        self.source.roster.return_value = roster(builder="busy")
+        first = self.agent_tab("First", "builder")
+        second = self.agent_tab("Second", "builder")
+        for tab in (first, second):
+            self.sidebar.choose_tab(tab)
+        self.model.space["selected"] = first["id"]
+        self.cells()
+        self.mouse(5, 34)
+        self.assertIs(self.model.tab, first)
+
     def test_the_click_searches_the_layout_a_peer_saved_since_the_last_poll(self):
         self.source.roster.return_value = roster(builder="busy")
         home = self.model.tab
