@@ -1,7 +1,8 @@
 name: Branch policy (trusted)
 
-# pull_request_target runs this workflow and the validator from the base branch,
-# so a pull request cannot edit either one to pass its own routing check.
+# pull_request_target runs this workflow and the validator from the default
+# branch, whatever the pull request's base, so a pull request cannot edit
+# either one to pass its own routing check.
 # Never check out or run the pull request's code here.
 on:
   pull_request_target:
