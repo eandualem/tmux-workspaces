@@ -276,15 +276,24 @@ def exercise(resources: FixtureResources) -> None:
     wait(client, lambda: saved(library).tab["name"] == "Beta", "second tab rename failed")
     attach(client, library, source, "external")
     # The pane attaches through a grouped session of the viewer's own, whose
-    # status line is off; the external session keeps its own options and is
-    # never renamed or reconfigured.
+    # status line shows only the session's name (the external one's is off);
+    # the external session keeps its own options and is never renamed or
+    # reconfigured.
     wait(client, lambda: len(grouped_sessions(source)) == 1, "no grouped attach session")
     grouped = grouped_sessions(source)[0]
-    assert source.run("show-option", "-t", "=" + grouped + ":", "-v", "status") == "off"
+    assert source.run("show-option", "-t", "=" + grouped + ":", "-v", "status") == "on"
+    assert (
+        source.run("show-option", "-t", "=" + grouped + ":", "-v", "status-format[0]")
+        == "#[align=right]external"  # run() strips the trailing space
+    )
     assert source.run("show-option", "-t", "=" + grouped + ":", "-v", "destroy-unattached") == "on"
+    assert source.run("show-option", "-t", "=external:", "-v", "status") == "off"
     source.run("set-option", "-t", "=external:", "status", "on")
     assert source.run("show-option", "-t", "=external:", "-v", "status") == "on"
-    assert source.run("show-option", "-t", "=" + grouped + ":", "-v", "status") == "off"
+    assert (
+        source.run("show-option", "-t", "=" + grouped + ":", "-v", "status-format[0]")
+        == "#[align=right]external"  # run() strips the trailing space
+    )
     assert identities == user_sessions(source, "#{session_id}:#{session_created}:#{session_name}")
     client.type(direct_sequence("select-tab-1"))
     wait(client, lambda: selected(client, library) == "Alpha", "tab selection failed")

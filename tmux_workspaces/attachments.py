@@ -89,25 +89,38 @@ def grouped_attach_command(
     name: str | None = None,
     options: list[list[str]] | None = None,
     window: str | None = None,
+    label: str = "",
+    style: str = "",
 ) -> list[str]:
     """Attach to an external session through a grouped session of this viewer's own.
 
     A grouped session shares the target's windows but carries its own session
-    options, so its status line can be turned off for this pane without
-    touching the session the user (or an agent) is running, and the row it
-    occupied returns to the program inside. tmux gives a grouped session the
-    server's defaults, not the target's settings, so the target's own session
-    options (``mouse`` above all) are copied first and the status line turned
-    off after them. The grouped session is destroyed as soon as this client
-    detaches; the target is never modified.
+    options, so its status line can be restyled for this pane without
+    touching the session the user (or an agent) is running. tmux gives a
+    grouped session the server's defaults, not the target's settings, so the
+    target's own session options (``mouse`` above all) are copied first and
+    the status line set after them: one row along the top holding only
+    ``label`` on the right, in ``style``, or no row without a label. The
+    grouped session is destroyed as soon as this client detaches; the target
+    is never modified.
     """
     name = name or grouped_session_name()
     commands = [["new-session", "-E", "-t", target, "-s", name]]
+    status = (
+        [
+            ["status", "on"],
+            ["status-position", "top"],
+            ["status-style", style or "default"],
+            ["status-format[0]", "#[align=right]" + label.replace("#", "##") + " "],
+        ]
+        if label
+        else [["status", "off"]]
+    )
     for option in [
         *(options or []),
         [GROUPED_MARKER, "1"],
         [GROUPED_SOURCE_SESSION, target],
-        ["status", "off"],
+        *status,
         ["destroy-unattached", "on"],
     ]:
         commands.append(["set-option", "-t", name, *option])
@@ -150,7 +163,9 @@ def session_exists(source_socket: str, target: str) -> bool:
     )
 
 
-def run_grouped_attachment(source_socket: str, target: str, window: str = "") -> None:
+def run_grouped_attachment(
+    source_socket: str, target: str, window: str = "", label: str = "", style: str = ""
+) -> None:
     """Attach through a group when safe, otherwise directly to the source.
 
     Sessions in a group keep each other's windows alive, so a grouped session
@@ -216,7 +231,7 @@ def run_grouped_attachment(source_socket: str, target: str, window: str = "") ->
         return
     name = grouped_session_name()
     options = target_session_options(source_socket, session_id)
-    command = grouped_attach_command(source_socket, session_id, name, options, window)
+    command = grouped_attach_command(source_socket, session_id, name, options, window, label, style)
     with subprocess.Popen(command, env=clean_env()) as client:
         while client.poll() is None:
             # One probe every couple of seconds per attached pane; a killed
@@ -279,7 +294,11 @@ def leaf_main(args) -> int:
             notice = ""
             if args.agent:
                 run_grouped_attachment(
-                    args.source_socket, target, getattr(args, "attachment_window", "")
+                    args.source_socket,
+                    target,
+                    getattr(args, "attachment_window", ""),
+                    args.agent,
+                    getattr(args, "attachment_style", ""),
                 )
             else:
                 subprocess.run(command, env=clean_env(), check=False)

@@ -509,6 +509,20 @@ class ChooserArgumentTests(unittest.TestCase):
         self.assertEqual(str(args.theme), "/tmp/t.toml")
         self.assertEqual(args.terminal_colors, 16)
 
+    def test_an_attached_pane_names_itself_in_the_theme_and_changes_with_it(self):
+        display = Display(
+            "/tmp/view.sock", "/tmp/source.sock", "%0", "/tmp/shells.sock", "/tmp/action.sock"
+        )
+        model = Model.initial()
+        model.attach("builder", None)
+        display.style_panel("#101010", status_styles={"accent": "#aabbcc"})
+        before = display._leaf_command(model.pane)
+        args = parser().parse_args(shlex.split(before)[2:])
+        self.assertEqual(args.attachment_style, "fg=#aabbcc,bg=#101010")
+        # A new theme gives the pane a new command, so it is restarted in the new colors.
+        display.style_panel("#202020", status_styles={"accent": "#aabbcc"})
+        self.assertNotEqual(display._leaf_command(model.pane), before)
+
 
 if __name__ == "__main__":
     unittest.main()
