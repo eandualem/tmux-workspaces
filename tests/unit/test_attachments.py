@@ -148,7 +148,7 @@ class EmptyWorkspaceLabelTests(unittest.TestCase):
 class GroupedAttachTests(unittest.TestCase):
     """External sessions are joined through a grouped session of the viewer's own."""
 
-    def test_the_grouped_command_turns_off_its_own_status_and_destroys_itself(self):
+    def test_without_a_label_the_grouped_command_turns_off_its_status_and_destroys_itself(self):
         from tmux_workspaces.attachments import grouped_attach_command
 
         command = grouped_attach_command("/tmp/src.sock", "=manager:")
@@ -166,6 +166,13 @@ class GroupedAttachTests(unittest.TestCase):
         # Each client gets a name of its own.
         other = grouped_attach_command("/tmp/src.sock", "=manager:")
         self.assertNotEqual(name, other[other.index("-s") + 1])
+
+    def test_the_name_row_escapes_tmux_formats_and_defaults_its_colors(self):
+        from tmux_workspaces.attachments import grouped_attach_command
+
+        command = grouped_attach_command("/tmp/src.sock", "=a#b:", label="a#b")
+        self.assertEqual(command[command.index("status-format[0]") + 1], "#[align=right]a##b ")
+        self.assertEqual(command[command.index("status-style") + 1], "default")
 
     def test_an_agent_attaches_grouped_while_a_shell_attaches_plainly(self):
         seen = []
@@ -191,6 +198,7 @@ class GroupedAttachTests(unittest.TestCase):
                     source_socket="/tmp/s.sock",
                     host_socket=None,
                     host_pane=None,
+                    attachment_style="fg=red,bg=blue",
                 ),
             ),
             (
@@ -229,7 +237,12 @@ class GroupedAttachTests(unittest.TestCase):
                 self.assertEqual(command[command.index("status-left") + 1], 'a "b"')
                 self.assertIn(f"; set-option -t {name} destroy-unattached on", text)
                 self.assertTrue(text.endswith(f"; select-window -t ={name}:@12"))
-                self.assertIn(f"; set-option -t {name} status off ;", text)
+                # Its status row holds only the session's name, in the theme's colors.
+                self.assertIn(f"; set-option -t {name} status on ;", text)
+                self.assertEqual(command[command.index("status-style") + 1], "fg=red,bg=blue")
+                self.assertEqual(
+                    command[command.index("status-format[0]") + 1], "#[align=right]manager "
+                )
                 self.assertEqual(
                     [c[3] for c in seen[-3:]], ["has-session", "display-message", "show-options"]
                 )

@@ -94,6 +94,52 @@ class EntrypointTests(unittest.TestCase):
             finally:
                 receiver.close()
 
+    def test_launched_action_helper_skips_the_application_parser(self):
+        with tempfile.TemporaryDirectory(prefix="tw-lean-", dir="/tmp") as directory:
+            path = str(Path(directory) / "action.sock")
+            receiver = Actions(path)
+            try:
+                code = (
+                    "import sys; from tmux_workspaces.bootstrap import main; "
+                    "sys.argv = ['tw', '_action', '--action-socket', sys.argv[1], "
+                    "'--action', sys.argv[2]]; status = main(); print(status); "
+                    "assert not {'argparse', 'tmux_workspaces.cli'} & set(sys.modules)"
+                )
+                results = [
+                    subprocess.run(
+                        [sys.executable, "-c", code, path, action],
+                        cwd=ROOT,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    for action in ("new-tab", "not-an-action")
+                ]
+                self.assertEqual([result.returncode for result in results], [0, 0])
+                self.assertEqual([result.stdout for result in results], ["0\n", "1\n"])
+                self.assertIn("Unknown viewer action", results[1].stderr)
+                self.assertEqual(list(receiver.pending()), ["new-tab"])
+            finally:
+                receiver.close()
+
+    def test_leaf_helper_starts_without_the_theme_module(self):
+        code = (
+            "import sys; from types import SimpleNamespace; from unittest.mock import patch\n"
+            "from tmux_workspaces.attachments import leaf_main\n"
+            "args = SimpleNamespace(agent='external', terminal='', source_socket='/unused',\n"
+            "                       host_socket=None, host_pane=None)\n"
+            "with patch('tmux_workspaces.attachments.subprocess.run', side_effect=SystemExit(0)):\n"
+            "    try:\n"
+            "        leaf_main(args)\n"
+            "    except SystemExit:\n"
+            "        pass\n"
+            "assert 'tmux_workspaces.theme' not in sys.modules\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, timeout=5
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_leaf_entry_import_does_not_load_action_transport(self):
         result = subprocess.run(
             [

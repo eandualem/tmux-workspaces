@@ -257,6 +257,32 @@ class DiscoveryTests(unittest.TestCase):
                 self.assertEqual(call.args[0].get_method(), "GET")
                 self.assertEqual(call.kwargs["timeout"], 3)
 
+    def test_backbone_roster_keeps_only_name_and_state(self):
+        # Activity fields change on every poll while agents work; carrying them
+        # would make each poll a new frame for the sidebar to copy and repaint.
+        body = json.dumps(
+            {
+                "items": [
+                    {
+                        "name": "worker",
+                        "state": "busy",
+                        "online": True,
+                        "last_activity": 1.5,
+                        "evidence": ["reading files"],
+                    }
+                ]
+            }
+        ).encode()
+        opener = Mock()
+        opener.open.return_value = io.BytesIO(body)
+        with patch(
+            "tmux_workspaces.adapters.backbone.urllib.request.build_opener", return_value=opener
+        ):
+            snapshot = BackboneProvider(Path("/unused"), "http://127.0.0.1:7120").read()
+        self.assertEqual(
+            snapshot.sessions, {"worker": {"name": "worker", "state": "busy", "origin": "backbone"}}
+        )
+
     def test_demo_failure_and_recovery_preserve_only_last_successful_observation(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "demo.json"

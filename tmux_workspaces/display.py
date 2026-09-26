@@ -665,6 +665,9 @@ class Display:
             window = self._attachment_windows.get((pane["id"], source_socket, pane["agent"]))
             if window:
                 args += ["--attachment-window", window]
+            # The attached session's status row names it, in the theme's colors.
+            accent = self.status_styles.get("accent", "default")
+            args += ["--attachment-style", f"fg={accent},bg={self.panel_color}"]
             if self.host_socket and self.host_pane:
                 args += ["--host-socket", self.host_socket, "--host-pane", self.host_pane]
             return script_command(*args)

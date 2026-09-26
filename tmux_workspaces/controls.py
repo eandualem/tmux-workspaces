@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import re
 import socket
+import sys
 import uuid
 from pathlib import Path
 
@@ -132,6 +133,31 @@ def send_action(path: str, action: str, *, wait: bool = False) -> None:
         finally:
             if reply_path:
                 reply_path.unlink(missing_ok=True)
+
+
+def main(arguments: list[str]) -> int:
+    """The ``_action`` helper tmux runs for every viewer shortcut and panel click.
+
+    Its bindings pass ``--action-socket PATH --action NAME [--wait-action]``;
+    reading just those spares each key the application's full parser.
+    """
+    options, wait = {}, False
+    words = iter(arguments)
+    try:
+        for word in words:
+            if word == "--wait-action":
+                wait = True
+            elif word in {"--action-socket", "--action"}:
+                options[word] = next(words)
+            else:
+                raise ValueError(f"Unexpected action helper argument: {word}")
+        if len(options) != 2:
+            raise ValueError("The action helper needs --action-socket and --action")
+        send_action(options["--action-socket"], options["--action"], wait=wait)
+    except (ValueError, OSError, StopIteration) as exc:
+        print(f"Workspace viewer: {str(exc) or 'Missing option value'}", file=sys.stderr)
+        return 1
+    return 0
 
 
 class Actions:

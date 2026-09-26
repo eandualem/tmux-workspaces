@@ -95,9 +95,10 @@ their pane and reconnect when the session returns; the viewer never starts
 an external session. An attached session is joined through a grouped tmux
 session of the viewer's own, which shares the session's windows but carries
 its own options: it starts with the settings of the session you attached
-(mouse mode included) and turns its status line off, so the row it took
-returns to the program inside, while the session you attached keeps its own
-status line and every other setting untouched. The grouped session disappears
+(mouse mode included) and replaces its status line with one row along the
+top that shows only the session's name, on the right, in the theme's panel
+and accent colors. The session you attached keeps its own status line and every
+other setting untouched. The grouped session disappears
 when the pane lets go of it, or as soon as the session it joined is gone, so
 a session that ends shows as offline instead of living on inside the viewer.
 The attachment starts on the source session's current window. A window you select
@@ -297,6 +298,10 @@ shows every active agent. When they do not all fit, the label row shows the tota
 and scroll arrows; the tab list keeps its rows first, but agents that need you or
 are working keep theirs while the tab list keeps four rows, or one per tab when
 there are fewer.
+Clicking an agent's row goes to a tab already showing its session, switching
+workspace if needed; when several do, the one this window showed most recently.
+It never attaches or starts anything: with no such tab, **Agent status…** opens
+and says so.
 The roster appears when a state-reporting source is connected (Backbone, found
 on its own, or the demo) and can be hidden with **Show agents** in Configure…, with
 **Ctrl-g A**, or by clicking **agents shown** in the status row; the choice is
