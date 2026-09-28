@@ -1,0 +1,15 @@
+name: Look-alike check (test only)
+
+# Test for #94, never merged: a pull request's own job that reuses the
+# trusted check's name. It always fails.
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  target:
+    name: PR target (trusted)
+    runs-on: ubuntu-latest
+    steps:
+      - run: exit 1
